@@ -1,13 +1,14 @@
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { getCustomerSession } from "./session";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
-async function requestRecommendation({ tenantId, projectId, brandId, goal, idempotencyKey }) {
+async function requestRecommendation({ accessToken, tenantId, projectId, brandId, goal, idempotencyKey }) {
   const response = await fetch(`${API_BASE_URL}/customer/campaign-recommendations`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: "Bearer " + accessToken },
     body: JSON.stringify({
       tenant_id: tenantId,
       project_id: projectId,
@@ -22,23 +23,29 @@ async function requestRecommendation({ tenantId, projectId, brandId, goal, idemp
 
 function App() {
   const [goal, setGoal] = useState("");
-  const [state, setState] = useState({ status: "idle", recommendation: null, error: "" });
+  const [state, setState] = useState({ status: "idle", recommendation: null, error: "", accountRequired: false });
 
   async function submit(event) {
     event.preventDefault();
     if (!goal.trim()) return;
-    setState({ status: "loading", recommendation: null, error: "" });
+    const session = getCustomerSession();
+    if (!session) {
+      setState({ status: "account-required", recommendation: null, error: "", accountRequired: true });
+      return;
+    }
+    setState({ status: "loading", recommendation: null, error: "", accountRequired: false });
     try {
       const result = await requestRecommendation({
-        tenantId: import.meta.env.VITE_BIZGENIE_TENANT_ID || "demo-tenant",
-        projectId: import.meta.env.VITE_BIZGENIE_PROJECT_ID || "demo-project",
-        brandId: import.meta.env.VITE_BIZGENIE_BRAND_ID || "demo-brand",
+        accessToken: session.accessToken,
+        tenantId: session.tenantId,
+        projectId: session.projectId,
+        brandId: session.brandId,
         goal: goal.trim(),
         idempotencyKey: crypto.randomUUID(),
       });
-      setState({ status: "ready", recommendation: result.recommendation, error: "" });
+      setState({ status: "ready", recommendation: result.recommendation, error: "", accountRequired: false });
     } catch (error) {
-      setState({ status: "error", recommendation: null, error: error.message });
+      setState({ status: "error", recommendation: null, error: error.message, accountRequired: false });
     }
   }
 
@@ -54,6 +61,7 @@ function App() {
           <textarea id="goal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="e.g. Launch our new strawberry lemonade next Friday" maxLength={2000} />
           <button type="submit" disabled={!goal.trim() || state.status === "loading"}>{state.status === "loading" ? "Thinking…" : "Get my recommendation"}</button>
         </form>
+        {state.accountRequired && <div className="account-prompt" role="status"><strong>Save this goal by creating your BizGenie account.</strong><p>Your goal stays on this screen until you continue. No campaign is created yet.</p><button type="button" onClick={() => window.alert("Account creation will be connected here.")}>Continue to account creation</button></div>}
         {state.status === "error" && <p className="error" role="alert">{state.error}</p>}
       </section>
       {state.recommendation && (
