@@ -30,3 +30,6 @@ button:focus-visible, textarea:focus-visible { outline: 3px solid #1857c4; outli
 .secondary { background: transparent; color: #16211d; border: 1px solid #16211d; }
 .error { color: #a32d22; margin-top: 16px; }
 @media (max-width: 680px) { .topbar { padding: 18px 20px; } .hero, .recommendation { padding-left: 20px; padding-right: 20px; } .item-grid { grid-template-columns: 1fr; } .recommendation-header { display: block; } .pill { display: inline-block; } }
+
+.account-prompt { margin-top: 24px; padding: 18px; border: 1px solid #b9560f; border-radius: 12px; background: #f4dfc9; }
+.account-prompt p { color: #4b564f; }
