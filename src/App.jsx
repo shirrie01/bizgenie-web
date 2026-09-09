@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getCustomerSession } from "./session";
 import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
+import Founding100Panel from "./Founding100Panel";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -123,6 +124,7 @@ export default function App() {
 
         {state.status === "error" && <p className="error" role="alert">{state.error}</p>}
       </section>
+      <Founding100Panel />
       {state.recommendation && (
         <section className="recommendation" aria-live="polite">
           <div className="recommendation-header"><div><p className="eyebrow">Your starting point</p><h2>{state.recommendation.campaign_name}</h2></div><span className="pill">Review first</span></div>
