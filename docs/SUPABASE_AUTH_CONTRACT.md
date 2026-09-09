@@ -20,11 +20,16 @@ A visitor may type a goal before signing in. The goal remains local to the page.
 
 The API must reject missing, expired, malformed or cross-tenant Bearer tokens and continue to require an approved Brand Brain. The web client must render a generic error and never display token, JWT, provider or database diagnostics.
 
-## Open founder/provider decisions
+## Resolved by this slice
 
-- Confirm the Supabase project URL and publishable key for the web environment.
-- Confirm allowed redirect URLs for local, staging and production.
-- Confirm email/password versus magic-link/OAuth sign-in for the first release.
-- Confirm account deletion and session-revocation UX.
+- Sign-in method for the first release: **email/password** (see `docs/SUPABASE_AUTH_SIGNIN_SLICE.md`). OAuth and magic links are deferred.
+- Tenant/project/brand scope is read only from the authenticated session's `app_metadata` (backend/service-role controlled), never from `user_metadata`, env vars, or form fields. If `app_metadata` is incomplete, the client shows an account-setup message and keeps the recommendation request blocked.
+
+## Still-open founder/provider decisions
+
+- Confirm the real Supabase project URL and publishable key for local/staging/production environments (values remain blank in `.env.example`).
+- Confirm allowed redirect/origin URLs for local, staging and production — this is a Supabase dashboard / provider configuration step, not something this repository configures.
+- Confirm account deletion and session-revocation UX (out of scope for this slice).
+- Confirm the backend process for populating `app_metadata.tenant_id` / `project_id` / `brand_id` on a Supabase user (a service-role-only operation; not implemented in this repository, which does not touch the backend).
 
 This contract does not add auth UI, token issuance, billing, publishing or deployment.
