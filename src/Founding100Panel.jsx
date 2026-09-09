@@ -1,46 +1,52 @@
 import { useState } from "react";
 
-const submittedEmails = new Set();
+const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
-export function createLocalLeadAdapter() {
+export function createPaidBetaLeadAdapter({ fetchImpl = fetch, apiBaseUrl = API_BASE_URL } = {}) {
   return {
     async submit(lead) {
-      const email = lead.email.toLowerCase();
-      if (submittedEmails.has(email)) return { status: "duplicate" };
-      submittedEmails.add(email);
-      return { status: "preview-only" };
+      const response = await fetchImpl(apiBaseUrl + "/public/paid-beta-interest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...lead,
+          privacy_contact_consent: true,
+          source: "founding-100-web",
+          submission_id: crypto.randomUUID(),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(body?.error?.message || "We could not process that request.");
+        error.code = body?.error?.code;
+        throw error;
+      }
+      return body;
     },
   };
 }
 
 export default function Founding100Panel() {
-  const [email, setEmail] = useState("");
-  const [consent, setConsent] = useState(false);
+  const [form, setForm] = useState({ name: "", work_email: "", business_name: "", website_or_social_profile: "", business_stage: "pre-revenue", primary_marketing_challenge: "" });
   const [state, setState] = useState("idle");
   const [message, setMessage] = useState("");
-  const adapter = createLocalLeadAdapter();
+  const adapter = createPaidBetaLeadAdapter();
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
 
   async function submit(event) {
     event.preventDefault();
-    if (!email.trim() || !consent) return;
     setState("loading");
     setMessage("");
     try {
-      const result = await adapter.submit({
-        email: email.trim(),
-        consent_at: new Date().toISOString(),
-        source: "founding-100-web",
-      });
-      if (result.status === "duplicate") {
-        setState("duplicate");
-        setMessage("That email is already in this preview session.");
-      } else {
-        setState("success");
-        setMessage("Preview only: nothing was sent or stored. Live Founding 100 registration is not enabled yet.");
-      }
+      const result = await adapter.submit(form);
+      setState("success");
+      setMessage(result?.replay ? "We already have your Founding 100 interest recorded." : "Thanks. We received your Founding 100 interest.");
     } catch {
       setState("error");
-      setMessage("We could not process that request. Please try again.");
+      setMessage("We could not process that request. Please check your details and try again.");
     }
   }
 
@@ -49,16 +55,25 @@ export default function Founding100Panel() {
       <p className="eyebrow">Founding 100</p>
       <h2 id="founding-title">Be among the first to shape BizGenie.</h2>
       <p>Join the early-access list for practical, outcome-led marketing support built around your business.</p>
-      {state === "success" ? (
-        <p className="success" role="status">{message}</p>
-      ) : (
+      {state === "success" ? <p className="success" role="status">{message}</p> : (
         <form onSubmit={submit} className="lead-form">
-          <label htmlFor="founding-email">Email address</label>
-          <input id="founding-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" aria-invalid={state === "error"} />
-          <label className="consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /> I agree to be contacted about BizGenie early access.</label>
-          <button type="submit" disabled={!email.trim() || !consent || state === "loading"}>{state === "loading" ? "Joining…" : "Join the Founding 100"}</button>
-          {message && <p className={state === "error" ? "error" : "notice"} role={state === "error" ? "alert" : "status"}>{message}</p>}
-          <small>Preview only: no information is sent or stored.</small>
+          <label htmlFor="founding-name">Name</label>
+          <input id="founding-name" value={form.name} onChange={(e) => update("name", e.target.value)} required autoComplete="name" />
+          <label htmlFor="founding-email">Work email</label>
+          <input id="founding-email" type="email" value={form.work_email} onChange={(e) => update("work_email", e.target.value)} required autoComplete="email" />
+          <label htmlFor="founding-business">Business name</label>
+          <input id="founding-business" value={form.business_name} onChange={(e) => update("business_name", e.target.value)} required />
+          <label htmlFor="founding-site">Website or social profile</label>
+          <input id="founding-site" type="url" value={form.website_or_social_profile} onChange={(e) => update("website_or_social_profile", e.target.value)} required />
+          <label htmlFor="founding-stage">Business stage</label>
+          <select id="founding-stage" value={form.business_stage} onChange={(e) => update("business_stage", e.target.value)}>
+            <option value="pre-revenue">Pre-revenue</option><option value="under-250k">Under £250k</option><option value="250k-1m">£250k–£1m</option><option value="1m-5m">£1m–£5m</option><option value="5m-plus">£5m+</option>
+          </select>
+          <label htmlFor="founding-challenge">Primary marketing challenge</label>
+          <textarea id="founding-challenge" value={form.primary_marketing_challenge} onChange={(e) => update("primary_marketing_challenge", e.target.value)} required maxLength={1000} />
+          <label className="consent"><input type="checkbox" required /> I agree that BizGenie may use these details to contact me about the paid beta.</label>
+          <button type="submit" disabled={state === "loading"}>{state === "loading" ? "Joining…" : "Join the Founding 100"}</button>
+          {message && <p className="error" role="alert">{message}</p>}
         </form>
       )}
     </section>

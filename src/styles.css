@@ -18,7 +18,7 @@ label { font-weight: 600; }
 textarea { min-height: 140px; border: 1px solid #d9dbd3; border-radius: 12px; padding: 16px; font: inherit; resize: vertical; }
 button { border: 0; border-radius: 999px; padding: 14px 22px; background: #16211d; color: #fff; font: inherit; font-weight: 600; cursor: pointer; justify-self: start; }
 button:disabled { opacity: .5; cursor: not-allowed; }
-button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px solid #1857c4; outline-offset: 3px; }
+button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #1857c4; outline-offset: 3px; }
 .recommendation { margin-top: 0; padding-top: 24px; border-top: 1px solid #d9dbd3; }
 .recommendation-header { display: flex; justify-content: space-between; gap: 24px; align-items: start; }
 .pill { border-radius: 999px; background: #d8e5ee; color: #2a5f8a; padding: 8px 12px; font-size: .8rem; font-weight: 600; }
@@ -37,7 +37,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .founding-panel { max-width: 880px; margin: 0 auto; padding: 48px 24px; border-top: 1px solid #d9dbd3; }
 .founding-panel h2 { max-width: 620px; }
 .lead-form { display: grid; gap: 12px; max-width: 520px; margin-top: 24px; }
-.lead-form input[type="email"] { border: 1px solid #d9dbd3; border-radius: 8px; padding: 14px; font: inherit; }
+.lead-form input, .lead-form select { border: 1px solid #d9dbd3; border-radius: 8px; padding: 14px; font: inherit; background: #fff; }
 .consent { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; line-height: 1.4; }
 .consent input { margin-top: 4px; }
 .lead-form small { color: #4b564f; }
