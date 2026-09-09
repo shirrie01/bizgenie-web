@@ -18,7 +18,7 @@ label { font-weight: 600; }
 textarea { min-height: 140px; border: 1px solid #d9dbd3; border-radius: 12px; padding: 16px; font: inherit; resize: vertical; }
 button { border: 0; border-radius: 999px; padding: 14px 22px; background: #16211d; color: #fff; font: inherit; font-weight: 600; cursor: pointer; justify-self: start; }
 button:disabled { opacity: .5; cursor: not-allowed; }
-button:focus-visible, textarea:focus-visible { outline: 3px solid #1857c4; outline-offset: 3px; }
+button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px solid #1857c4; outline-offset: 3px; }
 .recommendation { margin-top: 0; padding-top: 24px; border-top: 1px solid #d9dbd3; }
 .recommendation-header { display: flex; justify-content: space-between; gap: 24px; align-items: start; }
 .pill { border-radius: 999px; background: #d8e5ee; color: #2a5f8a; padding: 8px 12px; font-size: .8rem; font-weight: 600; }
@@ -42,3 +42,6 @@ button:focus-visible, textarea:focus-visible { outline: 3px solid #1857c4; outli
 .consent input { margin-top: 4px; }
 .lead-form small { color: #4b564f; }
 .success { color: #185b3a; font-weight: 600; }
+
+.notice { color: #4b564f; }
+.lead-form input[aria-invalid="true"] { border-color: #a32d22; }
