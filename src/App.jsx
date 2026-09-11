@@ -93,9 +93,16 @@ export default function App() {
     if (currentSession.status !== "scope-missing") return currentSession;
 
     const currentWorkspace = await getCustomerWorkspace(currentSession.accessToken);
-    const bootstrapResult = currentWorkspace.status === "ready"
-      ? currentWorkspace
-      : await bootstrapCustomerWorkspace({ accessToken: currentSession.accessToken, goal: goal.trim() });
+    if (currentWorkspace.status !== "ready" && currentWorkspace.status !== "missing_workspace") {
+      return currentSession;
+    }
+
+    // Bootstrap is idempotent: when the workspace already exists, the backend
+    // can still use this call to provision trusted app_metadata scope.
+    const bootstrapResult = await bootstrapCustomerWorkspace({
+      accessToken: currentSession.accessToken,
+      goal: goal.trim(),
+    });
 
     if (bootstrapResult.status !== "ready") return currentSession;
 
