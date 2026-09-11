@@ -1,15 +1,29 @@
 import { useEffect, useState } from "react";
-import { getCustomerSession } from "./session";
+import { getCustomerSession, refreshCustomerSession } from "./session";
 import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
+function authorizationHeader(accessToken) {
+  return { authorization: "Bearer " + accessToken };
+}
+
+function firstUrlFromText(text) {
+  return text.match(/https?:\/\/\S+/i)?.[0] || "";
+}
+
+function businessNameFromGoal(goalText) {
+  const goal = goalText.toLowerCase();
+  if (goal.includes("leaseexpert") || goal.includes("lease expert")) return "Lease Expert";
+  return "Customer Campaign Workspace";
+}
+
 async function requestRecommendation({ accessToken, tenantId, projectId, brandId, goal, idempotencyKey }) {
   const response = await fetch(`${API_BASE_URL}/customer/campaign-recommendations`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer " + accessToken },
+    headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({
       tenant_id: tenantId,
       project_id: projectId,
@@ -19,6 +33,28 @@ async function requestRecommendation({ accessToken, tenantId, projectId, brandId
     }),
   });
   if (!response.ok) throw new Error("Recommendation could not be loaded yet.");
+  return response.json();
+}
+
+async function getCustomerWorkspace(accessToken) {
+  const response = await fetch(`${API_BASE_URL}/customer/workspace`, {
+    headers: authorizationHeader(accessToken),
+  });
+  if (!response.ok) throw new Error("Workspace could not be checked yet.");
+  return response.json();
+}
+
+async function bootstrapCustomerWorkspace({ accessToken, goal }) {
+  const response = await fetch(`${API_BASE_URL}/customer/workspace/bootstrap`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
+    body: JSON.stringify({
+      business_name: businessNameFromGoal(goal),
+      website_or_social_profile: firstUrlFromText(goal),
+      primary_marketing_challenge: goal,
+    }),
+  });
+  if (!response.ok) throw new Error("Workspace could not be created yet.");
   return response.json();
 }
 
@@ -42,19 +78,41 @@ export default function App() {
     };
   }, []);
 
-  // Once a session becomes ready, automatically continue a goal
-  // submission that was blocked pending sign-in — without re-typing.
+  // Once a session can be used, automatically continue a goal
+  // submission that was blocked pending sign-in or workspace setup.
   useEffect(() => {
-    if (pendingSubmit && session.status === "ready") {
+    if (pendingSubmit && (session.status === "ready" || session.status === "scope-missing")) {
       setPendingSubmit(false);
       runRecommendation(session);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSubmit, session]);
 
-  async function runRecommendation(readySession) {
+  async function ensureReadySession(currentSession) {
+    if (currentSession.status === "ready") return currentSession;
+    if (currentSession.status !== "scope-missing") return currentSession;
+
+    const currentWorkspace = await getCustomerWorkspace(currentSession.accessToken);
+    const bootstrapResult = currentWorkspace.status === "ready"
+      ? currentWorkspace
+      : await bootstrapCustomerWorkspace({ accessToken: currentSession.accessToken, goal: goal.trim() });
+
+    if (bootstrapResult.status !== "ready") return currentSession;
+
+    const refreshed = bootstrapResult.requires_session_refresh
+      ? await refreshCustomerSession()
+      : await getCustomerSession();
+    setSession(refreshed);
+    return refreshed;
+  }
+
+  async function runRecommendation(activeSession) {
     setState({ status: "loading", recommendation: null, error: "" });
     try {
+      const readySession = await ensureReadySession(activeSession);
+      if (readySession.status !== "ready") {
+        throw new Error("Your workspace is ready. Please sign out and sign back in, then press Get my recommendation again.");
+      }
       const result = await requestRecommendation({
         accessToken: readySession.accessToken,
         tenantId: readySession.tenantId,
@@ -72,9 +130,9 @@ export default function App() {
   function submit(event) {
     event.preventDefault();
     if (!goal.trim()) return;
-    if (session.status !== "ready") {
+    if (session.status !== "ready" && session.status !== "scope-missing") {
       // The goal stays on screen; no recommendation request is made
-      // until a fully authenticated, scoped session exists.
+      // until a fully authenticated session exists.
       setPendingSubmit(true);
       return;
     }
@@ -112,13 +170,6 @@ export default function App() {
             <strong>Sign in to get your recommendation.</strong>
             <p>Your goal stays right here — nothing is created until you sign in.</p>
             <AuthPanel onAuthenticated={() => {}} />
-          </div>
-        )}
-
-        {pendingSubmit && session.status === "scope-missing" && (
-          <div className="account-prompt" role="status">
-            <strong>Your account setup isn’t finished yet.</strong>
-            <p>You’re signed in, but this account isn’t linked to a workspace yet, so we can’t generate a recommendation. Please contact support to finish setting up your account.</p>
           </div>
         )}
 
