@@ -3,9 +3,11 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import App from "../App";
 
 const getCustomerSessionMock = vi.fn();
+const refreshCustomerSessionMock = vi.fn();
 
 vi.mock("../session", () => ({
   getCustomerSession: (...args) => getCustomerSessionMock(...args),
+  refreshCustomerSession: (...args) => refreshCustomerSessionMock(...args),
 }));
 
 vi.mock("../authClient", () => ({
@@ -22,6 +24,7 @@ function typeGoalAndSubmit(goalText) {
 
 beforeEach(() => {
   getCustomerSessionMock.mockReset();
+  refreshCustomerSessionMock.mockReset();
   global.fetch = vi.fn();
 });
 
@@ -40,16 +43,59 @@ describe("goal-first auth gate", () => {
     expect(screen.getByLabelText(/your goal/i)).toHaveValue("Launch our new product next Friday");
   });
 
-  it("does not call the recommendation API when signed in but scope is missing", async () => {
+  it("bootstraps a missing customer workspace, refreshes scope, then requests the recommendation", async () => {
     getCustomerSessionMock.mockResolvedValue({ status: "scope-missing", accessToken: "token-abc" });
-    render(<App />);
-
-    typeGoalAndSubmit("Launch our new product next Friday");
-
-    await waitFor(() => {
-      expect(screen.getByText(/account setup isn.t finished yet/i)).toBeInTheDocument();
+    refreshCustomerSessionMock.mockResolvedValue({
+      status: "ready",
+      accessToken: "refreshed-token",
+      tenantId: "tenant-1",
+      projectId: "project-1",
+      brandId: "brand-1",
     });
-    expect(global.fetch).not.toHaveBeenCalled();
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ status: "missing_workspace", workspace: null }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: "ready",
+          requires_session_refresh: true,
+          workspace: {
+            tenant_id: "tenant-1",
+            project_id: "project-1",
+            brand_id: "brand-1",
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          recommendation: { campaign_name: "Audi A3 Offer", explanation: "Because", suggested_items: [] },
+        }),
+      });
+
+    render(<App />);
+    typeGoalAndSubmit("Help me promote my special offer listing for an audi a3. https://www.leaseexpert.co.uk/offers/personal/xcite-car-leasing-audi-a3-1-5-tfsi-150-s-line-5dr-s-tronic/");
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(3));
+    expect(global.fetch.mock.calls[0][0]).toContain("/customer/workspace");
+    expect(global.fetch.mock.calls[1][0]).toContain("/customer/workspace/bootstrap");
+    expect(global.fetch.mock.calls[2][0]).toContain("/customer/campaign-recommendations");
+
+    const bootstrapBody = JSON.parse(global.fetch.mock.calls[1][1].body);
+    expect(bootstrapBody.business_name).toBe("Lease Expert");
+    expect(bootstrapBody.website_or_social_profile).toContain("leaseexpert.co.uk");
+    expect(bootstrapBody.primary_marketing_challenge).toContain("audi a3");
+    expect(refreshCustomerSessionMock).toHaveBeenCalledTimes(1);
+
+    const recommendationOptions = global.fetch.mock.calls[2][1];
+    expect(recommendationOptions.headers.authorization).toBe("Bearer refreshed-token");
+    const recommendationBody = JSON.parse(recommendationOptions.body);
+    expect(recommendationBody.tenant_id).toBe("tenant-1");
+    expect(recommendationBody.project_id).toBe("project-1");
+    expect(recommendationBody.brand_id).toBe("brand-1");
   });
 
   it("calls the recommendation API with the session's bearer token and scope once fully authenticated", async () => {
