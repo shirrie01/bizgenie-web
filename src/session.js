@@ -23,7 +23,7 @@ function scopeFromAppMetadata(user) {
  *  - { status: "scope-missing", accessToken }
  *        Signed in, but the backend has not yet assigned tenant/project/
  *        brand scope to this account. Recommendation requests must stay
- *        blocked in this state.
+ *        blocked in this state until workspace bootstrap succeeds.
  *  - { status: "ready", accessToken, tenantId, projectId, brandId }
  *        Fully authenticated and scoped; safe to call the API.
  */
@@ -45,4 +45,13 @@ export async function getCustomerSession() {
     projectId: scope.projectId,
     brandId: scope.brandId,
   };
+}
+
+export async function refreshCustomerSession() {
+  if (!isSupabaseConfigured()) return { status: "unconfigured" };
+
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.auth.refreshSession();
+  if (error) return getCustomerSession();
+  return getCustomerSession();
 }
