@@ -58,9 +58,60 @@ async function bootstrapCustomerWorkspace({ accessToken, goal }) {
   return response.json();
 }
 
+async function createCampaignFromRecommendation({ accessToken, session, recommendation }) {
+  const payload = recommendation?.create_campaign_payload;
+  if (!payload || !recommendation?.recommendation_id) {
+    throw new Error("This recommendation cannot be turned into a campaign yet.");
+  }
+
+  const campaignResponse = await fetch(`${API_BASE_URL}/customer/campaigns`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
+    body: JSON.stringify({
+      tenant_id: session.tenantId,
+      project_id: session.projectId,
+      brand_id: recommendation.brand_id,
+      name: payload.name,
+      goal: payload.goal,
+      display_timezone: payload.display_timezone,
+      idempotency_key: `rec:${recommendation.recommendation_id}:campaign`,
+    }),
+  });
+  if (!campaignResponse.ok) throw new Error("Campaign could not be created yet.");
+
+  let created = await campaignResponse.json();
+  const campaignId = created?.campaign?.campaign_id;
+  if (!campaignId || !created?.result?.campaign_version) {
+    throw new Error("Campaign could not be created yet.");
+  }
+
+  for (const [index, item] of recommendation.suggested_items.entries()) {
+    const itemResponse = await fetch(`${API_BASE_URL}/customer/campaigns/${campaignId}/content-items`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
+      body: JSON.stringify({
+        tenant_id: session.tenantId,
+        project_id: session.projectId,
+        expected_campaign_version: created.result.campaign_version,
+        name: item.name,
+        format: item.format,
+        platform: item.platform,
+        placement: item.placement,
+        destination_label: item.destination_label,
+        idempotency_key: `rec:${recommendation.recommendation_id}:item:${index + 1}`,
+      }),
+    });
+    if (!itemResponse.ok) throw new Error("Campaign was created, but its suggested items could not all be added yet.");
+    created = await itemResponse.json();
+  }
+
+  return created.campaign;
+}
+
 export default function App() {
   const [goal, setGoal] = useState("");
   const [state, setState] = useState({ status: "idle", recommendation: null, error: "" });
+  const [campaignState, setCampaignState] = useState({ status: "idle", campaign: null, error: "" });
   const [session, setSession] = useState({ status: "loading" });
   const [pendingSubmit, setPendingSubmit] = useState(false);
 
@@ -115,6 +166,7 @@ export default function App() {
 
   async function runRecommendation(activeSession) {
     setState({ status: "loading", recommendation: null, error: "" });
+    setCampaignState({ status: "idle", campaign: null, error: "" });
     try {
       const readySession = await ensureReadySession(activeSession);
       if (readySession.status !== "ready") {
@@ -134,6 +186,21 @@ export default function App() {
     }
   }
 
+  async function runCreateCampaign() {
+    if (session.status !== "ready" || !state.recommendation || campaignState.status === "loading") return;
+    setCampaignState({ status: "loading", campaign: null, error: "" });
+    try {
+      const campaign = await createCampaignFromRecommendation({
+        accessToken: session.accessToken,
+        session,
+        recommendation: state.recommendation,
+      });
+      setCampaignState({ status: "ready", campaign, error: "" });
+    } catch (error) {
+      setCampaignState({ status: "error", campaign: null, error: error.message });
+    }
+  }
+
   function submit(event) {
     event.preventDefault();
     if (!goal.trim()) return;
@@ -149,6 +216,7 @@ export default function App() {
   async function handleSignOut() {
     await signOut();
     setState({ status: "idle", recommendation: null, error: "" });
+    setCampaignState({ status: "idle", campaign: null, error: "" });
     setPendingSubmit(false);
   }
 
@@ -188,7 +256,26 @@ export default function App() {
           <div className="recommendation-header"><div><p className="eyebrow">Your starting point</p><h2>{state.recommendation.campaign_name}</h2></div><span className="pill">Review first</span></div>
           <p>{state.recommendation.explanation}</p>
           <div className="item-grid">{state.recommendation.suggested_items.map((item) => <article className="item" key={item.name}><span>{item.format}</span><h3>{item.name}</h3><p>{item.reason}</p><small>{item.destination_label}</small></article>)}</div>
-          <button className="secondary" type="button" onClick={() => window.alert("Campaign creation will be connected after account creation.")}>Create campaign</button>
+          <button className="secondary" type="button" onClick={runCreateCampaign} disabled={campaignState.status === "loading" || campaignState.status === "ready"}>
+            {campaignState.status === "loading" ? "Creating campaign…" : campaignState.status === "ready" ? "Campaign created" : "Create campaign"}
+          </button>
+          {campaignState.status === "error" && <p className="error" role="alert">{campaignState.error}</p>}
+        </section>
+      )}
+      {campaignState.campaign && (
+        <section className="recommendation" aria-live="polite">
+          <div className="recommendation-header"><div><p className="eyebrow">Saved to your workspace</p><h2>{campaignState.campaign.name}</h2></div><span className="pill">Draft</span></div>
+          <p>Your campaign and recommended starting items are now saved. Nothing has been scheduled or published.</p>
+          <div className="item-grid">
+            {campaignState.campaign.items.map((item) => (
+              <article className="item" key={item.content_item_id}>
+                <span>{item.format}</span>
+                <h3>{item.name}</h3>
+                <p>{item.variants[0]?.workflow === "draft" ? "Draft ready for review and content development." : item.variants[0]?.workflow}</p>
+                <small>{item.variants[0]?.destination_label}</small>
+              </article>
+            ))}
+          </div>
         </section>
       )}
     </main>
