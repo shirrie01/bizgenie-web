@@ -469,7 +469,7 @@ export default function App() {
                       <input id={`publication-url-${variant.variant_id}`} value={manualState.url} onChange={(event) => setManualState((current) => ({ ...current, url: event.target.value }))} placeholder="https://…" />
                       <button className="secondary" type="button" onClick={() => runManualConfirm(variant)} disabled={manualState.status === "confirming"}>{manualState.status === "confirming" ? "Recording evidence…" : "I published this — record evidence"}</button>
                     </div>}
-                    {variant.workflow === "published" && <p><strong>Published by customer attestation</strong>. BizGenie has recorded the supplied publication evidence.</p>
+                    {variant.workflow === "published" && <p><strong>Published by customer attestation</strong>. BizGenie has recorded the supplied publication evidence.</p>}
                     {variant.workflow === "review" && (
                       <div>
                         <p><strong>Ready for review</strong></p>
