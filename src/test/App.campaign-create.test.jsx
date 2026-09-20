@@ -185,7 +185,9 @@ describe("recommendation-to-campaign creation", () => {
 
   it("does not expose generation for a non-draft variant", async () => {
     const saved = campaign(4, 3);
-    saved.campaign.items[0].variants[0].workflow = "review";
+    saved.campaign.items.forEach((item) => {
+      item.variants[0].workflow = "review";
+    });
     global.fetch
       .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
       .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
