@@ -108,10 +108,33 @@ async function createCampaignFromRecommendation({ accessToken, session, recommen
   return created.campaign;
 }
 
+async function generateCampaignVariant({ accessToken, session, campaign, variant }) {
+  if (session.status !== "ready" || !campaign?.campaign_id || !variant?.variant_id || variant.workflow !== "draft") {
+    throw new Error("This draft is not ready to generate yet.");
+  }
+  const campaignVersion = campaign.version;
+  if (!Number.isInteger(campaignVersion)) throw new Error("Campaign version could not be checked yet.");
+  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/generate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
+    body: JSON.stringify({
+      tenant_id: session.tenantId,
+      project_id: session.projectId,
+      expected_campaign_version: campaignVersion,
+      idempotency_key: `campaign:${campaign.campaign_id}:variant:${variant.variant_id}:version:${campaignVersion}:generate`,
+    }),
+  });
+  if (!response.ok) throw new Error("Content could not be generated yet. Your draft is still safe to retry.");
+  const result = await response.json();
+  if (!result?.campaign?.campaign_id) throw new Error("Generated content could not be confirmed yet.");
+  return result.campaign;
+}
+
 export default function App() {
   const [goal, setGoal] = useState("");
   const [state, setState] = useState({ status: "idle", recommendation: null, error: "" });
   const [campaignState, setCampaignState] = useState({ status: "idle", campaign: null, error: "" });
+  const [generationState, setGenerationState] = useState({ status: "idle", error: "" });
   const [session, setSession] = useState({ status: "loading" });
   const [pendingSubmit, setPendingSubmit] = useState(false);
 
@@ -167,6 +190,7 @@ export default function App() {
   async function runRecommendation(activeSession) {
     setState({ status: "loading", recommendation: null, error: "" });
     setCampaignState({ status: "idle", campaign: null, error: "" });
+    setGenerationState({ status: "idle", error: "" });
     try {
       const readySession = await ensureReadySession(activeSession);
       if (readySession.status !== "ready") {
@@ -201,6 +225,18 @@ export default function App() {
     }
   }
 
+  async function runGenerateVariant(variant) {
+    if (generationState.status === "loading" || !campaignState.campaign || variant.workflow !== "draft") return;
+    setGenerationState({ status: "loading", error: "" });
+    try {
+      const campaign = await generateCampaignVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant });
+      setCampaignState({ status: "ready", campaign, error: "" });
+      setGenerationState({ status: "ready", error: "" });
+    } catch (error) {
+      setGenerationState({ status: "error", error: error.message });
+    }
+  }
+
   function submit(event) {
     event.preventDefault();
     if (!goal.trim()) return;
@@ -217,6 +253,7 @@ export default function App() {
     await signOut();
     setState({ status: "idle", recommendation: null, error: "" });
     setCampaignState({ status: "idle", campaign: null, error: "" });
+    setGenerationState({ status: "idle", error: "" });
     setPendingSubmit(false);
   }
 
@@ -271,11 +308,22 @@ export default function App() {
               <article className="item" key={item.content_item_id}>
                 <span>{item.format}</span>
                 <h3>{item.name}</h3>
-                <p>{item.variants[0]?.workflow === "draft" ? "Draft ready for review and content development." : item.variants[0]?.workflow}</p>
-                <small>{item.variants[0]?.destination_label}</small>
+                {item.variants.map((variant) => (
+                  <div key={variant.variant_id}>
+                    <p>{variant.current_content || (variant.workflow === "draft" ? "Draft ready to generate." : variant.workflow)}</p>
+                    <small>{variant.destination_label}</small>
+                    {variant.workflow === "draft" && (
+                      <button className="secondary" type="button" onClick={() => runGenerateVariant(variant)} disabled={generationState.status === "loading"}>
+                        {generationState.status === "loading" ? "Generating…" : "Generate draft"}
+                      </button>
+                    )}
+                    {variant.workflow === "review" && <p><strong>Ready for review</strong></p>}
+                  </div>
+                ))}
               </article>
             ))}
           </div>
+          {generationState.status === "error" && <p className="error" role="alert">{generationState.error}</p>}
         </section>
       )}
     </main>
