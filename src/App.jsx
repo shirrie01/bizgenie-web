@@ -200,6 +200,35 @@ async function beginManualPublication({ accessToken, session, campaign, variant 
   return { campaign: result.campaign, attemptId };
 }
 
+async function getCampaignMeasurements({ accessToken, session, campaign }) {
+  const query = new URLSearchParams({ tenant_id: session.tenantId, project_id: session.projectId });
+  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/measurements?${query.toString()}`, {
+    headers: authorizationHeader(accessToken),
+  });
+  if (!response.ok) throw new Error("Results could not be loaded yet.");
+  const result = await response.json();
+  return Array.isArray(result?.measurements) ? result.measurements : [];
+}
+
+async function recordCampaignMeasurement({ accessToken, session, campaign, variant, input }) {
+  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/measurements`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
+    body: JSON.stringify({
+      tenant_id: session.tenantId,
+      project_id: session.projectId,
+      idempotency_key: `measurement:${campaign.campaign_id}:${variant.variant_id}:${input.metric}:${input.observed_at}`,
+      metric: input.metric,
+      value: Number(input.value),
+      unit: input.unit,
+      observed_at: input.observed_at,
+      note: input.note || null,
+    }),
+  });
+  if (!response.ok) throw new Error("This result could not be recorded yet.");
+  return response.json();
+}
+
 async function getCampaignCalendar({ accessToken, session, campaign, from, to }) {
   const query = new URLSearchParams({ tenant_id: session.tenantId, project_id: session.projectId, from, to });
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/calendar?${query.toString()}`, {
@@ -228,6 +257,7 @@ export default function App() {
   const [reviewState, setReviewState] = useState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "" });
   const [manualState, setManualState] = useState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
   const [calendarState, setCalendarState] = useState({ status: "idle", entries: [], error: "" });
+  const [resultsState, setResultsState] = useState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
   const [session, setSession] = useState({ status: "loading" });
   const [pendingSubmit, setPendingSubmit] = useState(false);
 
@@ -378,6 +408,32 @@ export default function App() {
     } catch (error) { setManualState((current) => ({ ...current, status: "error", error: error.message })); }
   }
 
+  async function loadResults() {
+    if (!campaignState.campaign || resultsState.status === "loading") return;
+    setResultsState((current) => ({ ...current, status: "loading", error: "" }));
+    try {
+      const entries = await getCampaignMeasurements({ accessToken: session.accessToken, session, campaign: campaignState.campaign });
+      setResultsState((current) => ({ ...current, status: "ready", entries, error: "" }));
+    } catch (error) {
+      setResultsState((current) => ({ ...current, status: "error", error: error.message }));
+    }
+  }
+
+  async function saveResult(variant) {
+    if (!campaignState.campaign || resultsState.status === "saving" || !resultsState.value || !resultsState.observedAt) return;
+    setResultsState((current) => ({ ...current, status: "saving", variantId: variant.variant_id, error: "" }));
+    try {
+      await recordCampaignMeasurement({
+        accessToken: session.accessToken, session, campaign: campaignState.campaign, variant,
+        input: { metric: resultsState.metric, value: resultsState.value, unit: resultsState.unit, observed_at: new Date(resultsState.observedAt).toISOString(), note: resultsState.note },
+      });
+      const entries = await getCampaignMeasurements({ accessToken: session.accessToken, session, campaign: campaignState.campaign });
+      setResultsState((current) => ({ ...current, status: "ready", entries, variantId: "", value: "", note: "", error: "" }));
+    } catch (error) {
+      setResultsState((current) => ({ ...current, status: "error", error: error.message }));
+    }
+  }
+
   async function runCalendar() {
     if (!campaignState.campaign || calendarState.status === "loading") return;
     setCalendarState({ status: "loading", entries: [], error: "" });
@@ -500,7 +556,28 @@ export default function App() {
                       <input id={`publication-url-${variant.variant_id}`} value={manualState.url} onChange={(event) => setManualState((current) => ({ ...current, url: event.target.value }))} placeholder="https://…" />
                       <button className="secondary" type="button" onClick={() => runManualConfirm(variant)} disabled={manualState.status === "confirming"}>{manualState.status === "confirming" ? "Recording evidence…" : "I published this — record evidence"}</button>
                     </div>}
-                    {variant.workflow === "published" && <p><strong>Published by customer attestation</strong>. BizGenie has recorded the supplied publication evidence.</p>}
+                    {variant.workflow === "published" && (<div>
+                      <p><strong>Published by customer attestation</strong>. BizGenie has recorded the supplied publication evidence.</p>
+                      <details>
+                        <summary>Record a real result</summary>
+                        <p>Only enter an outcome you actually observed. BizGenie will keep it as customer-attested evidence.</p>
+                        <label htmlFor={`metric-${variant.variant_id}`}>Result</label>
+                        <select id={`metric-${variant.variant_id}`} value={resultsState.metric} onChange={(event) => setResultsState((current) => ({ ...current, metric: event.target.value }))}>
+                          <option value="views">Views</option><option value="reach">Reach</option><option value="impressions">Impressions</option><option value="clicks">Clicks</option><option value="enquiries">Enquiries</option><option value="leads">Leads</option><option value="conversions">Conversions</option><option value="sales">Sales</option><option value="revenue">Revenue</option><option value="value">Value</option>
+                        </select>
+                        <label htmlFor={`value-${variant.variant_id}`}>Observed value</label>
+                        <input id={`value-${variant.variant_id}`} type="number" min="0" step="any" value={resultsState.value} onChange={(event) => setResultsState((current) => ({ ...current, value: event.target.value }))} />
+                        <label htmlFor={`unit-${variant.variant_id}`}>Unit</label>
+                        <select id={`unit-${variant.variant_id}`} value={resultsState.unit} onChange={(event) => setResultsState((current) => ({ ...current, unit: event.target.value }))}>
+                          <option value="count">Count</option><option value="gbp">GBP</option><option value="usd">USD</option><option value="eur">EUR</option><option value="percent">Percent</option><option value="other">Other</option>
+                        </select>
+                        <label htmlFor={`observed-${variant.variant_id}`}>Observed at</label>
+                        <input id={`observed-${variant.variant_id}`} type="datetime-local" value={resultsState.observedAt} onChange={(event) => setResultsState((current) => ({ ...current, observedAt: event.target.value }))} />
+                        <label htmlFor={`result-note-${variant.variant_id}`}>Evidence note (optional)</label>
+                        <input id={`result-note-${variant.variant_id}`} value={resultsState.note} onChange={(event) => setResultsState((current) => ({ ...current, note: event.target.value }))} placeholder="e.g. read from the published post" />
+                        <button className="secondary" type="button" onClick={() => saveResult(variant)} disabled={resultsState.status === "saving"}>{resultsState.status === "saving" && resultsState.variantId === variant.variant_id ? "Recording result…" : "Record result"}</button>
+                      </details>
+                    </div>)}
                     {variant.workflow === "review" && (
                       <div>
                         <p><strong>Ready for review</strong></p>
@@ -517,6 +594,18 @@ export default function App() {
           {generationState.status === "error" && <p className="error" role="alert">{generationState.error}</p>}
           {reviewState.status === "error" && <p className="error" role="alert">{reviewState.error}</p>}
           {manualState.status === "error" && <p className="error" role="alert">{manualState.error}</p>}
+          <div>
+            <button className="secondary" type="button" onClick={loadResults} disabled={resultsState.status === "loading"}>{resultsState.status === "loading" ? "Loading results…" : "View campaign results"}</button>
+            {["ready","saving"].includes(resultsState.status) && (
+              <div aria-label="Campaign results">
+                <h3>Campaign results</h3>
+                {resultsState.entries.length === 0 ? <p>No measured results have been recorded for this campaign yet.</p> : (
+                  <ul>{resultsState.entries.map((entry) => <li key={entry.measurement_id}><strong>{entry.metric}</strong>: {entry.value} {entry.unit} — observed {new Date(entry.observed_at).toLocaleString()} <small>Customer attestation</small></li>)}</ul>
+                )}
+              </div>
+            )}
+            {resultsState.status === "error" && <p className="error" role="alert">{resultsState.error}</p>}
+          </div>
           <div>
             <button className="secondary" type="button" onClick={runCalendar} disabled={calendarState.status === "loading"}>
               {calendarState.status === "loading" ? "Loading calendar…" : "View campaign calendar"}
