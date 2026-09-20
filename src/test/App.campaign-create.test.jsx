@@ -124,4 +124,131 @@ describe("recommendation-to-campaign creation", () => {
     expect(screen.getByRole("button", { name: /campaign created/i })).toBeDisabled();
     expect(screen.getByText(/nothing has been scheduled or published/i)).toBeInTheDocument();
   });
+
+  it("generates one eligible draft variant with scoped versioned idempotency and renders persisted review state", async () => {
+    const saved = campaign(4, 3);
+    const generated = JSON.parse(JSON.stringify(saved));
+    generated.campaign.items[0].variants[0].workflow = "review";
+    generated.campaign.items[0].variants[0].current_content = "Persisted generated copy";
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ generation_id: "gen-1", campaign: generated.campaign }) });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+
+    await screen.findByText("Persisted generated copy");
+    expect(screen.getByText(/ready for review/i)).toBeInTheDocument();
+    const [url, options] = global.fetch.mock.calls.at(-1);
+    expect(url).toContain("/customer/campaigns/22222222-2222-4222-8222-222222222222/variants/");
+    expect(options.headers.authorization).toBe("Bearer customer-token");
+    expect(JSON.parse(options.body)).toMatchObject({
+      tenant_id: "tenant-1",
+      project_id: "project-1",
+      expected_campaign_version: 4,
+      idempotency_key: "campaign:22222222-2222-4222-8222-222222222222:variant:44444444-4444-4444-8444-444444444440:version:4:generate",
+    });
+  });
+
+  it("prevents double-click generation and does not claim success on backend failure", async () => {
+    const saved = campaign(4, 3);
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: false, status: 409 });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    const generate = screen.getAllByRole("button", { name: /generate draft/i })[0];
+    fireEvent.click(generate);
+    fireEvent.click(generate);
+    await screen.findByText(/could not be generated yet/i);
+    expect(global.fetch.mock.calls.filter(([url]) => url.includes("/generate")).length).toBe(1);
+    expect(screen.queryByText(/ready for review/i)).not.toBeInTheDocument();
+  });
+
+  it("does not expose generation for a non-draft variant", async () => {
+    const saved = campaign(4, 3);
+    saved.campaign.items.forEach((item) => {
+      item.variants[0].workflow = "review";
+    });
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    expect(screen.queryByRole("button", { name: /generate draft/i })).not.toBeInTheDocument();
+    expect(global.fetch.mock.calls.filter(([url]) => url.includes("/generate")).length).toBe(0);
+  });
+
+  it("chains preview receipt, acknowledgement projection, and backend-authoritative approval", async () => {
+    const saved = campaign(4, 3);
+    const generated = JSON.parse(JSON.stringify(saved));
+    const variant = generated.campaign.items[0].variants[0];
+    variant.workflow = "review";
+    variant.current_revision_id = "revision-1";
+    variant.current_content = "Server persisted review copy";
+    const acknowledged = JSON.parse(JSON.stringify(generated));
+    acknowledged.campaign.version = 5;
+    acknowledged.campaign.items[0].variants[0].workflow = "review";
+    const approved = JSON.parse(JSON.stringify(acknowledged));
+    approved.campaign.version = 6;
+    approved.campaign.items[0].variants[0].workflow = "approved";
+
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: generated.campaign }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: { render_receipt_id: "receipt-1", revision_id: "revision-1" } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: approved.campaign }) });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await screen.findByText("Server persisted review copy");
+    fireEvent.click(screen.getByRole("button", { name: /render preview/i }));
+    await screen.findByRole("button", { name: /acknowledge preview/i });
+    const previewBody = JSON.parse(global.fetch.mock.calls[6][1].body);
+    expect(previewBody).toMatchObject({ tenant_id: "tenant-1", project_id: "project-1", revision_id: "revision-1" });
+    fireEvent.click(screen.getByRole("button", { name: /acknowledge preview/i }));
+    await screen.findByRole("button", { name: /^approve$/i });
+    const ackBody = JSON.parse(global.fetch.mock.calls[7][1].body);
+    expect(ackBody).toMatchObject({ expected_campaign_version: 4, revision_id: "revision-1", render_receipt_id: "receipt-1", acknowledged: true });
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    await screen.findByText("Approved");
+    const approvalBody = JSON.parse(global.fetch.mock.calls[8][1].body);
+    expect(approvalBody).toMatchObject({ expected_campaign_version: 5, revision_id: "revision-1", preview_id: "preview-1", approved: true });
+  });
 });
