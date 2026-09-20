@@ -473,9 +473,9 @@ export default function App() {
                     {variant.workflow === "review" && (
                       <div>
                         <p><strong>Ready for review</strong></p>
-                        <button className="secondary" type="button" onClick={() => runPreview(variant)} disabled={reviewState.status !== "idle" && reviewState.variantId === variant.variant_id}>{reviewState.status === "rendering" && reviewState.variantId === variant.variant_id ? "Rendering preview…" : "Render preview"}</button>
-                        {reviewState.status === "rendered" && reviewState.variantId === variant.variant_id && <button className="secondary" type="button" onClick={() => runAcknowledge(variant)} disabled={reviewState.status !== "rendered"}>Acknowledge preview</button>}
-                        {reviewState.status === "acknowledged" && reviewState.variantId === variant.variant_id && <button className="secondary" type="button" onClick={() => runApprove(variant)} disabled={reviewState.status !== "acknowledged"}>Approve</button>}
+                        <button className="secondary" type="button" onClick={() => runPreview(variant)} disabled={reviewState.variantId === variant.variant_id && ["rendering", "acknowledging", "approving"].includes(reviewState.status)}>{reviewState.status === "rendering" && reviewState.variantId === variant.variant_id ? "Rendering preview…" : "Render preview"}</button>
+                        {reviewState.status === "rendered" && reviewState.variantId === variant.variant_id && <button className="secondary" type="button" onClick={() => runAcknowledge(variant)}>Acknowledge preview</button>}
+                        {reviewState.status === "acknowledged" && reviewState.variantId === variant.variant_id && <button className="secondary" type="button" onClick={() => runApprove(variant)}>Approve</button>}
                       </div>
                     )}
                   </div>
