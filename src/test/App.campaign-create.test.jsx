@@ -234,6 +234,34 @@ describe("recommendation-to-campaign creation", () => {
     expect(options.headers.authorization).toBe("Bearer customer-token");
   });
 
+  it("shows only backend-authoritative measured results with truthful provenance", async () => {
+    const saved = campaign(4, 3);
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ measurements: [{ measurement_id: "measurement-1", campaign_id: saved.campaign.campaign_id, variant_id: saved.campaign.items[0].variants[0].variant_id, metric: "views", value: 1250, unit: "count", observed_at: "2026-09-20T14:00:00.000Z", evidence_kind: "customer_attestation" }] }) });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getByRole("button", { name: /view campaign results/i }));
+
+    expect(await screen.findByLabelText(/campaign results/i)).toBeInTheDocument();
+    expect(screen.getByText(/1250 count/)).toBeInTheDocument();
+    expect(screen.getByText(/customer attestation/i)).toBeInTheDocument();
+    const [url, options] = global.fetch.mock.calls.at(-1);
+    expect(url).toContain("/customer/campaigns/22222222-2222-4222-8222-222222222222/measurements?");
+    expect(url).toContain("tenant_id=tenant-1");
+    expect(url).toContain("project_id=project-1");
+    expect(options.headers.authorization).toBe("Bearer customer-token");
+  });
+
   it("chains preview receipt, acknowledgement projection, and backend-authoritative approval", async () => {
     const saved = campaign(4, 3);
     const generated = JSON.parse(JSON.stringify(saved));
