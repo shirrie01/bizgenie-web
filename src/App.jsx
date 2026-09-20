@@ -188,11 +188,10 @@ async function approveCampaignVariant({ accessToken, session, campaign, variant,
 
 async function beginManualPublication({ accessToken, session, campaign, variant }) {
   const revisionId = currentRevisionFor(variant);
-  const approvalId = variant.active_approval_id;
-  if (!revisionId || !approvalId || variant.workflow !== "approved") throw new Error("Only approved content can be prepared for manual publication.");
+  if (!revisionId || variant.workflow !== "approved") throw new Error("Only approved content can be prepared for manual publication.");
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/manual-publication`, {
     method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
-    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, approval_id: approvalId, idempotency_key: operationKey(campaign, variant, "manual-publication") }),
+    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, idempotency_key: operationKey(campaign, variant, "manual-publication") }),
   });
   if (!response.ok) throw new Error("Manual publication could not be prepared yet. Your approval is still safe.");
   const result = await response.json();
