@@ -156,7 +156,35 @@ describe("recommendation-to-campaign creation", () => {
       project_id: "project-1",
       expected_campaign_version: 4,
       idempotency_key: "campaign:22222222-2222-4222-8222-222222222222:variant:44444444-4444-4444-8444-444444444440:version:4:generate",
+      execution_mode: "ai",
     });
+  });
+
+  it("sends a bounded temporary execution brief without changing Brand Brain scope", async () => {
+    const saved = campaign(4, 3);
+    const generated = JSON.parse(JSON.stringify(saved));
+    generated.campaign.items[0].variants[0].workflow = "review";
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ generation_id: "gen-brief", campaign: generated.campaign }) });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.change(screen.getByLabelText(/execution brief/i), { target: { value: "Open with a founder-led explanation." } });
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await waitFor(() => expect(global.fetch.mock.calls.filter(([url]) => url.includes("/generate")).length).toBe(1));
+    const body = JSON.parse(global.fetch.mock.calls.at(-1)[1].body);
+    expect(body).toMatchObject({ execution_mode: "ai", execution_brief: "Open with a founder-led explanation." });
+    expect(body.brand_id).toBeUndefined();
+    expect(screen.getByRole("option", { name: /Hybrid/i })).toBeDisabled();
   });
 
   it("prevents double-click generation and does not claim success on backend failure", async () => {
