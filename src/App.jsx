@@ -44,6 +44,25 @@ async function getCustomerWorkspace(accessToken) {
   return response.json();
 }
 
+async function getSelectedBrandBrain(accessToken) {
+  const response = await fetch(`${API_BASE_URL}/customer/workspace/brand-brain`, {
+    headers: authorizationHeader(accessToken),
+  });
+  if (!response.ok) throw new Error("Brand Brain could not be loaded yet.");
+  return response.json();
+}
+
+async function correctSelectedBrandBrain({ accessToken, brandBrain }) {
+  const { brand_id: _brandId, project_id: _projectId, metadata: _metadata, ...editable } = brandBrain;
+  const response = await fetch(`${API_BASE_URL}/customer/workspace/brand-brain`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
+    body: JSON.stringify(editable),
+  });
+  if (!response.ok) throw new Error("Brand Brain changes could not be saved yet.");
+  return response.json();
+}
+
 async function bootstrapCustomerWorkspace({ accessToken, goal }) {
   const response = await fetch(`${API_BASE_URL}/customer/workspace/bootstrap`, {
     method: "POST",
@@ -264,6 +283,7 @@ export default function App() {
   const [resultsState, setResultsState] = useState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
   const [session, setSession] = useState({ status: "loading" });
   const [pendingSubmit, setPendingSubmit] = useState(false);
+  const [brandBrainState, setBrandBrainState] = useState({ status: "idle", brain: null, draft: "", error: "" });
 
   useEffect(() => {
     let cancelled = false;
@@ -288,6 +308,35 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSubmit, session]);
+
+  useEffect(() => {
+    if (session.status !== "ready") {
+      setBrandBrainState({ status: "idle", brain: null, draft: "", error: "" });
+      return;
+    }
+    let cancelled = false;
+    setBrandBrainState((current) => ({ ...current, status: "loading", error: "" }));
+    getSelectedBrandBrain(session.accessToken)
+      .then((result) => {
+        if (!cancelled) setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "" });
+      })
+      .catch((error) => {
+        if (!cancelled) setBrandBrainState({ status: "error", brain: null, draft: "", error: error.message });
+      });
+    return () => { cancelled = true; };
+  }, [session.status, session.accessToken, session.brandId]);
+
+  async function saveBrandBrain() {
+    if (session.status !== "ready" || brandBrainState.status === "saving") return;
+    try {
+      const parsed = JSON.parse(brandBrainState.draft);
+      setBrandBrainState((current) => ({ ...current, status: "saving", error: "" }));
+      const result = await correctSelectedBrandBrain({ accessToken: session.accessToken, brandBrain: parsed });
+      setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "" });
+    } catch (error) {
+      setBrandBrainState((current) => ({ ...current, status: "error", error: error instanceof SyntaxError ? "Brand Brain JSON is not valid yet." : error.message }));
+    }
+  }
 
   async function ensureReadySession(currentSession) {
     if (currentSession.status === "ready") return currentSession;
@@ -519,6 +568,17 @@ export default function App() {
         {state.status === "error" && <p className="error" role="alert">{state.error}</p>}
       </section>
       <Founding100Panel />
+      {session.status === "ready" && (
+        <section className="recommendation" aria-label="Brand Brain">
+          <div className="recommendation-header"><div><p className="eyebrow">Selected brand intelligence</p><h2>Brand Brain</h2></div><span className="pill">{brandBrainState.brain?.metadata?.status || "Loading"}</span></div>
+          <p>Review the approved intelligence BizGenie will use. Changes stay bound to your currently selected brand.</p>
+          {brandBrainState.status === "loading" && <p>Loading Brand Brain…</p>}
+          {brandBrainState.draft && <textarea aria-label="Brand Brain JSON" value={brandBrainState.draft} onChange={(event) => setBrandBrainState((current) => ({ ...current, draft: event.target.value, error: "" }))} rows={14} />}
+          {brandBrainState.draft && <button className="secondary" type="button" onClick={saveBrandBrain} disabled={brandBrainState.status === "saving"}>{brandBrainState.status === "saving" ? "Saving…" : "Save Brand Brain changes"}</button>}
+          {brandBrainState.status === "error" && <p className="error" role="alert">{brandBrainState.error}</p>}
+        </section>
+      )}
+
       {state.recommendation && (
         <section className="recommendation" aria-live="polite">
           <div className="recommendation-header"><div><p className="eyebrow">Your starting point</p><h2>{state.recommendation.campaign_name}</h2></div><span className="pill">Review first</span></div>
