@@ -309,22 +309,16 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSubmit, session]);
 
-  useEffect(() => {
-    if (session.status !== "ready") {
-      setBrandBrainState({ status: "idle", brain: null, draft: "", error: "" });
-      return;
-    }
-    let cancelled = false;
+  async function loadBrandBrain() {
+    if (session.status !== "ready" || brandBrainState.status === "loading") return;
     setBrandBrainState((current) => ({ ...current, status: "loading", error: "" }));
-    getSelectedBrandBrain(session.accessToken)
-      .then((result) => {
-        if (!cancelled) setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "" });
-      })
-      .catch((error) => {
-        if (!cancelled) setBrandBrainState({ status: "error", brain: null, draft: "", error: error.message });
-      });
-    return () => { cancelled = true; };
-  }, [session.status, session.accessToken, session.brandId]);
+    try {
+      const result = await getSelectedBrandBrain(session.accessToken);
+      setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "" });
+    } catch (error) {
+      setBrandBrainState({ status: "error", brain: null, draft: "", error: error.message });
+    }
+  }
 
   async function saveBrandBrain() {
     if (session.status !== "ready" || brandBrainState.status === "saving") return;
@@ -572,7 +566,7 @@ export default function App() {
         <section className="recommendation" aria-label="Brand Brain">
           <div className="recommendation-header"><div><p className="eyebrow">Selected brand intelligence</p><h2>Brand Brain</h2></div><span className="pill">{brandBrainState.brain?.metadata?.status || "Loading"}</span></div>
           <p>Review the approved intelligence BizGenie will use. Changes stay bound to your currently selected brand.</p>
-          {brandBrainState.status === "loading" && <p>Loading Brand Brain…</p>}
+          <button className="secondary" type="button" onClick={loadBrandBrain} disabled={brandBrainState.status === "loading"}>{brandBrainState.status === "loading" ? "Loading Brand Brain…" : brandBrainState.draft ? "Reload Brand Brain" : "Review Brand Brain"}</button>
           {brandBrainState.draft && <textarea aria-label="Brand Brain JSON" value={brandBrainState.draft} onChange={(event) => setBrandBrainState((current) => ({ ...current, draft: event.target.value, error: "" }))} rows={14} />}
           {brandBrainState.draft && <button className="secondary" type="button" onClick={saveBrandBrain} disabled={brandBrainState.status === "saving"}>{brandBrainState.status === "saving" ? "Saving…" : "Save Brand Brain changes"}</button>}
           {brandBrainState.status === "error" && <p className="error" role="alert">{brandBrainState.error}</p>}
