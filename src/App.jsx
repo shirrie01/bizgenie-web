@@ -108,7 +108,7 @@ async function createCampaignFromRecommendation({ accessToken, session, recommen
   return created.campaign;
 }
 
-async function generateCampaignVariant({ accessToken, session, campaign, variant }) {
+async function generateCampaignVariant({ accessToken, session, campaign, variant, executionMode = "ai", executionBrief = "" }) {
   if (session.status !== "ready" || !campaign?.campaign_id || !variant?.variant_id || variant.workflow !== "draft") {
     throw new Error("This draft is not ready to generate yet.");
   }
@@ -122,6 +122,8 @@ async function generateCampaignVariant({ accessToken, session, campaign, variant
       project_id: session.projectId,
       expected_campaign_version: campaignVersion,
       idempotency_key: `campaign:${campaign.campaign_id}:variant:${variant.variant_id}:version:${campaignVersion}:generate`,
+      execution_mode: executionMode,
+      ...(executionBrief.trim() ? { execution_brief: executionBrief.trim() } : {}),
     }),
   });
   if (!response.ok) throw new Error("Content could not be generated yet. Your draft is still safe to retry.");
@@ -254,6 +256,8 @@ export default function App() {
   const [state, setState] = useState({ status: "idle", recommendation: null, error: "" });
   const [campaignState, setCampaignState] = useState({ status: "idle", campaign: null, error: "" });
   const [generationState, setGenerationState] = useState({ status: "idle", error: "" });
+  const [executionMode, setExecutionMode] = useState("ai");
+  const [executionBrief, setExecutionBrief] = useState("");
   const [reviewState, setReviewState] = useState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "" });
   const [manualState, setManualState] = useState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
   const [calendarState, setCalendarState] = useState({ status: "idle", entries: [], error: "" });
@@ -355,7 +359,7 @@ export default function App() {
     if (generationState.status === "loading" || !campaignState.campaign || variant.workflow !== "draft") return;
     setGenerationState({ status: "loading", error: "" });
     try {
-      const campaign = await generateCampaignVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant });
+      const campaign = await generateCampaignVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, executionMode, executionBrief });
       setCampaignState({ status: "ready", campaign, error: "" });
       setGenerationState({ status: "ready", error: "" });
     } catch (error) {
@@ -530,6 +534,18 @@ export default function App() {
         <section className="recommendation" aria-live="polite">
           <div className="recommendation-header"><div><p className="eyebrow">Saved to your workspace</p><h2>{campaignState.campaign.name}</h2></div><span className="pill">Draft</span></div>
           <p>Your campaign and recommended starting items are now saved. Nothing has been scheduled or published.</p>
+          <div className="item" aria-label="Generation setup">
+            <span>Creative direction</span>
+            <h3>How should BizGenie build this?</h3>
+            <label htmlFor="execution-mode">Execution mode</label>
+            <select id="execution-mode" value={executionMode} onChange={(event) => setExecutionMode(event.target.value)}>
+              <option value="ai">AI — create from Brand Brain and your brief</option>
+              <option value="hybrid" disabled>Hybrid — use your media + AI (add-media picker coming next)</option>
+            </select>
+            <label htmlFor="execution-brief">Execution brief (optional)</label>
+            <textarea id="execution-brief" maxLength={4000} value={executionBrief} onChange={(event) => setExecutionBrief(event.target.value)} placeholder="Temporary direction for this execution, e.g. focus on the founder story and keep the opening conversational." />
+            <small>This brief applies only to this generation. It does not change your approved Brand Brain.</small>
+          </div>
           <div className="item-grid">
             {campaignState.campaign.items.map((item) => (
               <article className="item" key={item.content_item_id}>
