@@ -29,6 +29,17 @@ beforeEach(() => {
 });
 
 describe("goal-first auth gate", () => {
+  it("exposes account sign-in before a campaign goal is submitted", async () => {
+    getCustomerSessionMock.mockResolvedValue({ status: "signed-out" });
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: /sign in/i })).toBeInTheDocument();
+    });
+    expect(screen.getByText(/sign in before you start a campaign/i)).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it("does not call the recommendation API before sign-in, and shows a sign-in prompt", async () => {
     getCustomerSessionMock.mockResolvedValue({ status: "signed-out" });
     render(<App />);

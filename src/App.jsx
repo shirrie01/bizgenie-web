@@ -541,6 +541,16 @@ export default function App() {
           <span className="status">Campaign workspace</span>
         )}
       </nav>
+      {(session.status === "signed-out" || session.status === "unconfigured") && (
+        <section className="recommendation" aria-label="Account access">
+          <div className="recommendation-header">
+            <div><p className="eyebrow">Your workspace</p><h2>Sign in to BizGenie</h2></div>
+            <span className="pill">Account</span>
+          </div>
+          <p>Sign in before you start a campaign to access your existing workspace and Brand Brain.</p>
+          <AuthPanel onAuthenticated={() => {}} />
+        </section>
+      )}
       <section className="hero">
         <p className="eyebrow">Start with the outcome</p>
         <h1>What do you want your campaign to achieve?</h1>
