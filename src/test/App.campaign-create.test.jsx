@@ -79,6 +79,37 @@ beforeEach(() => {
 });
 
 describe("recommendation-to-campaign creation", () => {
+  it("loads and saves only the selected Brand Brain without sending trusted scope IDs", async () => {
+    const brain = {
+      brand_id: "brand-1",
+      project_id: "project-1",
+      name: "Lease Expert",
+      identity: { positioning: "Founder approved" },
+      metadata: { version: 3, status: "approved", created_at: "2026-09-24T00:00:00.000Z", updated_at: "2026-09-24T00:00:00.000Z" },
+    };
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: "ready", brand_brain: brain }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: "ready", brand_brain: { ...brain, metadata: { ...brain.metadata, version: 4 } } }) });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /review brand brain/i }));
+    await screen.findByDisplayValue(/"Lease Expert"/);
+    const [readUrl, readOptions] = global.fetch.mock.calls[0];
+    expect(readUrl).toContain("/customer/workspace/brand-brain");
+    expect(readOptions.headers.authorization).toBe("Bearer customer-token");
+
+    fireEvent.click(screen.getByRole("button", { name: /save brand brain changes/i }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+    const [saveUrl, saveOptions] = global.fetch.mock.calls[1];
+    expect(saveUrl).toContain("/customer/workspace/brand-brain");
+    expect(saveOptions.method).toBe("PUT");
+    const body = JSON.parse(saveOptions.body);
+    expect(body.brand_id).toBeUndefined();
+    expect(body.project_id).toBeUndefined();
+    expect(body.metadata).toBeUndefined();
+    expect(body.name).toBe("Lease Expert");
+  });
+
   it("creates the durable campaign and recommendation items with auth, stable idempotency and version chaining", async () => {
     global.fetch
       .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
