@@ -80,7 +80,6 @@ describe("paid beta checkout surface", () => {
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toContain("/customer/billing/subscription");
     expect(options.headers.authorization).toBe("Bearer customer-token");
-    expect(screen.getByText("60", { selector: "p" })).toBeInTheDocument();
     expect(screen.getAllByText("60", { selector: "p" })).toHaveLength(2);
   });
 
