@@ -3,6 +3,7 @@ import { getCustomerSession, refreshCustomerSession } from "./session";
 import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
+import BillingPanel from "./BillingPanel";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -572,6 +573,7 @@ export default function App() {
         {state.status === "error" && <p className="error" role="alert">{state.error}</p>}
       </section>
       <Founding100Panel />
+      <BillingPanel session={session} />
       {session.status === "ready" && (
         <section className="recommendation" aria-label="Brand Brain">
           <div className="recommendation-header"><div><p className="eyebrow">Selected brand intelligence</p><h2>Brand Brain</h2></div><span className="pill">{brandBrainState.brain?.metadata?.status || "Loading"}</span></div>
