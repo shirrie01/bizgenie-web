@@ -1,0 +1,21 @@
+name: Studio isolated preview checks
+on:
+  pull_request:
+    paths:
+      - 'studio-preview/**'
+      - '.github/workflows/studio-preview-checks.yml'
+  workflow_dispatch:
+jobs:
+  preview-contract:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Preview contract checks (no paid API calls)
+        run: node --test studio-preview/preview.contract.test.cjs
+      - name: Validate preview is a standalone HTML artifact
+        run: test -s studio-preview/index.html
