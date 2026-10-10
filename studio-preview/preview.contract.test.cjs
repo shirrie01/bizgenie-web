@@ -35,6 +35,6 @@ test('responsive and reduced-motion basics exist', () => {
 });
 
 test('text insertion has HTML escaping helper', () => {
-  assert.match(html, /function escapeHTML\(/);
+  assert.match(html, /(?:const|function)\s+escapeHTML\s*=/);
   assert.match(html, /aria-live="polite"/);
 });
