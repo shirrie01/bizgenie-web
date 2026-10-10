@@ -1,0 +1,41 @@
+name: Studio browser QA
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'studio-preview/**'
+      - '.github/workflows/studio-browser-qa.yml'
+  workflow_dispatch:
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport:
+          - '1440x900'
+          - '768x1024'
+          - '390x844'
+          - '320x568'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - name: Serve isolated preview
+        run: python3 -m http.server 4178 --bind 127.0.0.1 &
+      - name: Run browser tests
+        env:
+          BG_VIEWPORT: ${{ matrix.viewport }}
+        run: npx playwright test studio-preview/browser.check.mjs --config studio-preview/playwright.config.mjs
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: studio-browser-failures-${{ matrix.viewport }}
+          path: test-results/
