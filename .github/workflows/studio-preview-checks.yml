@@ -16,6 +16,6 @@ jobs:
         with:
           node-version: '22'
       - name: Preview contract checks (no paid API calls)
-        run: node --test studio-preview/preview.contract.test.cjs
+        run: node --test studio-preview/preview.contract.check.cjs
       - name: Validate preview is a standalone HTML artifact
         run: test -s studio-preview/index.html
