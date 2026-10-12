@@ -93,7 +93,7 @@ describe("recommendation-to-campaign creation", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /review brand brain/i }));
-    await screen.findByDisplayValue(/"Lease Expert"/);
+    await screen.findByDisplayValue("Lease Expert");
     const [readUrl, readOptions] = global.fetch.mock.calls[0];
     expect(readUrl).toContain("/customer/workspace/brand-brain");
     expect(readOptions.headers.authorization).toBe("Bearer customer-token");

@@ -1,3 +1,4 @@
+import BrandBrainProfile from "./BrandBrainProfile";
 import { useEffect, useState } from "react";
 import { getCustomerSession, refreshCustomerSession } from "./session";
 import { onAuthStateChange, signOut } from "./authClient";
@@ -578,9 +579,9 @@ export default function App() {
         <section className="recommendation" aria-label="Brand Brain">
           <div className="recommendation-header"><div><p className="eyebrow">Selected brand intelligence</p><h2>Brand Brain</h2></div><span className="pill">{brandBrainState.brain?.metadata?.status || "Loading"}</span></div>
           <p>Review the approved intelligence BizGenie will use. Changes stay bound to your currently selected brand.</p>
-          <button className="secondary" type="button" onClick={loadBrandBrain} disabled={brandBrainState.status === "loading"}>{brandBrainState.status === "loading" ? "Loading Brand Brain…" : brandBrainState.draft ? "Reload Brand Brain" : "Review Brand Brain"}</button>
-          {brandBrainState.draft && <textarea aria-label="Brand Brain JSON" value={brandBrainState.draft} onChange={(event) => setBrandBrainState((current) => ({ ...current, draft: event.target.value, error: "" }))} rows={14} />}
-          {brandBrainState.draft && <button className="secondary" type="button" onClick={saveBrandBrain} disabled={brandBrainState.status === "saving"}>{brandBrainState.status === "saving" ? "Saving…" : "Save Brand Brain changes"}</button>}
+          <button className="secondary" type="button" onClick={loadBrandBrain} disabled={brandBrainState.status === "loading"}>{brandBrainState.status === "loading" ? "Loading Brand Brain…" : brandBrainState.brain ? "Reload Brand Brain" : "Review Brand Brain"}</button>
+          {brandBrainState.brain && <BrandBrainProfile brain={JSON.parse(brandBrainState.draft)} disabled={brandBrainState.status === "saving"} onChange={(next) => setBrandBrainState((current) => ({ ...current, draft: JSON.stringify(next), error: "" }))} />}
+          {brandBrainState.brain && <button className="secondary" type="button" onClick={saveBrandBrain} disabled={brandBrainState.status === "saving"}>{brandBrainState.status === "saving" ? "Saving…" : "Save Brand Brain changes"}</button>}
           {brandBrainState.status === "error" && <p className="error" role="alert">{brandBrainState.error}</p>}
         </section>
       )}
