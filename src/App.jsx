@@ -589,6 +589,7 @@ export default function App() {
       {state.recommendation && (
         <section className="recommendation" aria-live="polite">
           <div className="recommendation-header"><div><p className="eyebrow">Your starting point</p><h2>{state.recommendation.campaign_name}</h2></div><span className="pill">Review first</span></div>
+          {state.recommendation.summary && <p><strong>Recommended approach:</strong> {state.recommendation.summary}</p>}
           <p>{state.recommendation.explanation}</p>
           <div className="item-grid">{state.recommendation.suggested_items.map((item) => <article className="item" key={item.name}><span>{item.format}</span><h3>{item.name}</h3><p>{item.reason}</p><small>{item.destination_label}</small></article>)}</div>
           <button className="secondary" type="button" onClick={runCreateCampaign} disabled={campaignState.status === "loading" || campaignState.status === "ready"}>
