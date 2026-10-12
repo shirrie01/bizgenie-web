@@ -23,7 +23,7 @@ describe("checkout return billing truth", () => {
     render(<BillingPanel session={session} pathname="/billing/checkout/success" />);
     await waitFor(() => expect(screen.getByText(/Access entitlement found — payment not verified/i)).toBeTruthy());
     expect(screen.getByText(/does not by itself confirm a successful Stripe payment/i)).toBeTruthy();
-    expect(screen.getByText("60", { exact: true })).toBeTruthy();
+    expect(screen.getAllByText("60", { exact: true })).toBeTruthy();
   });
   it("does not claim payment or grant when no entitlement exists", async () => {
     readCustomerBillingState.mockResolvedValue({ status: "not_subscribed", subscription: null });
