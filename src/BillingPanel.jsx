@@ -25,6 +25,8 @@ function BillingState({ state }) {
 
   return (
     <div className="billing-status" aria-label="Authoritative billing status">
+      <strong>Access entitlement found — payment not verified.</strong>
+      <p>An active entitlement does not by itself confirm a successful Stripe payment. Payment confirmation requires separate verified subscription evidence.</p>
       <p><strong>Plan:</strong> {subscription.plan_code || "Standard"}</p>
       <p><strong>Entitlement:</strong> {subscription.entitlement_status || "Not active"}</p>
       {Number.isFinite(subscription.included_monthly_credit_grant) && (
