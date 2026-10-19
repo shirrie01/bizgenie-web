@@ -14,6 +14,56 @@ const session = { status: "ready", accessToken: "fake-test-token", tenantId: "te
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
 describe("checkout return billing truth", () => {
+
+  it("shows existing subscription and credits on the homepage without offering checkout", async () => {
+    readCustomerBillingState.mockResolvedValue({
+      status: "ready",
+      subscription: {
+        plan_code: "standard",
+        entitlement_status: "active",
+        included_monthly_credit_grant: 60,
+      },
+      available_credits: 60,
+    });
+
+    render(<BillingPanel session={session} pathname="/" />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Access entitlement found/i)).toBeTruthy()
+    );
+
+    expect(screen.getAllByText("60", { exact: true })).toHaveLength(2);
+    expect(screen.queryByText("Continue to secure checkout")).toBeNull();
+  });
+
+  it("blocks checkout when billing lookup fails", async () => {
+    readCustomerBillingState.mockRejectedValue(
+      new Error("Billing temporarily unavailable")
+    );
+
+    render(<BillingPanel session={session} pathname="/" />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Billing temporarily unavailable/)).toBeTruthy()
+    );
+
+    expect(screen.queryByText("Continue to secure checkout")).toBeNull();
+  });
+
+  it("offers checkout when billing confirms no subscription", async () => {
+    readCustomerBillingState.mockResolvedValue({
+      status: "not_subscribed",
+      subscription: null,
+    });
+
+    render(<BillingPanel session={session} pathname="/" />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Continue to secure checkout")).toBeTruthy()
+    );
+  });
+
+
   it("does not claim a payment succeeded when an existing entitlement is unlinked", async () => {
     readCustomerBillingState.mockResolvedValue({
       status: "ready",

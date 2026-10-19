@@ -22,6 +22,11 @@ describe("paid beta checkout surface", () => {
   });
 
   it("starts only the Standard checkout using authenticated session scope and no browser Price authority", async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "not_subscribed", subscription: null }),
+    });
     global.fetch.mockResolvedValue({
       ok: true,
       status: 201,
@@ -30,10 +35,11 @@ describe("paid beta checkout surface", () => {
     const redirect = vi.fn();
 
     render(<BillingPanel session={readySession} pathname="/" onCheckoutRedirect={redirect} />);
-    fireEvent.click(screen.getByRole("button", { name: /secure checkout/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /secure checkout/i }));
 
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
-    const [url, options] = global.fetch.mock.calls[0];
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+    expect(global.fetch.mock.calls[0][0]).toContain("/customer/billing/subscription");
+    const [url, options] = global.fetch.mock.calls[1];
     expect(url).toContain("/billing/stripe/checkout");
     expect(options.headers.authorization).toBe("Bearer customer-token");
     const body = JSON.parse(options.body);
@@ -49,10 +55,15 @@ describe("paid beta checkout surface", () => {
   });
 
   it("handles owner authorization denial without claiming checkout success", async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "not_subscribed", subscription: null }),
+    });
     global.fetch.mockResolvedValue({ ok: false, status: 404 });
     render(<BillingPanel session={readySession} pathname="/" onCheckoutRedirect={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /secure checkout/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /secure checkout/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/not available for this account/i);
     expect(screen.queryByText(/payment confirmed/i)).not.toBeInTheDocument();
   });
@@ -117,10 +128,15 @@ describe("paid beta checkout surface", () => {
   });
 
   it("keeps backend failure truthful and recoverable", async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "not_subscribed", subscription: null }),
+    });
     global.fetch.mockResolvedValue({ ok: false, status: 503 });
     render(<BillingPanel session={readySession} pathname="/" onCheckoutRedirect={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /secure checkout/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /secure checkout/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/could not be started/i);
     expect(screen.getByRole("button", { name: /secure checkout/i })).toBeEnabled();
   });

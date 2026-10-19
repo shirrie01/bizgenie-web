@@ -47,7 +47,10 @@ export default function BillingPanel({ session, pathname = window.location.pathn
 
   useEffect(() => {
     let active = true;
-    if (!isSuccess || session.status !== "ready") return () => { active = false; };
+    if (session.status !== "ready" || isCancel || pathname.startsWith(SUCCESS_PATH + "?")) {
+      setBilling({ status: "idle", data: null, error: "" });
+      return () => { active = false; };
+    }
 
     setBilling({ status: "loading", data: null, error: "" });
     readCustomerBillingState({ accessToken: session.accessToken })
@@ -58,10 +61,20 @@ export default function BillingPanel({ session, pathname = window.location.pathn
         if (active) setBilling({ status: "error", data: null, error: error.message });
       });
     return () => { active = false; };
-  }, [isSuccess, session.status, session.accessToken]);
+  }, [session.status, session.accessToken, isCancel, pathname]);
+
+  const activeEntitlement =
+    billing.status === "ready" &&
+    billing.data?.subscription?.entitlement_status === "active";
+
+  const checkoutBlocked =
+    billing.status !== "ready" ||
+    activeEntitlement ||
+    checkout.status === "loading" ||
+    checkout.status === "redirecting";
 
   async function beginCheckout() {
-    if (session.status !== "ready" || checkout.status === "loading") return;
+    if (session.status !== "ready" || checkoutBlocked) return;
     setCheckout({ status: "loading", error: "" });
     try {
       const result = await startStandardCheckout({
@@ -111,9 +124,21 @@ export default function BillingPanel({ session, pathname = window.location.pathn
         <span className="pill">Standard</span>
       </div>
       <p>Standard includes <strong>60 credits each month</strong>. Checkout is hosted securely by Stripe; BizGenie activates entitlement only after verified billing evidence reaches the backend.</p>
-      <button type="button" onClick={beginCheckout} disabled={checkout.status === "loading" || checkout.status === "redirecting"}>
-        {checkout.status === "loading" ? "Starting checkout…" : checkout.status === "redirecting" ? "Opening checkout…" : "Continue to secure checkout"}
-      </button>
+      {billing.status === "loading" && (
+        <p role="status">Checking your existing subscription…</p>
+      )}
+      {billing.status === "error" && (
+        <p className="error" role="alert">
+          {billing.error} Checkout is unavailable until your account can be checked.
+        </p>
+      )}
+      {activeEntitlement ? (
+        <BillingState state={billing} />
+      ) : billing.status === "ready" ? (
+        <button type="button" onClick={beginCheckout} disabled={checkoutBlocked}>
+          {checkout.status === "loading" ? "Starting checkout…" : checkout.status === "redirecting" ? "Opening checkout…" : "Continue to secure checkout"}
+        </button>
+      ) : null}
       {checkout.status === "error" && <p className="error" role="alert">{checkout.error}</p>}
       <p className="notice"><strong>Launch policy notice:</strong> customer support, cancellation and refund terms must be approved before paid activation. BizGenie does not invent or imply terms that are not yet canonical.</p>
     </section>

@@ -1,4 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+
+vi.mock("../billingClient", async (importOriginal) => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    readCustomerBillingState: vi.fn().mockResolvedValue({
+      status: "not_subscribed",
+      subscription: null,
+    }),
+  };
+});
+
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import App from "../App";
 
