@@ -15,6 +15,23 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
 describe("checkout return billing truth", () => {
 
+  it("passes the authenticated tenant to the subscription lookup", async () => {
+    readCustomerBillingState.mockResolvedValue({
+      status: "not_subscribed",
+      subscription: null,
+    });
+
+    render(<BillingPanel session={session} pathname="/" />);
+
+    await waitFor(() =>
+      expect(readCustomerBillingState).toHaveBeenCalledWith({
+        accessToken: "fake-test-token",
+        tenantId: "test-tenant",
+      })
+    );
+  });
+
+
   it("shows existing subscription and credits on the homepage without offering checkout", async () => {
     readCustomerBillingState.mockResolvedValue({
       status: "ready",

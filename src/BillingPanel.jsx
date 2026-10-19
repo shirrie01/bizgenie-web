@@ -53,7 +53,7 @@ export default function BillingPanel({ session, pathname = window.location.pathn
     }
 
     setBilling({ status: "loading", data: null, error: "" });
-    readCustomerBillingState({ accessToken: session.accessToken })
+    readCustomerBillingState({ accessToken: session.accessToken, tenantId: session.tenantId })
       .then((data) => {
         if (active) setBilling({ status: "ready", data, error: "" });
       })

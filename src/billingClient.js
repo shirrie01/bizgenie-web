@@ -48,16 +48,16 @@ export async function startStandardCheckout({ accessToken, tenantId }) {
   return { url: safeCheckoutUrl(result?.url), checkoutSessionId: result?.checkout_session_id || "" };
 }
 
-export async function readCustomerBillingState({ accessToken }) {
-  if (!accessToken) throw new Error("Sign in to check your billing status.");
+export async function readCustomerBillingState({ accessToken, tenantId }) {
+  if (!accessToken || !tenantId) throw new Error("Sign in to check your billing status.");
 
-  const response = await fetch(`${API_BASE_URL}/customer/billing/subscription`, {
+  const response = await fetch(`${API_BASE_URL}/customer/billing/subscription?tenant_id=${encodeURIComponent(tenantId)}`, {
     headers: authHeaders(accessToken),
   });
 
   if (!response.ok) {
     if (response.status === 401) throw new Error("Sign in again to check your billing status.");
-    if (response.status === 404) return { status: "not_subscribed", subscription: null };
+    if (response.status === 404) throw new Error("Billing access could not be verified. Please do not start another checkout.");
     throw new Error("Billing status could not be checked yet.");
   }
 
