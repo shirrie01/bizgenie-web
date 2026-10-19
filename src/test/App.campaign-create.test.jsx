@@ -4,6 +4,18 @@ import App from "../App";
 
 const getCustomerSessionMock = vi.fn();
 
+vi.mock("../billingClient", async (importOriginal) => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    readCustomerBillingState: vi.fn().mockResolvedValue({
+      status: "not_subscribed",
+      subscription: null,
+    }),
+  };
+});
+
+
 vi.mock("../session", () => ({
   getCustomerSession: (...args) => getCustomerSessionMock(...args),
   refreshCustomerSession: vi.fn(),
