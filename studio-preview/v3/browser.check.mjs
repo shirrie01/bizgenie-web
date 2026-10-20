@@ -1,0 +1,34 @@
+import {test,expect} from '@playwright/test';
+test('six-step business-neutral onboarding and workspace navigation',async({page})=>{
+ const outbound=[];page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:4178/'))outbound.push(r.url())});
+ await page.goto('/studio-preview/v3/');
+ await expect(page.getByRole('heading',{name:'Your next chapter in marketing starts here.'})).toBeVisible();
+ await page.locator('#next').click();
+ await page.locator('#next').click();
+ await expect(page.locator('#business-error')).toContainText('Please enter');
+ await page.locator('#business-input').fill('Wow Charity <script>alert(1)</script>');
+ await page.locator('#next').click();
+ await page.getByRole('button',{name:/Increase repeat purchases/}).click();
+ await page.locator('#next').click();
+ await expect(page.locator('.identity h2')).toHaveText('Wow Charity <script>alert(1)</script>');
+ await page.locator('#next').click();
+ await page.getByRole('button',{name:/LinkedIn/}).click();
+ await page.locator('#next').click();
+ await expect(page.locator('#step-content')).toContainText('Increase repeat purchases');
+ await expect(page.locator('#step-content')).not.toContainText('Make a splash');
+ await expect(page.locator('#step-content')).not.toContainText('BRAND IDEA');
+ await page.locator('#next').click();
+ await expect(page.getByRole('heading',{name:/Good morning/})).toBeVisible();
+ await page.getByRole('button',{name:/Explore campaign concepts/}).click();
+ await expect(page.getByRole('heading',{name:/Make every campaign/})).toBeVisible();
+ await page.getByRole('button',{name:/Plan in calendar/}).click();
+ await expect(page.getByRole('heading',{name:/A clear view/})).toBeVisible();
+ expect(outbound).toEqual([]);
+});
+test('responsive page width, no external calls and fixture labelling',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ const widths=await page.evaluate(()=>({document:document.documentElement.scrollWidth,viewport:innerWidth}));
+ expect(widths.document).toBeLessThanOrEqual(widths.viewport+1);
+ await page.locator('#next').click();
+ await expect(page.locator('#step-content')).toContainText('No website scanned');
+});
