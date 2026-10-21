@@ -55,3 +55,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .brand-profile-fields textarea { min-height: 112px; line-height: 1.5; }
 .brand-profile-fields .notice { margin: 0 0 8px; font-size: .9rem; line-height: 1.5; }
 .brand-profile > .notice { font-size: .9rem; line-height: 1.5; margin: 18px 0 0; }
+
+/* Creative review: three-step preview, acknowledge, approve flow. */
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.review-panel { margin-top: 12px; }
+.review-steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
+.review-steps li { border: 1px solid #d9dbd3; border-radius: 8px; padding: 10px 12px; background: #fff; color: #4b564f; }
+.review-steps li.current { border-color: #1857c4; box-shadow: inset 4px 0 0 #1857c4; color: #16211d; }
+.review-steps li.done { border-color: #185b3a; color: #185b3a; }
+.review-step-label { display: block; font-weight: 600; text-transform: none; letter-spacing: 0; font-size: .9rem; color: inherit; overflow-wrap: anywhere; }
+.review-steps li.done .review-step-label::before { content: "\2713  "; }
+.review-steps small { display: block; margin-top: 2px; text-transform: none; letter-spacing: 0; font-size: .8rem; }
+.review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.review-actions button { min-height: 44px; }
+.review-panel .error { color: #a32d22; font-weight: 600; }

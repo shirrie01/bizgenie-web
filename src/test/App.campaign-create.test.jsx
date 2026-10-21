@@ -379,4 +379,46 @@ describe("recommendation-to-campaign creation", () => {
     const approvalBody = JSON.parse(global.fetch.mock.calls[8][1].body);
     expect(approvalBody).toMatchObject({ expected_campaign_version: 5, revision_id: "revision-1", preview_id: "preview-1", approved: true });
   });
+  it("retries a failed acknowledgement without re-rendering and recovers from a failed preview", async () => {
+    const saved = campaign(4, 3);
+    const generated = JSON.parse(JSON.stringify(saved));
+    const variant = generated.campaign.items[0].variants[0];
+    variant.workflow = "review";
+    variant.current_revision_id = "revision-1";
+    variant.current_content = "Server persisted review copy";
+    const acknowledged = JSON.parse(JSON.stringify(generated));
+    acknowledged.campaign.version = 5;
+
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: generated.campaign }) })
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: { render_receipt_id: "receipt-1", revision_id: "revision-1" } }) })
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await screen.findByText("Server persisted review copy");
+
+    fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/preview could not be rendered/i);
+    fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be acknowledged/i);
+    fireEvent.click(screen.getByRole("button", { name: /^acknowledge preview$/i }));
+    await screen.findByRole("button", { name: /^approve$/i });
+    expect(global.fetch.mock.calls.filter(([url]) => url.includes("/preview-renders")).length).toBe(2);
+    expect(global.fetch.mock.calls.filter(([url]) => url.includes("/preview-acknowledgements")).length).toBe(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

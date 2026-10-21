@@ -5,6 +5,7 @@ import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
+import CreativeReviewPanel from "./CreativeReviewPanel";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -413,7 +414,7 @@ export default function App() {
   }
 
   async function runPreview(variant) {
-    if (reviewState.status !== "idle" || !campaignState.campaign || variant.workflow !== "review") return;
+    if (["rendering", "acknowledging", "approving"].includes(reviewState.status) || !campaignState.campaign || variant.workflow !== "review") return;
     setReviewState({ status: "rendering", variantId: variant.variant_id, receipt: null, previewId: "", error: "" });
     try {
       const receipt = await renderCampaignPreview({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant });
@@ -422,7 +423,8 @@ export default function App() {
   }
 
   async function runAcknowledge(variant) {
-    if (reviewState.status !== "rendered" || reviewState.variantId !== variant.variant_id) return;
+    const retryable = reviewState.status === "error" && reviewState.receipt && !reviewState.previewId;
+    if ((reviewState.status !== "rendered" && !retryable) || reviewState.variantId !== variant.variant_id) return;
     setReviewState((current) => ({ ...current, status: "acknowledging", error: "" }));
     try {
       const acknowledged = await acknowledgeCampaignPreview({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, receipt: reviewState.receipt });
@@ -435,7 +437,8 @@ export default function App() {
   }
 
   async function runApprove(variant) {
-    if (reviewState.status !== "acknowledged" || reviewState.variantId !== variant.variant_id) return;
+    const retryable = reviewState.status === "error" && reviewState.previewId;
+    if ((reviewState.status !== "acknowledged" && !retryable) || reviewState.variantId !== variant.variant_id) return;
     setReviewState((current) => ({ ...current, status: "approving", error: "" }));
     try {
       const campaign = await approveCampaignVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, previewId: reviewState.previewId });
@@ -663,12 +666,7 @@ export default function App() {
                       </details>
                     </div>)}
                     {variant.workflow === "review" && (
-                      <div>
-                        <p><strong>Ready for review</strong></p>
-                        <button className="secondary" type="button" onClick={() => runPreview(variant)} disabled={reviewState.variantId === variant.variant_id && ["rendering", "acknowledging", "approving"].includes(reviewState.status)}>{reviewState.status === "rendering" && reviewState.variantId === variant.variant_id ? "Rendering preview…" : "Render preview"}</button>
-                        {reviewState.status === "rendered" && reviewState.variantId === variant.variant_id && <button className="secondary" type="button" onClick={() => runAcknowledge(variant)}>Acknowledge preview</button>}
-                        {reviewState.status === "acknowledged" && reviewState.variantId === variant.variant_id && <button className="secondary" type="button" onClick={() => runApprove(variant)}>Approve</button>}
-                      </div>
+                      <CreativeReviewPanel variant={variant} state={reviewState} onRender={runPreview} onAcknowledge={runAcknowledge} onApprove={runApprove} />
                     )}
                   </div>
                 ))}
@@ -676,7 +674,6 @@ export default function App() {
             ))}
           </div>
           {generationState.status === "error" && <p className="error" role="alert">{generationState.error}</p>}
-          {reviewState.status === "error" && <p className="error" role="alert">{reviewState.error}</p>}
           {manualState.status === "error" && <p className="error" role="alert">{manualState.error}</p>}
           <div>
             <button className="secondary" type="button" onClick={loadResults} disabled={resultsState.status === "loading"}>{resultsState.status === "loading" ? "Loading results…" : "View campaign results"}</button>
