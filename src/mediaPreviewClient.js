@@ -57,7 +57,7 @@ async function withSlot(signal, run) {
 
 const baseMime = (value) => String(value || "").split(";")[0].trim().toLowerCase();
 
-export async function fetchMediaPreview({ apiBaseUrl, session, campaign, variant, media, signal }) {
+export async function fetchMediaPreview({ apiBaseUrl, session, campaign, variant, media, signal, headOnly = false }) {
   const kind = media?.kind;
   if (kind !== "image" && kind !== "video") throw new MediaPreviewError("unsupported", kind);
   if (!campaign?.campaign_id || !variant?.variant_id || !currentRevisionId(variant) || !Number.isInteger(campaign.version) || !media.id) throw new MediaPreviewError("failed", kind);
@@ -107,6 +107,9 @@ export async function fetchMediaPreview({ apiBaseUrl, session, campaign, variant
 
     // HEAD authorises and stats only; it lets us refuse oversize or wrong-type media before any bytes move.
     const head = check(await call("HEAD"));
+    // Revalidation only: the server has re-authorised this exact scope, version, revision and asset and
+    // reported the same type and size. No bytes move.
+    if (headOnly) return { mime: head.mime, bytes: head.length };
     let parts;
     if (kind === "image" || head.length <= MAX_VIDEO_BYTES) {
       const response = await call("GET");

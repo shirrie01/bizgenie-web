@@ -113,7 +113,7 @@ describe("useCreativePreview", () => {
     expect(result.current.preview.copy.body).toBe("Newer copy");
   });
 
-  it("never shows content from a previous key while the next one loads, and can retry after a failure", async () => {
+  it("keeps the same revision's copy on screen across a version-only change, drops it when the server refuses, and retries", async () => {
     global.fetch
       .mockResolvedValueOnce(res(200, { preview: preview() }))
       .mockResolvedValueOnce(res(503))
@@ -121,12 +121,23 @@ describe("useCreativePreview", () => {
     const { result, rerender } = renderHook((props) => useCreativePreview({ apiBaseUrl: API, session, ...props }), { initialProps: { campaign: campaign(3), variant: variant() } });
     await waitFor(() => expect(result.current.status).toBe("ready"));
     rerender({ campaign: campaign(4), variant: variant() });
-    expect(result.current.preview).toBeNull();
+    expect(result.current.status).toBe("ready"); // same revision: no flicker while it revalidates
+    expect(result.current.preview.copy.body).toBe("Saved copy");
     await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.preview).toBeNull(); // refused: nothing old is shown
     expect(result.current.code).toBe("unavailable");
     act(() => result.current.retry());
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("never shows another revision's content while a new revision loads", async () => {
+    global.fetch.mockResolvedValueOnce(res(200, { preview: preview() })).mockReturnValueOnce(new Promise(() => {}));
+    const { result, rerender } = renderHook((props) => useCreativePreview({ apiBaseUrl: API, session, ...props }), { initialProps: { campaign: campaign(3), variant: variant("rev-1") } });
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    rerender({ campaign: campaign(3), variant: variant("rev-2") });
+    expect(result.current.status).toBe("loading");
+    expect(result.current.preview).toBeNull();
   });
 
   it("does not fetch when disabled", () => {
