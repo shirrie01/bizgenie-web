@@ -1,4 +1,5 @@
 import React from "react";
+import { hasCreativeText } from "./CreativePreviewCard";
 
 export const REVIEW_STEPS = [
   { key: "render", label: "Render preview", hint: "See what you are about to approve." },
@@ -46,7 +47,7 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
   const active = mine ? state : { status: "idle", receipt: null, previewId: "", error: "", stale: false };
   const busy = BUSY.includes(state.status);
   const step = currentReviewStep(active);
-  const hasContent = Boolean(variant.current_content);
+  const hasContent = hasCreativeText(variant.current_content);
   const failed = active.status === "error";
   const stale = failed && Boolean(active.stale) && typeof onReload === "function";
   const facts = receiptFacts(active.receipt);
@@ -84,7 +85,7 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
           {facts.map(([label, value]) => (<div key={label}><dt>{label}</dt><dd>{value}</dd></div>))}
         </dl>
       )}
-      {facts.length > 0 && <p className="notice">BizGenie confirmed a preview was rendered for this exact version of the content. A visual preview is not available yet.</p>}
+      {facts.length > 0 && <p className="notice">BizGenie confirmed a preview was rendered for this exact version of the content. The content shown is the version you are approving.</p>}
       <div className="review-actions">
         {stale ? (
           <button className="secondary" type="button" onClick={() => onReload()} disabled={busy}>Reload latest campaign</button>

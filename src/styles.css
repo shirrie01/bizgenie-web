@@ -73,3 +73,26 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .review-receipt div { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .review-receipt dt { font-size: .8rem; color: #4b564f; font-weight: 600; }
 .review-receipt dd { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
+
+/* Creative preview: the persisted copy and asset references the customer is about to approve. */
+.item-review { grid-column: 1 / -1; }
+.review-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 12px; }
+@media (min-width: 900px) { .review-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.review-layout .review-panel { margin-top: 0; }
+.creative-card { margin: 0; border: 1px solid #d9dbd3; border-radius: 16px; background: #fff; overflow: hidden; box-shadow: 0 6px 20px rgba(22, 33, 29, .06); }
+.creative-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 12px 16px; background: #eef2ee; border-bottom: 1px solid #d9dbd3; font-size: .8rem; }
+.creative-platform { font-weight: 700; color: #16211d; }
+.creative-placement, .creative-destination { color: #4b564f; text-transform: capitalize; }
+.creative-placement::before, .creative-destination::before { content: "\00b7\00a0"; }
+.creative-copy { padding: 16px; display: grid; gap: 10px; }
+.creative-title { margin: 0; font-family: Fraunces, serif; font-size: 1.25rem; line-height: 1.25; }
+.creative-body, .creative-caption, .creative-subject { margin: 0; color: #16211d; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.creative-caption, .creative-alt { color: #4b564f; font-size: .9rem; }
+.creative-subject { font-weight: 600; padding-bottom: 8px; border-bottom: 1px solid #e6e8e1; }
+.creative-card span:not(.creative-platform):not(.creative-placement):not(.creative-destination) { display: block; margin-bottom: 2px; font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #4b564f; }
+.creative-subject span { display: inline; margin-right: 6px; }
+.creative-assets { padding: 0 16px 12px; display: grid; gap: 8px; }
+.creative-asset { border: 1px dashed #8a948d; border-radius: 12px; padding: 14px; background: #f7f8f5; display: grid; gap: 2px; }
+.creative-asset small { color: #4b564f; text-transform: none; letter-spacing: 0; font-size: .82rem; }
+.creative-alt { margin: 0; padding: 0 16px 16px; }
+.creative-noasset, .creative-card > .notice { padding: 0 16px 14px; margin: 0; }

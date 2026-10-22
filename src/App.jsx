@@ -6,6 +6,7 @@ import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
 import CreativeReviewPanel from "./CreativeReviewPanel";
+import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -653,12 +654,13 @@ export default function App() {
           </div>
           <div className="item-grid">
             {campaignState.campaign.items.map((item) => (
-              <article className="item" key={item.content_item_id}>
+              <article className={item.variants.some((v) => v.workflow === "review") ? "item item-review" : "item"} key={item.content_item_id}>
                 <span>{item.format}</span>
                 <h3>{item.name}</h3>
                 {item.variants.map((variant) => (
                   <div key={variant.variant_id}>
-                    <p>{variant.current_content || (variant.workflow === "draft" ? "Draft ready to generate." : variant.workflow)}</p>
+                    {!["review", "approved"].includes(variant.workflow) && <p>{creativeAsText(variant.current_content) || (variant.workflow === "draft" ? "Draft ready to generate." : variant.workflow)}</p>}
+                    {variant.workflow === "approved" && <CreativePreviewCard variant={variant} />}
                     <small>{variant.destination_label}</small>
                     {variant.workflow === "draft" && (
                       <button className="secondary" type="button" onClick={() => runGenerateVariant(variant)} disabled={generationState.status === "loading"}>
@@ -672,7 +674,7 @@ export default function App() {
                     </div>}
                     {manualState.variantId === variant.variant_id && ["prepared", "confirming"].includes(manualState.status) && <div>
                       <p>Approved content is ready to copy and publish to <strong>{variant.destination_label}</strong>.</p>
-                      <textarea aria-label="Approved content" readOnly value={variant.current_content || ""} />
+                      <textarea aria-label="Approved content" readOnly value={creativeAsText(variant.current_content)} />
                       <label htmlFor={`publication-url-${variant.variant_id}`}>Public URL after publishing</label>
                       <input id={`publication-url-${variant.variant_id}`} value={manualState.url} onChange={(event) => setManualState((current) => ({ ...current, url: event.target.value }))} placeholder="https://…" />
                       <button className="secondary" type="button" onClick={() => runManualConfirm(variant)} disabled={manualState.status === "confirming"}>{manualState.status === "confirming" ? "Recording evidence…" : "I published this — record evidence"}</button>
@@ -700,7 +702,10 @@ export default function App() {
                       </details>
                     </div>)}
                     {variant.workflow === "review" && (
-                      <CreativeReviewPanel variant={variant} state={reviewState} onRender={runPreview} onAcknowledge={runAcknowledge} onApprove={runApprove} onReload={runReloadCampaign} />
+                      <div className="review-layout">
+                        <CreativePreviewCard variant={variant} />
+                        <CreativeReviewPanel variant={variant} state={reviewState} onRender={runPreview} onAcknowledge={runAcknowledge} onApprove={runApprove} onReload={runReloadCampaign} />
+                      </div>
                     )}
                   </div>
                 ))}
