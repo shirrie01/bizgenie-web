@@ -378,5 +378,10 @@ describe("recommendation-to-campaign creation", () => {
     await screen.findByText("Approved");
     const approvalBody = JSON.parse(global.fetch.mock.calls[8][1].body);
     expect(approvalBody).toMatchObject({ expected_campaign_version: 5, revision_id: "revision-1", preview_id: "preview-1", approved: true });
+    // The API rejects idempotency keys longer than 128 characters or outside [A-Za-z0-9._:-]; every review write must comply.
+    const reviewKeys = global.fetch.mock.calls.filter(([url]) => /preview-renders|preview-acknowledgements|\/approval/.test(url)).map(([, o]) => JSON.parse(o.body).idempotency_key);
+    expect(reviewKeys).toHaveLength(3);
+    for (const key of reviewKeys) expect(key).toMatch(/^(?=.{1,128}$)[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+    expect(new Set(reviewKeys).size).toBe(3);
   });
 });
