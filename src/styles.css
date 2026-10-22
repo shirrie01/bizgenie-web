@@ -97,3 +97,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .creative-alt { margin: 0; padding: 0 16px 16px; }
 .creative-noasset, .creative-card > .notice { padding: 0 16px 14px; margin: 0; }
 .creative-foot { padding: 0; margin: 4px 0 0; font-size: .8rem; }
+.media-preview { margin: 0; display: grid; gap: 8px; }
+.media-preview img, .media-preview video { display: block; width: 100%; max-width: 100%; height: auto; max-height: 420px; object-fit: contain; border-radius: 12px; background: #eef2ee; }
+.media-preview figcaption { margin: 0; padding: 0; font-size: .8rem; }
+.media-error { padding: 12px; border: 1px dashed #a32d22; border-radius: 12px; background: #fff8f7; }
+.media-error .error { margin: 0; }

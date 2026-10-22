@@ -160,4 +160,28 @@ describe("CreativeReviewPanel", () => {
       expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled();
     });
   });
+  describe("with media delivery", () => {
+    const base = { creative: { status: "ready", code: "", error: "", preview: { copy_status: "available", copy: { body: "Saved" }, media: [{ asset_id: "a", role: "primary", media_kind: "image", status: "unavailable", reason: "PRIVATE_MEDIA_DELIVERY_UNAVAILABLE" }] }, retry: () => {} } };
+
+    it("holds review and says why while attached media is still loading", () => {
+      setup(idle, { ...base, mediaSummary: { total: 1, pending: 1, displayed: 0, notDisplayed: 0 } });
+      expect(screen.getByRole("status")).toHaveTextContent(/loading the attached media/i);
+      screen.getAllByRole("button").forEach((button) => expect(button).toBeDisabled());
+    });
+
+    it("says the reviewer has seen media only once everything attached was displayed", () => {
+      setup(idle, { ...base, mediaSummary: { total: 1, pending: 0, displayed: 1, notDisplayed: 0 } });
+      expect(screen.getByText(/you have seen the attached media as saved/i)).toBeInTheDocument();
+      expect(screen.getByText(/original file, not a platform rendering/i)).toBeInTheDocument();
+      expect(screen.queryByText(/couldn’t be displayed here/i)).toBeNull();
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled();
+    });
+
+    it("never claims media was seen when any attachment was not displayed", () => {
+      setup(idle, { ...base, mediaSummary: { total: 2, pending: 0, displayed: 1, notDisplayed: 1 } });
+      expect(screen.getByText(/couldn’t be displayed here\. acknowledging covers the text and the preview receipt only/i)).toBeInTheDocument();
+      expect(screen.queryByText(/you have seen the attached media/i)).toBeNull();
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled();
+    });
+  });
 });

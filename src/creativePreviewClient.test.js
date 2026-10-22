@@ -51,6 +51,18 @@ describe("fetchCreativePreview", () => {
     expect(refreshMock).toHaveBeenCalledTimes(2);
   });
 
+  it("treats a hung session refresh as an ended session instead of waiting forever", async () => {
+    vi.useFakeTimers();
+    try {
+      refreshMock.mockReturnValueOnce(new Promise(() => {}));
+      global.fetch.mockResolvedValueOnce(res(401));
+      const pending = fetchCreativePreview({ apiBaseUrl: API, session, campaign: campaign(), variant: variant() }).catch((e) => e);
+      await vi.advanceTimersByTimeAsync(8100);
+      expect((await pending).code).toBe("auth");
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
   it.each([[409, "stale"], [404, "missing"], [503, "unavailable"], [500, "unavailable"], [400, "failed"]])("maps HTTP %i to %s", async (status, code) => {
     global.fetch.mockResolvedValueOnce(res(status, { error: { code: "X" } }));
     const error = await fetchCreativePreview({ apiBaseUrl: API, session, campaign: campaign(), variant: variant() }).catch((e) => e);
