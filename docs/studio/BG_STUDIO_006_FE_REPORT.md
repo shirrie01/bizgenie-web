@@ -30,7 +30,21 @@ The repository's own workflows run only for PRs targeting `main`, so stacked PRs
 
 **Workflow SHA versus tested SHA.** In a `workflow_dispatch`, `github.sha` is the commit of the *rehearsal branch the workflow file lives on*, not the commit under test. The workflow now writes both to the job summary and fails if the checked-out commit differs from an `expected_sha` input. In the table, "Workflow/dispatch SHA" is the rehearsal commit that carried the workflow, "Tested SHA" is the exact commit checked out and passed as both `ref` and `expected_sha`.
 
-CI_TABLE_PLACEHOLDER
+| Run | PR | Tested SHA (checked out, and passed as `ref` and `expected_sha`) | Workflow/dispatch SHA | Conclusion |
+|---|---|---|---|---|
+| 7 | #43 | bf1f2b7123463902d51fccc709da5ef3d064f5e6 | e1af544a5c5752f692570bf7abf7700d5fd20c06 | success |
+| 8 | #42 | fb562410e2cab882ee7e5d5f21c37c9871229392 | e1af544 | success |
+| 9 | #41 | 0342b19363142b65a1669d5306fed36417510768 | e1af544 | success |
+| 10 | #39 | 759bbc557f70a194f6c6b4eb698a375fd9716d1d | e1af544 | success |
+| 11 | #44 | 26e01e46745cb9d52cb252a40212bd7c463a5611 | e1af544 | success |
+| 12 | #40 | c42bc0c21b3beb1c4ba26a9bb29cdc490a6e916d | e1af544 | success |
+| 13 | #37 | 0b1e0c8556008376004169cec1a613c127e46fee | e1af544 | success |
+| 6 | rehearsal (push) | e1af544a5c5752f692570bf7abf7700d5fd20c06 | same | success |
+| 14 | rehearsal (push) | b6fe38634daba84f58781892a4aa86fde688d1ae | same | success |
+
+Run URLs: `https://github.com/shirrie01/bizgenie-web/actions/runs/<id>` with ids 39864812322 (7), 39864815740 (8), 39864820066 (9), 39864823754 (10), 39864827398 (11), 39864831416 (12), 39864835445 (13), 39864787587 (6), 39865211884 (14).
+
+Caveats: the run-to-PR mapping follows my dispatch order, because the run list does not echo workflow inputs; each run's `expected_sha` guard would have failed it on a mismatched checkout, so every success means the checked-out commit equalled the SHA it was dispatched with. These are isolated runs of my own workflow on the rehearsal branch, not the repository's CI on those PRs, which does not trigger for stacked PRs. #39 and #41 target `main`, so their own PR checks are separate.
 
 Earlier results still stand: runs 1 to 5 all succeeded (run 2 and 3 were dispatched against #40's and #37's exact heads under the older workflow, where only the unit job printed the checked-out SHA).
 
