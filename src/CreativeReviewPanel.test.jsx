@@ -196,5 +196,41 @@ describe("CreativeReviewPanel", () => {
       setup(failedApprove, { ...base, mediaSummary: { total: 1, pending: 0, displayed: 1, notDisplayed: 0 } });
       expect(screen.queryByText(/an attached visual is not available here/i)).toBeNull();
     });
+
+    it("does not repeat the failure in a second status line, and drops the generic media note when the specific hint shows", () => {
+      const failedApprove = mine({ status: "error", receipt: {}, previewId: "p", error: "Approval could not be completed yet. Your content is still safe." });
+      setup(failedApprove, { ...base, mediaSummary: { total: 1, pending: 0, displayed: 0, notDisplayed: 1 } });
+      expect(screen.queryByText(/this step did not complete/i)).toBeNull();
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+      expect(screen.queryByText(/couldn’t be displayed here/i)).toBeNull();
+      expect(screen.getByText(/an attached visual is not available here/i)).toBeInTheDocument();
+    });
+
+    it("keeps the generic media note when the step has not failed", () => {
+      setup(idle, { ...base, mediaSummary: { total: 1, pending: 0, displayed: 0, notDisplayed: 1 } });
+      expect(screen.getByText(/couldn’t be displayed here/i)).toBeInTheDocument();
+    });
+
+    it("blocks render, acknowledge and approve when the destination profile is unavailable, with no retry", () => {
+      const unavailable = mine({ status: "error", error: "A preview isn't available for this destination and format yet.", unavailable: true });
+      const props = setup(unavailable, base);
+      expect(screen.getByRole("alert")).toHaveTextContent(/isn't available for this destination/i);
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeDisabled();
+      expect(screen.queryByRole("button", { name: /start again/i })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+      expect(props.onRender).not.toHaveBeenCalled();
+    });
+
+    it("does not talk about acknowledging media while acknowledgement is blocked by an unavailable profile", () => {
+      const unavailable = mine({ status: "error", error: "A preview isn't available for this destination and format yet.", unavailable: true });
+      setup(unavailable, { ...base, mediaSummary: { total: 1, pending: 0, displayed: 1, notDisplayed: 0 } });
+      expect(screen.queryByText(/acknowledging covers/i)).toBeNull();
+      expect(screen.queryByText(/you have seen the attached media/i)).toBeNull();
+    });
+
+    it("still allows retry for an ordinary render failure", () => {
+      setup(mine({ status: "error", error: "Preview could not be rendered yet. Your content is still safe." }), base);
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled();
+    });
   });
 });
