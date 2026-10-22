@@ -5,6 +5,7 @@ import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
+import CreativeReviewPanel from "./CreativeReviewPanel";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -153,6 +154,27 @@ async function generateCampaignVariant({ accessToken, session, campaign, variant
   return result.campaign;
 }
 
+const STALE_CODES = ["VERSION_CONFLICT", "IDEMPOTENCY_KEY_CONFLICT"];
+const STALE_MESSAGE = "This campaign changed since you opened it. Reload the latest version to continue; your content is not lost.";
+
+// A conflict means our copy of the campaign is out of date; a plain retry would send the same stale version again.
+async function reviewRequestError(response, fallback) {
+  let code = "";
+  try { code = (await response.json())?.error?.code || ""; } catch { /* non-JSON error body */ }
+  const error = new Error(STALE_CODES.includes(code) ? STALE_MESSAGE : fallback);
+  error.stale = STALE_CODES.includes(code);
+  return error;
+}
+
+async function fetchCampaign({ accessToken, session, campaignId }) {
+  const query = new URLSearchParams({ tenant_id: session.tenantId, project_id: session.projectId });
+  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaignId}?${query.toString()}`, { headers: authorizationHeader(accessToken) });
+  if (!response.ok) throw new Error("The latest campaign could not be loaded yet. Please try again.");
+  const result = await response.json();
+  if (!result?.campaign?.campaign_id) throw new Error("The latest campaign could not be confirmed yet.");
+  return result.campaign;
+}
+
 function currentRevisionFor(variant) {
   return variant?.current_revision_id || variant?.current_revision?.revision_id;
 }
@@ -189,7 +211,7 @@ async function acknowledgeCampaignPreview({ accessToken, session, campaign, vari
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, render_receipt_id: receipt.render_receipt_id, acknowledged: true, idempotency_key: operationKey(campaign, variant, "preview-acknowledgement") }),
   });
-  if (!response.ok) throw new Error("Preview could not be acknowledged yet. Please retry from the current campaign.");
+  if (!response.ok) throw await reviewRequestError(response, "Preview could not be acknowledged yet. Please try again.");
   const result = await response.json();
   if (!result?.campaign?.campaign_id) throw new Error("Preview acknowledgement could not be confirmed yet.");
   return { campaign: result.campaign, previewId: result.result?.created_ids?.preview_ids?.[0] };
@@ -203,7 +225,7 @@ async function approveCampaignVariant({ accessToken, session, campaign, variant,
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, preview_id: previewId, approved: true, idempotency_key: operationKey(campaign, variant, "approval") }),
   });
-  if (!response.ok) throw new Error("Approval could not be completed yet. Your content is still safe.");
+  if (!response.ok) throw await reviewRequestError(response, "Approval could not be completed yet. Your content is still safe.");
   const result = await response.json();
   if (!result?.campaign?.campaign_id) throw new Error("Approval could not be confirmed yet.");
   return result.campaign;
@@ -279,7 +301,7 @@ export default function App() {
   const [generationState, setGenerationState] = useState({ status: "idle", error: "" });
   const [executionMode, setExecutionMode] = useState("ai");
   const [executionBrief, setExecutionBrief] = useState("");
-  const [reviewState, setReviewState] = useState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "" });
+  const [reviewState, setReviewState] = useState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
   const [manualState, setManualState] = useState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
   const [calendarState, setCalendarState] = useState({ status: "idle", entries: [], error: "" });
   const [resultsState, setResultsState] = useState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
@@ -363,7 +385,7 @@ export default function App() {
     setState({ status: "loading", recommendation: null, error: "" });
     setCampaignState({ status: "idle", campaign: null, error: "" });
     setGenerationState({ status: "idle", error: "" });
-    setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "" });
+    setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
     setManualState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
     setCalendarState({ status: "idle", entries: [], error: "" });
     try {
@@ -412,18 +434,30 @@ export default function App() {
     }
   }
 
+  async function runReloadCampaign() {
+    if (!campaignState.campaign || ["rendering", "acknowledging", "approving", "reloading"].includes(reviewState.status)) return;
+    const variantId = reviewState.variantId;
+    setReviewState((current) => ({ ...current, status: "reloading", error: "", stale: false }));
+    try {
+      const campaign = await fetchCampaign({ accessToken: session.accessToken, session, campaignId: campaignState.campaign.campaign_id });
+      setCampaignState({ status: "ready", campaign, error: "" });
+      setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
+    } catch (error) { setReviewState((current) => ({ ...current, status: "error", variantId, error: error.message, stale: true })); }
+  }
+
   async function runPreview(variant) {
-    if (reviewState.status !== "idle" || !campaignState.campaign || variant.workflow !== "review") return;
-    setReviewState({ status: "rendering", variantId: variant.variant_id, receipt: null, previewId: "", error: "" });
+    if (["rendering", "acknowledging", "approving", "reloading"].includes(reviewState.status) || !campaignState.campaign || variant.workflow !== "review") return;
+    setReviewState({ status: "rendering", variantId: variant.variant_id, receipt: null, previewId: "", error: "", stale: false });
     try {
       const receipt = await renderCampaignPreview({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant });
       setReviewState({ status: "rendered", variantId: variant.variant_id, receipt, previewId: "", error: "" });
-    } catch (error) { setReviewState({ status: "error", variantId: variant.variant_id, receipt: null, previewId: "", error: error.message }); }
+    } catch (error) { setReviewState({ status: "error", variantId: variant.variant_id, receipt: null, previewId: "", error: error.message, stale: false }); }
   }
 
   async function runAcknowledge(variant) {
-    if (reviewState.status !== "rendered" || reviewState.variantId !== variant.variant_id) return;
-    setReviewState((current) => ({ ...current, status: "acknowledging", error: "" }));
+    const retryable = reviewState.status === "error" && reviewState.receipt && !reviewState.previewId;
+    if ((reviewState.status !== "rendered" && !retryable) || reviewState.variantId !== variant.variant_id) return;
+    setReviewState((current) => ({ ...current, status: "acknowledging", error: "", stale: false }));
     try {
       const acknowledged = await acknowledgeCampaignPreview({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, receipt: reviewState.receipt });
       const campaign = acknowledged.campaign;
@@ -431,20 +465,23 @@ export default function App() {
       if (!previewId) throw new Error("Preview acknowledgement could not be confirmed yet.");
       setCampaignState({ status: "ready", campaign, error: "" });
       setReviewState((current) => ({ ...current, status: "acknowledged", previewId, error: "" }));
-    } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message })); }
+    } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message, stale: Boolean(error.stale) })); }
   }
 
   async function runApprove(variant) {
-    if (reviewState.status !== "acknowledged" || reviewState.variantId !== variant.variant_id) return;
-    setReviewState((current) => ({ ...current, status: "approving", error: "" }));
+    const retryable = reviewState.status === "error" && reviewState.previewId;
+    if ((reviewState.status !== "acknowledged" && !retryable) || reviewState.variantId !== variant.variant_id) return;
+    setReviewState((current) => ({ ...current, status: "approving", error: "", stale: false }));
     try {
       const campaign = await approveCampaignVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, previewId: reviewState.previewId });
       setCampaignState({ status: "ready", campaign, error: "" });
       if (campaignVariant(campaign, variant.variant_id)?.workflow !== "approved") {
-        throw new Error("Approval could not be confirmed yet. The campaign did not return approved status.");
+        const unconfirmed = new Error("Approval could not be confirmed yet. Reload the latest campaign to check its status.");
+        unconfirmed.stale = true;
+        throw unconfirmed;
       }
       setReviewState((current) => ({ ...current, status: "approved", error: "" }));
-    } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message })); }
+    } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message, stale: Boolean(error.stale) })); }
   }
 
   async function runManualStart(variant) {
@@ -527,7 +564,7 @@ export default function App() {
     setState({ status: "idle", recommendation: null, error: "" });
     setCampaignState({ status: "idle", campaign: null, error: "" });
     setGenerationState({ status: "idle", error: "" });
-    setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "" });
+    setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
     setManualState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
     setCalendarState({ status: "idle", entries: [], error: "" });
     setPendingSubmit(false);
@@ -663,12 +700,7 @@ export default function App() {
                       </details>
                     </div>)}
                     {variant.workflow === "review" && (
-                      <div>
-                        <p><strong>Ready for review</strong></p>
-                        <button className="secondary" type="button" onClick={() => runPreview(variant)} disabled={reviewState.variantId === variant.variant_id && ["rendering", "acknowledging", "approving"].includes(reviewState.status)}>{reviewState.status === "rendering" && reviewState.variantId === variant.variant_id ? "Rendering preview…" : "Render preview"}</button>
-                        {reviewState.status === "rendered" && reviewState.variantId === variant.variant_id && <button className="secondary" type="button" onClick={() => runAcknowledge(variant)}>Acknowledge preview</button>}
-                        {reviewState.status === "acknowledged" && reviewState.variantId === variant.variant_id && <button className="secondary" type="button" onClick={() => runApprove(variant)}>Approve</button>}
-                      </div>
+                      <CreativeReviewPanel variant={variant} state={reviewState} onRender={runPreview} onAcknowledge={runAcknowledge} onApprove={runApprove} onReload={runReloadCampaign} />
                     )}
                   </div>
                 ))}
@@ -676,7 +708,6 @@ export default function App() {
             ))}
           </div>
           {generationState.status === "error" && <p className="error" role="alert">{generationState.error}</p>}
-          {reviewState.status === "error" && <p className="error" role="alert">{reviewState.error}</p>}
           {manualState.status === "error" && <p className="error" role="alert">{manualState.error}</p>}
           <div>
             <button className="secondary" type="button" onClick={loadResults} disabled={resultsState.status === "loading"}>{resultsState.status === "loading" ? "Loading results…" : "View campaign results"}</button>
