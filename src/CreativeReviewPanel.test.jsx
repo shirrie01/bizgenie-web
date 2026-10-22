@@ -183,5 +183,18 @@ describe("CreativeReviewPanel", () => {
       expect(screen.queryByText(/you have seen the attached media/i)).toBeNull();
       expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled();
     });
+
+    it("explains a refused approval when an attached visual is unavailable, without blaming it for other failures", () => {
+      const failedApprove = mine({ status: "error", receipt: {}, previewId: "p", error: "Approval could not be completed yet. Your content is still safe." });
+      setup(failedApprove, { ...base, mediaSummary: { total: 1, pending: 0, displayed: 0, notDisplayed: 1 } });
+      expect(screen.getByText(/an attached visual is not available here/i)).toBeInTheDocument();
+      expect(screen.getByText(/approval may not be possible until it is replaced/i)).toBeInTheDocument();
+    });
+
+    it("adds no media hint to a failure when every attachment was displayed", () => {
+      const failedApprove = mine({ status: "error", receipt: {}, previewId: "p", error: "Approval could not be completed yet. Your content is still safe." });
+      setup(failedApprove, { ...base, mediaSummary: { total: 1, pending: 0, displayed: 1, notDisplayed: 0 } });
+      expect(screen.queryByText(/an attached visual is not available here/i)).toBeNull();
+    });
   });
 });
