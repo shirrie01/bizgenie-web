@@ -8,7 +8,7 @@ body { margin: 0; min-width: 320px; }
 .wordmark { font-family: Fraunces, serif; font-size: 1.5rem; }
 .status { color: #4b564f; font-size: .85rem; }
 .hero, .recommendation { max-width: 880px; margin: 0 auto; padding: clamp(56px, 10vw, 120px) 24px 48px; }
-.eyebrow { color: #b9560f; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.eyebrow { color: #a34a0a; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
 h1, h2 { font-family: Fraunces, serif; font-weight: 600; line-height: 1.05; }
 h1 { max-width: 650px; font-size: clamp(2.7rem, 7vw, 5.8rem); margin: 16px 0; }
 h2 { font-size: clamp(2rem, 5vw, 3.5rem); margin: 8px 0 24px; }
@@ -55,3 +55,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .brand-profile-fields textarea { min-height: 112px; line-height: 1.5; }
 .brand-profile-fields .notice { margin: 0 0 8px; font-size: .9rem; line-height: 1.5; }
 .brand-profile > .notice { font-size: .9rem; line-height: 1.5; margin: 18px 0 0; }
+
+/* Form controls inside cards must never be wider than the card (Execution mode select overflowed at <=430px). */
+.item select, .item textarea, .item input { width: 100%; max-width: 100%; min-width: 0; }
