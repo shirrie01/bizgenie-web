@@ -753,6 +753,42 @@ describe("recommendation-to-campaign creation", () => {
       expect(reviewWrites()).toEqual([]);
     });
 
+    it("does not download the media again after acknowledge: a HEAD under the new version re-authorises the same bytes", async () => {
+      creativeMedia = [IMAGE_REF];
+      const generated = await reachReview();
+      const acknowledged = JSON.parse(JSON.stringify(generated)); acknowledged.campaign.version = 5;
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: { render_receipt_id: "receipt-1", revision_id: "revision-1" } }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) });
+      fireEvent.load(await screen.findByRole("img"));
+      fireEvent.click(await screen.findByRole("button", { name: /^render preview$/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+      await screen.findByRole("button", { name: /^approve$/i });
+      await waitFor(() => expect(mediaCalls().filter(([, o]) => o.method === "HEAD")).toHaveLength(2));
+      expect(mediaCalls().filter(([, o]) => o.method === "GET")).toHaveLength(1);
+      expect(new URL(mediaCalls().filter(([, o]) => o.method === "HEAD")[1][0]).searchParams.get("expected_campaign_version")).toBe("5");
+      expect(screen.getByRole("img")).toBeInTheDocument();
+    });
+
+    it("drops the media and says so when the re-authorising HEAD after acknowledge is denied (revoked mid-review)", async () => {
+      creativeMedia = [IMAGE_REF];
+      let heads = 0;
+      mediaHandler = (url, options) => (options.method === "HEAD" && ++heads > 1 ? mediaResponse(404) : mediaResponse(200));
+      const generated = await reachReview();
+      const acknowledged = JSON.parse(JSON.stringify(generated)); acknowledged.campaign.version = 5;
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: { render_receipt_id: "receipt-1", revision_id: "revision-1" } }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) });
+      fireEvent.load(await screen.findByRole("img"));
+      fireEvent.click(await screen.findByRole("button", { name: /^render preview$/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+      expect(await screen.findByText(/no longer available to you/i)).toBeInTheDocument();
+      expect(screen.queryByRole("img")).toBeNull();
+      expect(URL.revokeObjectURL).toHaveBeenCalled();
+      expect(screen.queryByText(/you have seen the attached media/i)).toBeNull();
+      expect(screen.getByText(/couldn’t be displayed here\. acknowledging covers the text and the preview receipt only/i)).toBeInTheDocument();
+    });
+
     it("keeps preview, acknowledge and approve intact with media and never calls a publish or schedule endpoint", async () => {
       creativeMedia = [IMAGE_REF];
       const generated = await reachReview();

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 
 const refreshMock = vi.fn();
 vi.mock("./session", () => ({ refreshCustomerSession: (...args) => refreshMock(...args) }));
@@ -181,6 +181,17 @@ describe("fetchMediaPreview", () => {
     expect(global.fetch).toHaveBeenCalledTimes(10);
   });
 
+  it("headOnly authorises under the given version and returns type and size without any GET", async () => {
+    global.fetch.mockResolvedValueOnce(reply(200, { length: 12 }));
+    const out = await fetchMediaPreview(args({ campaign: campaign(9), headOnly: true }));
+    expect(out).toEqual({ mime: "image/png", bytes: 12 });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls[0][1].method).toBe("HEAD");
+    expect(new URL(global.fetch.mock.calls[0][0]).searchParams.get("expected_campaign_version")).toBe("9");
+    global.fetch.mockResolvedValueOnce(reply(404));
+    await expect(fetchMediaPreview(args({ headOnly: true }))).rejects.toMatchObject({ code: "missing" });
+  });
+
   it("classifies retryable codes", () => {
     expect(["busy", "unavailable", "failed"].every(isRetryable)).toBe(true);
     expect(["stale", "missing", "too_large", "unsupported", "auth"].some(isRetryable)).toBe(false);
@@ -201,17 +212,88 @@ describe("useMediaPreview blob lifecycle", () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test/1");
   });
 
-  it("revokes and refetches when the campaign version changes, and never shows the old URL for the new key", async () => {
-    let n = 0;
-    URL.createObjectURL = vi.fn(() => `blob:test/${++n}`);
-    global.fetch.mockResolvedValue(reply());
-    const { result, rerender } = renderHook((p) => useMediaPreview(p), { initialProps: props() });
-    await waitFor(() => expect(result.current.url).toBe("blob:test/1"));
-    rerender(props({ campaign: campaign(4) }));
-    expect(result.current.url).toBe("");
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test/1");
-    await waitFor(() => expect(result.current.url).toBe("blob:test/2"));
-    expect(new URL(global.fetch.mock.calls.at(-1)[0]).searchParams.get("expected_campaign_version")).toBe("4");
+  const heads = () => global.fetch.mock.calls.filter(([, o]) => o.method === "HEAD");
+  const gets = () => global.fetch.mock.calls.filter(([, o]) => o.method === "GET");
+  const versionOf = (call) => new URL(call[0]).searchParams.get("expected_campaign_version");
+
+  describe("reuse across a version-only change (server stays authoritative)", () => {
+    it("revalidates with a HEAD under the NEW version and keeps the same bytes: no second download, no revoke", async () => {
+      global.fetch.mockResolvedValue(reply());
+      const { result, rerender } = renderHook((p) => useMediaPreview(p), { initialProps: props() });
+      await waitFor(() => expect(result.current.url).toBe("blob:test/1"));
+      expect(gets()).toHaveLength(1);
+      rerender(props({ campaign: campaign(4) }));
+      expect(result.current.status).toBe("ready"); // no flicker while the HEAD runs
+      expect(result.current.url).toBe("blob:test/1");
+      await waitFor(() => expect(heads()).toHaveLength(2));
+      expect(versionOf(heads()[1])).toBe("4");
+      expect(gets()).toHaveLength(1);
+      expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops the held bytes immediately when the revalidating HEAD is denied (revoked media, stale version, ended session)", async () => {
+      for (const [status, code] of [[404, "missing"], [409, "stale"]]) {
+        cleanup();
+        global.fetch.mockReset(); URL.revokeObjectURL = vi.fn(); URL.createObjectURL = vi.fn(() => "blob:test/1");
+        global.fetch.mockResolvedValueOnce(reply()).mockResolvedValueOnce(reply()).mockResolvedValueOnce(reply(status));
+        const { result, rerender } = renderHook((p) => useMediaPreview(p), { initialProps: props() });
+        await waitFor(() => expect(result.current.status).toBe("ready"));
+        rerender(props({ campaign: campaign(4) }));
+        await waitFor(() => expect(result.current.status).toBe("error"));
+        expect(result.current.code).toBe(code);
+        expect(result.current.url).toBe("");
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test/1");
+        expect(gets()).toHaveLength(1); // nothing re-downloaded on a denial
+      }
+    });
+
+    it("refetches the bytes when the server reports a different size or type", async () => {
+      let n = 0;
+      URL.createObjectURL = vi.fn(() => `blob:test/${++n}`);
+      global.fetch.mockResolvedValueOnce(reply()).mockResolvedValueOnce(reply())
+        .mockResolvedValueOnce(reply(200, { length: 12 })).mockResolvedValueOnce(reply(200, { length: 12 })).mockResolvedValueOnce(reply(200, { length: 12 }));
+      const { result, rerender } = renderHook((p) => useMediaPreview(p), { initialProps: props() });
+      await waitFor(() => expect(result.current.url).toBe("blob:test/1"));
+      rerender(props({ campaign: campaign(4) }));
+      await waitFor(() => expect(result.current.url).toBe("blob:test/2"));
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test/1");
+      expect(gets()).toHaveLength(2);
+    });
+
+    it("never reuses bytes across a revision, asset or variant change", async () => {
+      let n = 0;
+      URL.createObjectURL = vi.fn(() => `blob:test/${++n}`);
+      global.fetch.mockResolvedValue(reply());
+      const { result, rerender } = renderHook((p) => useMediaPreview(p), { initialProps: props() });
+      await waitFor(() => expect(result.current.url).toBe("blob:test/1"));
+      rerender(props({ variant: variant("rev-2") }));
+      expect(result.current.url).not.toBe("blob:test/1");
+      await waitFor(() => expect(result.current.url).toBe("blob:test/2"));
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test/1");
+      rerender(props({ variant: variant("rev-2"), media: { ...image, id: "1a2b3c4d-4d3a-4f6b-8a1c-0e5d7a9b3c22" } }));
+      await waitFor(() => expect(result.current.url).toBe("blob:test/3"));
+      expect(gets()).toHaveLength(3);
+    });
+
+    it("never sends the held-bytes shortcut without credentials: the HEAD carries only the bearer header", async () => {
+      global.fetch.mockResolvedValue(reply());
+      const { result, rerender } = renderHook((p) => useMediaPreview(p), { initialProps: props() });
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+      rerender(props({ campaign: campaign(4) }));
+      await waitFor(() => expect(heads()).toHaveLength(2));
+      expect(Object.keys(heads()[1][1].headers)).toEqual(["authorization"]);
+      expect(heads()[1][1]).toMatchObject({ credentials: "omit", redirect: "error" });
+    });
+
+    it("a retry after an error always downloads again", async () => {
+      global.fetch.mockResolvedValueOnce(reply(503)).mockResolvedValue(reply());
+      const { result } = renderHook((p) => useMediaPreview(p), { initialProps: props() });
+      await waitFor(() => expect(result.current.status).toBe("error"));
+      act(() => result.current.retry());
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+      expect(gets()).toHaveLength(1);
+    });
   });
 
   it("drops a late result for a key the reviewer has left and creates no blob for it", async () => {
