@@ -75,3 +75,94 @@ test('proposal demo styles are clearly labelled as illustrative and keyboard ope
  await select.selectOption('neutral');
  await expect(page.locator('.proposal-title')).toHaveText('A clear next step for Harbour Takeaway.');
 });
+const toStep=async(page,n)=>{for(let i=0;i<n;i++){const b=page.locator('#business-input');if(await b.count()&&!(await b.inputValue()))await b.fill('Harbour Community Trust');await page.locator('#next').click()}};
+test('welcome states the control promise and the progress bar is accessible navigation',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ await expect(page.locator('#step-content')).toContainText('No publishing without your approval');
+ await expect(page.locator('#stepbar button')).toHaveCount(6);
+ await expect(page.locator('#stepbar [aria-current="step"]')).toHaveAttribute('aria-label',/Step 1 of 6: Welcome/);
+ await expect(page.locator('#stepbar button').nth(3)).toBeDisabled();
+ await toStep(page,3);
+ await expect(page.locator('#stepbar [aria-current="step"]')).toHaveAttribute('aria-label',/Step 4 of 6: Brand/);
+ await page.locator('#stepbar button').nth(1).click();
+ await expect(page.locator('#business-input')).toHaveValue('Harbour Community Trust');
+ await expect(page.locator('#stepbar [aria-current="step"]')).toHaveAttribute('aria-label',/Step 2 of 6: Business/);
+});
+test('business discovery never simulates import and shows an honest live profile',async({page})=>{
+ await page.goto('/studio-preview/v3/');await page.locator('#next').click();
+ const imp=page.getByRole('button',{name:/Import from website/});
+ await expect(imp).toBeDisabled();await expect(imp).toContainText('not available yet');
+ await expect(page.locator('.planned .status')).toHaveCount(5);
+ await expect(page.locator('#step-content')).toContainText('Nothing is scanned today');
+ await page.locator('#business-input').fill('Acme <img src=x onerror=alert(1)>');
+ await page.locator('#website-input').fill('https://example.org');
+ await expect(page.locator('#profile-summary')).toContainText('Acme <img src=x onerror=alert(1)>');
+ await expect(page.locator('#profile-summary img')).toHaveCount(0);
+ await expect(page.locator('#profile-summary')).toContainText('Your input · not verified');
+ await expect(page.locator('#profile-summary')).toContainText('Not provided');
+});
+test('goal cards include an honest not-sure path that flows into the proposal',async({page})=>{
+ await page.goto('/studio-preview/v3/');await toStep(page,2);
+ await expect(page.getByRole('group',{name:'Primary goal'}).getByRole('button')).toHaveCount(5);
+ await page.getByRole('button',{name:/Not sure yet/}).click();
+ await expect(page.getByRole('button',{name:/Not sure yet/})).toHaveAttribute('aria-pressed','true');
+ await toStep(page,3);
+ const goalRow=page.locator('.basis-row',{has:page.locator('dt',{hasText:/^Goal$/})});
+ await expect(goalRow).toContainText('To be defined with you');await expect(goalRow).toContainText('To confirm');
+});
+test('brand setup is user-entered only: no upload, bounded colours and messages, XSS-safe, feeds the proposal',async({page})=>{
+ await page.goto('/studio-preview/v3/');await toStep(page,3);
+ await expect(page.getByRole('button',{name:/Upload logo/})).toBeDisabled();
+ await expect(page.locator('#step-content')).toContainText('No logo has been supplied or verified');
+ const add=page.getByRole('button',{name:'Add a colour'});
+ for(let i=0;i<5;i++)await add.click();
+ await expect(page.locator('.swatch')).toHaveCount(5);await expect(add).toBeDisabled();
+ await page.getByRole('button',{name:'Remove brand colour 5'}).click();
+ await expect(page.locator('.swatch')).toHaveCount(4);await expect(add).toBeEnabled();
+ await page.locator('#message-input').fill('<img src=x onerror=alert(1)>');await page.keyboard.press('Enter');
+ await page.locator('#message-input').fill('Free weekly meals');await page.getByRole('button',{name:'Add message'}).click();
+ await expect(page.locator('.chips .chip')).toHaveCount(2);await expect(page.locator('.chips img')).toHaveCount(0);
+ await page.getByRole('button',{name:'Remove message Free weekly meals'}).click();
+ await expect(page.locator('.chips .chip')).toHaveCount(1);
+ await page.locator('#voice-select').selectOption('Calm and expert');
+ await toStep(page,2);
+ await expect(page.locator('.basis-row',{has:page.locator('dt',{hasText:/^Brand voice$/})})).toContainText('Calm and expert');
+ await expect(page.locator('.basis-row',{has:page.locator('dt',{hasText:/^Key messages$/})})).toContainText('<img src=x onerror=alert(1)>');
+ await expect(page.locator('.basis img')).toHaveCount(0);
+});
+test('channels separate selection from connection and never claim a connected account',async({page})=>{
+ const outbound=[];page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:4178/'))outbound.push(r.url())});
+ await page.goto('/studio-preview/v3/');await toStep(page,4);
+ await expect(page.locator('.channel-card')).toHaveCount(6);
+ const connect=page.getByRole('button',{name:'Connect account (not available yet)'});
+ await expect(connect).toHaveCount(6);for(const b of await connect.all())await expect(b).toBeDisabled();
+ await expect(page.locator('.channel-card .status',{hasText:/^Not connected$/})).toHaveCount(6);
+ await expect(page.locator('.channel-card .status',{hasText:/^Connected$/})).toHaveCount(0);
+ await page.getByRole('button',{name:/TikTok/}).click();
+ await expect(page.locator('.channel-card.on')).toHaveCount(3);
+ await expect(page.locator('#step-content')).toContainText('never publish without your approval');
+ expect(outbound).toEqual([]);
+});
+test('every enabled interactive control on the six onboarding steps meets the 24px target size',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ const small=[];
+ for(let i=1;i<=6;i++){
+  if(i===2)await page.locator('#business-input').fill('Harbour Community Trust');
+  if(i===4){await page.getByRole('button',{name:'Add a colour'}).click();await page.locator('#message-input').fill('Free weekly meals for everyone in the neighbourhood');await page.keyboard.press('Enter');}
+  const found=await page.evaluate(()=>[...document.querySelectorAll('main button,main a,main input,main select,main textarea,#stepbar button')].filter(e=>!e.disabled).map(e=>{const r=e.getBoundingClientRect();return {w:r.width,h:r.height,n:(e.getAttribute('aria-label')||e.textContent||e.id||e.tagName).trim().slice(0,40)}}).filter(x=>x.w>0&&(x.w<24||x.h<24)));
+  small.push(...found.map(x=>`step ${i}: ${x.n} ${Math.round(x.w)}x${Math.round(x.h)}`));
+  if(i<6)await page.locator('#next').click();
+ }
+ expect(small).toEqual([]);
+});
+test('proposal hero artwork never overlaps its label or headline at any width',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ await page.locator('#next').click();
+ await page.locator('#business-input').fill('Harbour Community Trust and Neighbourhood Kitchen Partnership');
+ for(let i=0;i<4;i++)await page.locator('#next').click();
+ for(const style of ['neutral','charity','takeaway']){
+  await page.getByLabel('Preview the layout in a demo style').selectOption(style);
+  const hit=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect();const a=box('.proposal-hero .art-symbol');return ['.proposal-hero .art-kicker','.proposal-hero .proposal-title'].some(s=>{const b=box(s);return a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top})});
+  expect(hit,style).toBe(false);
+ }
+});
