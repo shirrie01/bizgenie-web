@@ -18,7 +18,7 @@ test('six-step business-neutral onboarding and workspace navigation',async({page
  await expect(page.locator('#step-content')).not.toContainText('Make a splash');
  await expect(page.locator('#step-content')).not.toContainText('BRAND IDEA');
  await page.locator('#next').click();
- await expect(page.getByRole('heading',{name:/Good morning/})).toBeVisible();
+ await expect(page.getByRole('heading',{name:/Your growth plan/})).toBeVisible();
  await page.getByRole('button',{name:/Explore campaign concepts/}).click();
  await expect(page.getByRole('heading',{name:/Make every campaign/})).toBeVisible();
  await page.getByRole('button',{name:/Plan in calendar/}).click();
@@ -31,4 +31,47 @@ test('responsive page width, no external calls and fixture labelling',async({pag
  expect(widths.document).toBeLessThanOrEqual(widths.viewport+1);
  await page.locator('#next').click();
  await expect(page.locator('#step-content')).toContainText('No website scanned');
+});
+test('campaign proposal is a reviewable, honest brief with next steps and no publishing implication',async({page})=>{
+ const outbound=[];page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:4178/'))outbound.push(r.url())});
+ await page.goto('/studio-preview/v3/');
+ await page.locator('#next').click();
+ await page.locator('#business-input').fill('Wow Charity <b>x</b>');
+ await page.locator('#next').click();
+ await page.getByRole('button',{name:/Build brand awareness/}).click();
+ await page.locator('#next').click();await page.locator('#next').click();
+ await page.getByRole('button',{name:/LinkedIn/}).click();
+ await page.locator('#next').click();
+ const step=page.locator('#step-content');
+ await expect(page.getByRole('heading',{name:/campaign direction to review/i})).toBeVisible();
+ await expect(step.locator('.proposal-title')).toHaveText('A clear next step for Wow Charity <b>x</b>.');
+ await expect(step.locator('.proposal-title b')).toHaveCount(0);
+ for(const [label,status] of [['Business','Your input'],['Goal','Your choice'],['Channels','For planning only'],['Audience','To confirm'],['Content','Not started'],['Timeline','Not scheduled']]){
+  await expect(step.locator('.basis-row',{has:page.locator('dt',{hasText:new RegExp('^'+label+'$')})})).toContainText(status);
+ }
+ await expect(step.locator('.basis-row',{hasText:'Goal'})).toContainText('Build brand awareness');
+ await expect(step.locator('.basis-channels')).toContainText('LinkedIn');
+ await expect(page.getByRole('list',{name:'What happens next'}).getByRole('listitem')).toHaveCount(4);
+ await expect(step).toContainText('Approval records your decision; it does not publish');
+ await expect(step).toContainText('Approval never publishes automatically');
+ await expect(step).not.toContainText('Make a splash');
+ await expect(step).not.toContainText('12 assets');
+ await expect(page.locator('#next')).toHaveText(/Approve brief and explore workspace/);
+ const w=await page.evaluate(()=>({d:document.documentElement.scrollWidth,v:innerWidth}));
+ expect(w.d).toBeLessThanOrEqual(w.v+1);
+ expect(outbound).toEqual([]);
+});
+test('proposal demo styles are clearly labelled as illustrative and keyboard operable',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ await page.locator('#next').click();
+ await page.locator('#business-input').fill('Harbour Takeaway');
+ for(let i=0;i<4;i++)await page.locator('#next').click();
+ await expect(page.locator('#step-content')).toContainText('No imagery, colours or claims have been invented');
+ const select=page.getByLabel('Preview the layout in a demo style');
+ await select.selectOption('charity');
+ await expect(page.locator('.proposal-title')).toHaveText('Every act makes a difference.');
+ await expect(page.locator('.demo-note')).toContainText('not your business and not a generated creative');
+ await expect(select).toBeFocused();
+ await select.selectOption('neutral');
+ await expect(page.locator('.proposal-title')).toHaveText('A clear next step for Harbour Takeaway.');
 });
