@@ -1,0 +1,80 @@
+# Isolated CI for the BG-STUDIO-005 integration rehearsal. It exists only on the rehearsal branch, runs on pushes to
+# it, and can be dispatched with a `ref` to test the exact head of any other branch. No deployment, no secrets,
+# no network beyond npm/Playwright downloads; the app's API and session are mocked in the browser.
+name: Studio 005 integration CI
+on:
+  push:
+    branches: [bg-studio-005-integration-rehearsal]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or SHA to test (default: this branch)'
+        required: false
+        default: ''
+jobs:
+  unit-build:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - run: git rev-parse HEAD
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+  preview-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ['1440x900', '768x1024', '390x844', '320x568']
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - name: Serve isolated preview
+        run: python3 -m http.server 4178 --bind 127.0.0.1 &
+      - name: Run preview browser checks (v1 + v3)
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
+        run: npx playwright test studio-preview/browser.check.mjs studio-preview/v3/browser.check.mjs --config studio-preview/playwright.config.mjs
+  app-a11y-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ['1440x900', '768x1024', '390x844', '320x568']
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - name: Skip when this ref has no app browser checks
+        id: has
+        run: test -f qa/playwright.config.mjs && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
+      - if: steps.has.outputs.run == 'true'
+        run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - if: steps.has.outputs.run == 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.has.outputs.run == 'true'
+        name: Build with placeholder public values (API is mocked in the browser)
+        env:
+          VITE_SUPABASE_URL: http://supabase.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
+          VITE_BIZGENIE_API_URL: http://api.test
+        run: npm run build
+      - if: steps.has.outputs.run == 'true'
+        run: npx vite preview --port 4179 --strictPort --host 127.0.0.1 &
+      - if: steps.has.outputs.run == 'true'
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
+        run: npx playwright test --config qa/playwright.config.mjs
