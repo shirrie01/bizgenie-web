@@ -18,7 +18,7 @@ test('six-step business-neutral onboarding and workspace navigation',async({page
  await expect(page.locator('#step-content')).not.toContainText('Make a splash');
  await expect(page.locator('#step-content')).not.toContainText('BRAND IDEA');
  await page.locator('#next').click();
- await expect(page.getByRole('heading',{name:/Good morning/})).toBeVisible();
+ await expect(page.getByRole('heading',{name:/Your growth plan/})).toBeVisible();
  await page.getByRole('button',{name:/Explore campaign concepts/}).click();
  await expect(page.getByRole('heading',{name:/Make every campaign/})).toBeVisible();
  await page.getByRole('button',{name:/Plan in calendar/}).click();
