@@ -36,7 +36,7 @@ test('campaign proposal is a reviewable, honest brief with next steps and no pub
  const outbound=[];page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:4178/'))outbound.push(r.url())});
  await page.goto('/studio-preview/v3/');
  await page.locator('#next').click();
- await page.locator('#business-input').fill('Wow Charity <b>x</b>');
+ await page.locator('#business-input').fill('Wow Partners <b>x</b>');
  await page.locator('#next').click();
  await page.getByRole('button',{name:/Build brand awareness/}).click();
  await page.locator('#next').click();await page.locator('#next').click();
@@ -44,7 +44,7 @@ test('campaign proposal is a reviewable, honest brief with next steps and no pub
  await page.locator('#next').click();
  const step=page.locator('#step-content');
  await expect(page.getByRole('heading',{name:/campaign direction to review/i})).toBeVisible();
- await expect(step.locator('.proposal-title')).toHaveText('A clear next step for Wow Charity <b>x</b>.');
+ await expect(step.locator('.proposal-title')).toHaveText('A clear next step for Wow Partners <b>x</b>.');
  await expect(step.locator('.proposal-title b')).toHaveCount(0);
  for(const [label,status] of [['Business','Your input'],['Goal','Your choice'],['Channels','For planning only'],['Audience','To confirm'],['Content','Not started'],['Timeline','Not scheduled']]){
   await expect(step.locator('.basis-row',{has:page.locator('dt',{hasText:new RegExp('^'+label+'$')})})).toContainText(status);
@@ -61,19 +61,19 @@ test('campaign proposal is a reviewable, honest brief with next steps and no pub
  expect(w.d).toBeLessThanOrEqual(w.v+1);
  expect(outbound).toEqual([]);
 });
-test('proposal demo styles are clearly labelled as illustrative and keyboard operable',async({page})=>{
+test('proposal sector illustration styles are clearly labelled as illustrative and keyboard operable',async({page})=>{
  await page.goto('/studio-preview/v3/');
  await page.locator('#next').click();
- await page.locator('#business-input').fill('Harbour Takeaway');
+ await page.locator('#business-input').fill('Harbour Partners');
  for(let i=0;i<4;i++)await page.locator('#next').click();
  await expect(page.locator('#step-content')).toContainText('No imagery, colours or claims have been invented');
- const select=page.getByLabel('Preview the layout in a demo style');
+ const select=page.getByLabel('Illustration style for your sector');
  await select.selectOption('charity');
  await expect(page.locator('.proposal-title')).toHaveText('Every act makes a difference.');
  await expect(page.locator('.demo-note')).toContainText('not your business and not a generated creative');
  await expect(select).toBeFocused();
  await select.selectOption('neutral');
- await expect(page.locator('.proposal-title')).toHaveText('A clear next step for Harbour Takeaway.');
+ await expect(page.locator('.proposal-title')).toHaveText('A clear next step for Harbour Partners.');
 });
 const toStep=async(page,n)=>{for(let i=0;i<n;i++){const b=page.locator('#business-input');if(await b.count()&&!(await b.inputValue()))await b.fill('Harbour Community Trust');await page.locator('#next').click()}};
 test('welcome states the control promise and the progress bar is accessible navigation',async({page})=>{
@@ -161,7 +161,7 @@ test('proposal hero artwork never overlaps its label or headline at any width',a
  await page.locator('#business-input').fill('Harbour Community Trust and Neighbourhood Kitchen Partnership');
  for(let i=0;i<4;i++)await page.locator('#next').click();
  for(const style of ['neutral','charity','takeaway']){
-  await page.getByLabel('Preview the layout in a demo style').selectOption(style);
+  await page.getByLabel('Illustration style for your sector').selectOption(style);
   const hit=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect();const a=box('.proposal-hero .art-symbol');return ['.proposal-hero .art-kicker','.proposal-hero .proposal-title'].some(s=>{const b=box(s);return a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top})});
   expect(hit,style).toBe(false);
  }
@@ -200,10 +200,173 @@ test('welcome shows original multi-industry illustrations, honestly labelled, an
  await expect(list.locator('img')).toHaveCount(0);
  await page.locator('#next').click();await page.locator('#business-input').fill('Harbour');
  for(let i=0;i<4;i++)await page.locator('#next').click();
- const select=page.getByLabel('Preview the layout in a demo style');
+ const select=page.getByLabel('Illustration style for your sector');
  await select.selectOption('leasing');
  await expect(page.locator('.proposal-title')).toHaveText('A clearer way to lease.');
  await expect(page.locator('.demo-note')).toContainText('not your business and not a generated creative');
  await select.selectOption('perfume');
  await expect(page.locator('.proposal-title')).toHaveText('A signature worth remembering.');
+});
+
+// ---- BG-STUDIO-007-FE: industry-aware workspace regression ------------------------------------------------
+import {signatureTerms} from './industry-profiles.js';
+const SCENARIOS=[
+ {sector:'leasing',business:'Northgate Vehicle Leasing',industry:'',label:'Vehicle leasing'},
+ {sector:'perfume',business:'Maison Aurelle',industry:'Fragrance house',label:'Fragrance & perfume'},
+ {sector:'aesthetics',business:'Clearskin Studio',industry:'Aesthetics clinic',label:'Aesthetics clinic'},
+ {sector:'beverage',business:'Fonzo',industry:'Soft drinks',label:'Soft drinks & beverages'},
+ {sector:'charity',business:'WOW Charity',industry:'',label:'Charity & community'},
+ {sector:'neutral',business:'Harbour Partners',industry:'Business consulting',label:'Not specified'},
+];
+const esc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+const mentions=(text,term)=>new RegExp('\\b'+esc(term)+'\\b','i').test(text);
+async function journey(page,{business,industry='',goal=/Get more customers/,channels=null}){
+ await page.goto('/studio-preview/v3/');
+ await page.locator('#next').click();
+ await page.locator('#business-input').fill(business);
+ if(industry)await page.locator('#industry-input').fill(industry);
+ await page.locator('#next').click();
+ await page.getByRole('button',{name:goal}).click();
+ await page.locator('#next').click();await page.locator('#next').click();
+ if(channels){for(const c of ['Instagram','TikTok','Facebook','LinkedIn','Email','Website']){const on=channels.includes(c);const btn=page.locator('.channel-choice',{hasText:new RegExp(c)});const pressed=(await btn.getAttribute('aria-pressed'))==='true';if(on!==pressed)await btn.click()}}
+ await page.locator('#next').click();await page.locator('#next').click();
+ await expect(page.locator('#home h1')).toBeVisible();
+}
+for(const s of SCENARIOS){
+ test(`workspace for ${s.business} shows its own business and sector, and no other industry's fixture`,async({page})=>{
+  const outbound=[],errors=[];
+  page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:4178/'))outbound.push(r.url())});
+  page.on('pageerror',e=>errors.push(e.message));
+  await journey(page,s);
+  await expect(page.locator('#home h1')).toHaveText(`Your growth plan for ${s.business}.`);
+  await expect(page.locator('#home-inputs')).toContainText(s.label);
+  const sector=page.locator('#home-inputs .basis-row',{has:page.locator('dt',{hasText:/^Sector shown$/})});
+  await expect(sector).toContainText(s.sector==='neutral'?'Not identified · neutral layout':'Inferred from what you typed');
+  const home=(await page.locator('#home').innerText()).split(s.business).join(' ');
+  for(const other of SCENARIOS.filter(o=>o.sector!==s.sector&&o.sector!=='neutral'))for(const term of signatureTerms(other.sector))expect(mentions(home,term),`${s.sector} workspace must not mention "${term}"`).toBe(false);
+  if(s.business!=='Fonzo')expect(home).not.toMatch(/fonzo/i);
+  await expect(page.locator('#home .v5-product-scene')).toHaveAttribute('aria-label',/Illustrative/);
+  await expect(page.locator('#home .notice')).toContainText('no content is generated or published');
+  if(s.sector==='beverage')await expect(page.locator('#home .v5-brand').first()).toHaveText('FONZO');
+  else await expect(page.locator('#home .v5-brand')).toHaveCount(0);
+  // Studio and Calendar follow the same business and sector.
+  await page.locator('[data-view="studio"]:visible').first().click();
+  await expect(page.locator('#studio-context')).toContainText(s.label.toLowerCase());
+  await expect(page.locator('#studio-context')).toContainText(s.business);
+  await expect(page.locator('#industry-fixture')).toHaveValue('');
+  await expect(page.locator('#fixture-posts .post')).toHaveCount(2);
+  // The sector <select> legitimately lists every sector, so scan the rendered concepts and context, not the control.
+  const studio=((await page.locator('#studio-context').innerText())+' '+(await page.locator('#fixture-posts').innerText())).split(s.business).join(' ');
+  for(const other of SCENARIOS.filter(o=>o.sector!==s.sector&&o.sector!=='neutral'))for(const term of signatureTerms(other.sector))expect(mentions(studio,term),`${s.sector} studio must not mention "${term}"`).toBe(false);
+  await page.locator('[data-view="calendar"]:visible').first().click();
+  expect(await page.locator('#calendar-grid .event').count()).toBe(5);
+  const cal=await page.locator('#calendar-grid').innerText();
+  for(const other of SCENARIOS.filter(o=>o.sector!==s.sector&&o.sector!=='neutral'))for(const term of signatureTerms(other.sector))expect(mentions(cal,term),`${s.sector} calendar must not mention "${term}"`).toBe(false);
+  const w=await page.evaluate(()=>({d:document.documentElement.scrollWidth,v:innerWidth}));
+  expect(w.d).toBeLessThanOrEqual(w.v+1);
+  expect(outbound).toEqual([]);expect(errors).toEqual([]);
+ });
+}
+test('the vehicle-leasing workspace never shows Fonzo, cans or flavour content (founder-reported defect)',async({page})=>{
+ await journey(page,{business:'Northgate Vehicle Leasing'});
+ const all=await page.locator('main').innerText();
+ for(const term of ['Fonzo','FONZO','Zero sugar','Blue raspberry','Cherry cola','Mango','flavour','beverage'])expect(all.toLowerCase().includes(term.toLowerCase()),term).toBe(false);
+ await expect(page.locator('#home .v5-can')).toHaveCount(0);
+ await expect(page.locator('#home h1')).toHaveText('Your growth plan for Northgate Vehicle Leasing.');
+});
+test('an unrecognised industry gets a neutral, brand-safe workspace that says so',async({page})=>{
+ await journey(page,{business:'Harbour Partners',industry:'Business consulting'});
+ await expect(page.locator('#home .v5-hero-copy h2')).toContainText('A clear next step');
+ await expect(page.locator('#home .v5-hero-copy h2')).toContainText('Harbour Partners');
+ await expect(page.locator('#home-inputs')).toContainText('Not identified · neutral layout');
+ const text=await page.locator('#home').innerText();
+ for(const s of SCENARIOS.filter(o=>o.sector!=='neutral'))for(const term of signatureTerms(s.sector))expect(mentions(text.split('Harbour Partners').join(' '),term),term).toBe(false);
+});
+test('a missing business name falls back to neutral wording and a Missing status, never a demo brand',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ await page.locator('#next').click();await page.locator('#business-input').fill('x');await page.locator('#business-input').fill('');
+ // Reach the workspace through the rail without ever entering a business name.
+ await page.evaluate(()=>document.querySelector('[data-view="home"]').click());
+ await expect(page.locator('#home h1')).toHaveText('Your growth plan.');
+ await expect(page.locator('#home-inputs .basis-row',{has:page.locator('dt',{hasText:/^Business$/})})).toContainText('Missing');
+ // textContent, not innerText: the hero status card is display:none on narrower screens but is still in the page.
+ const text=await page.locator('#home').textContent();
+ expect(text).not.toMatch(/fonzo/i);
+ expect(text).toContain('First campaign');
+ await expect(page.locator('#home .v5-brand')).toHaveCount(0);
+});
+test('goal and channel choices carry into the workspace and no unselected channel is invented',async({page})=>{
+ await journey(page,{business:'Northgate Vehicle Leasing',goal:/Support a specific promotion/,channels:['LinkedIn']});
+ await expect(page.locator('#home .v5-actions button').first()).toContainText('Promote your offer');
+ await expect(page.locator('#home .v5-kpis .focus')).toContainText('Conversions');
+ await expect(page.locator('#home .v5-chart > div')).toHaveCount(1);
+ await expect(page.locator('#home .v5-chart')).toContainText('LinkedIn');
+ const text=await page.locator('#home').innerText();
+ for(const c of ['Instagram','TikTok','Facebook','Email'])expect(text.includes(c),c).toBe(false);
+ await expect(page.locator('#home-inputs')).toContainText('Support a specific promotion');
+ await expect(page.locator('#home-inputs')).toContainText('For planning only');
+});
+test('with no channel selected the workspace and studio say so instead of inventing channels',async({page})=>{
+ await journey(page,{business:'Northgate Vehicle Leasing',channels:[]});
+ await expect(page.locator('#home .v5-social')).toContainText('No channels selected');
+ await expect(page.locator('#home .v5-chart')).toHaveCount(0);
+ await page.locator('[data-view="studio"]:visible').first().click();
+ await expect(page.locator('#fixture-posts')).toContainText('No channels selected');
+});
+test('an explicit sector choice overrides inference everywhere and stays in sync across screens',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ await page.locator('#next').click();
+ await page.locator('#business-input').fill('Northgate Vehicle Leasing');
+ await page.getByLabel('Sector used for illustrations (optional)').selectOption('perfume');
+ await expect(page.locator('#profile-summary')).toContainText('Your choice');
+ for(let i=0;i<4;i++)await page.locator('#next').click();
+ await expect(page.getByLabel('Illustration style for your sector')).toHaveValue('perfume');
+ await expect(page.locator('.proposal-title')).toHaveText('A signature worth remembering.');
+ await page.locator('#next').click();
+ await expect(page.locator('#home .v5-hero-copy h2')).toContainText('signature');
+ const text=(await page.locator('#home').innerText()).split('Northgate Vehicle Leasing').join(' ');
+ expect(mentions(text,'lease')).toBe(false);
+ await page.locator('[data-view="studio"]:visible').first().click();
+ await expect(page.locator('#industry-fixture')).toHaveValue('perfume');
+ await page.locator('#industry-fixture').selectOption('leasing');
+ await expect(page.locator('#fixture-posts')).toContainText('A clearer way to lease.');
+ await page.locator('[data-view="home"]:visible').first().click();
+ await expect(page.locator('#home .v5-hero-copy h2')).toContainText('to lease.');
+});
+test('"Not sure yet" sends the next-step action back to the goals screen',async({page})=>{
+ await journey(page,{business:'Northgate Vehicle Leasing',goal:/Not sure yet/});
+ await expect(page.locator('#home .v5-kpis .focus')).toHaveCount(0);
+ await page.locator('#home .v5-actions button').first().click();
+ await expect(page.getByRole('heading',{name:/What should success look like/})).toBeVisible();
+ await expect(page.locator('body')).toHaveClass(/\bob\b/);
+});
+test('workspace text from the customer is inert: markup in the business name never becomes elements',async({page})=>{
+ await journey(page,{business:'<img src=x onerror=window.__x=1> Leasing'});
+ await expect(page.locator('#home img')).toHaveCount(0);
+ await expect(page.locator('#home h1')).toContainText('<img src=x onerror=window.__x=1> Leasing');
+ expect(await page.evaluate(()=>window.__x)).toBeUndefined();
+});
+test('workspace controls are keyboard operable and meet the 24px target size',async({page})=>{
+ await journey(page,{business:'Northgate Vehicle Leasing'});
+ const small=await page.evaluate(()=>[...document.querySelectorAll('#home button,#home a,#home select')].filter(e=>e.offsetParent!==null).map(e=>({t:(e.textContent||'').trim().slice(0,30),r:e.getBoundingClientRect()})).filter(x=>x.r.width<24||x.r.height<24).map(x=>x.t+' '+Math.round(x.r.width)+'x'+Math.round(x.r.height)));
+ expect(small).toEqual([]);
+ await page.locator('#home .v5-actions button').nth(2).focus();
+ await page.keyboard.press('Enter');
+ await expect(page.getByRole('heading',{name:/A clear view of what/})).toBeVisible();
+});
+
+test('on small screens the workspace sections stay reachable and onboarding stays focused',async({page})=>{
+ await journey(page,{business:'Northgate Vehicle Leasing'});
+ const nav=page.getByRole('navigation',{name:'Studio sections'});
+ await expect(nav).toBeVisible();
+ for(const [view,heading] of [['studio',/Make every campaign/],['calendar',/A clear view of what/],['home',/Your growth plan/]]){
+  await page.locator('[data-view="'+view+'"]:visible').first().click();
+  await expect(page.getByRole('heading',{name:heading})).toBeVisible();
+  const w=await page.evaluate(()=>({d:document.documentElement.scrollWidth,v:innerWidth}));
+  expect(w.d).toBeLessThanOrEqual(w.v+1);
+ }
+ const small=await nav.locator('button').evaluateAll(bs=>bs.map(b=>b.getBoundingClientRect()).filter(r=>r.width<24||r.height<24).length);
+ expect(small).toBe(0);
+ await page.locator('[data-view="onboard"]:visible').first().click();
+ await expect(nav).toBeHidden();
 });
