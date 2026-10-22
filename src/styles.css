@@ -96,3 +96,4 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .creative-asset small { color: #4b564f; text-transform: none; letter-spacing: 0; font-size: .82rem; }
 .creative-alt { margin: 0; padding: 0 16px 16px; }
 .creative-noasset, .creative-card > .notice { padding: 0 16px 14px; margin: 0; }
+.creative-foot { padding: 0; margin: 4px 0 0; font-size: .8rem; }

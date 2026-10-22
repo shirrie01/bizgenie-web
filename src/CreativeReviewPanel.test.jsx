@@ -118,4 +118,46 @@ describe("CreativeReviewPanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/loading the latest campaign/i);
     screen.getAllByRole("button").forEach((button) => expect(button).toBeDisabled());
   });
+  describe("with the loaded server creative", () => {
+    const ready = (over = {}) => ({ status: "ready", code: "", error: "", preview: { copy_status: "available", copy: { body: "Saved" }, media: [], ...over }, retry: () => {} });
+
+    it("blocks review and says why while the saved content loads", () => {
+      setup(idle, { creative: { status: "loading", preview: null, error: "", code: "" } });
+      expect(screen.getByRole("status")).toHaveTextContent(/loading the saved content/i);
+      screen.getAllByRole("button").forEach((button) => expect(button).toBeDisabled());
+    });
+
+    it("offers Try again for a transient failure and Reload for a stale one", () => {
+      const onRetryCreative = vi.fn();
+      const props = setup(idle, { creative: { status: "error", code: "unavailable", error: "The saved content is temporarily unavailable.", preview: null }, onRetryCreative, onReload: vi.fn() });
+      expect(screen.getByRole("alert")).toHaveTextContent(/temporarily unavailable/i);
+      expect(screen.queryByRole("button", { name: /^render preview$/i })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+      expect(onRetryCreative).toHaveBeenCalled();
+      cleanup();
+      const p2 = setup(idle, { creative: { status: "error", code: "stale", error: "This campaign changed.", preview: null }, onReload: vi.fn() });
+      fireEvent.click(screen.getByRole("button", { name: /reload latest campaign/i }));
+      expect(p2.onReload).toHaveBeenCalled();
+      expect(props.onRender).not.toHaveBeenCalled();
+    });
+
+    it("enables the first step once ready and notes unavailable media without blocking", () => {
+      const props = setup(idle, { creative: ready({ media: [{ asset_id: "a", role: "primary", media_kind: "image", status: "unavailable", reason: "PRIVATE_MEDIA_DELIVERY_UNAVAILABLE" }] }) });
+      expect(screen.getByText(/acknowledging covers the text and the preview receipt only/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+      expect(props.onRender).toHaveBeenCalledWith(variant);
+    });
+
+    it("treats a version with neither saved copy nor media as nothing to review", () => {
+      setup(idle, { creative: ready({ copy_status: "unavailable", copy: { body: null }, media: [] }) });
+      expect(screen.getByText(/no generated copy to review yet/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeDisabled();
+    });
+
+    it("does not show a loading or creative note when no server creative is supplied", () => {
+      setup(idle);
+      expect(screen.queryByText(/saved content/i)).toBeNull();
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled();
+    });
+  });
 });

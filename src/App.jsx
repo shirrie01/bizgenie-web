@@ -5,7 +5,7 @@ import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
-import CreativeReviewPanel from "./CreativeReviewPanel";
+import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
@@ -702,10 +702,7 @@ export default function App() {
                       </details>
                     </div>)}
                     {variant.workflow === "review" && (
-                      <div className="review-layout">
-                        <CreativePreviewCard variant={variant} />
-                        <CreativeReviewPanel variant={variant} state={reviewState} onRender={runPreview} onAcknowledge={runAcknowledge} onApprove={runApprove} onReload={runReloadCampaign} />
-                      </div>
+                      <CreativeReview apiBaseUrl={API_BASE_URL} session={session} campaign={campaignState.campaign} variant={variant} reviewState={reviewState} onRender={runPreview} onAcknowledge={runAcknowledge} onApprove={runApprove} onReload={runReloadCampaign} />
                     )}
                   </div>
                 ))}

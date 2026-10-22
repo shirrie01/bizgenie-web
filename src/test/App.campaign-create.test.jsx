@@ -84,10 +84,39 @@ function campaign(version, itemCount) {
   };
 }
 
+// GET .../creative-preview is answered by URL so the existing ordered fetch queue only has to describe
+// the other calls. `creativeCopy`, `creativeMedia` and `creativeHandler` can be overridden per test.
+let creativeCopy;
+let creativeMedia;
+let creativeHandler;
+const ok = (body) => ({ ok: true, status: 200, json: async () => body });
+const isCreativeUrl = (url) => typeof url === "string" && url.includes("/creative-preview?");
+const apiCalls = () => global.fetch.mock.calls.filter(([url]) => !isCreativeUrl(url));
+const creativeCalls = () => global.fetch.mock.calls.filter(([url]) => isCreativeUrl(url));
+function defaultCreativeHandler(url) {
+  const u = new URL(url);
+  const parts = u.pathname.split("/");
+  return ok({ preview: {
+    contract_version: "campaign-creative-preview.v1", campaign_id: parts[3], campaign_version: Number(u.searchParams.get("expected_campaign_version")),
+    content_item_id: "33333333-3333-4333-8333-333333333330", variant_id: parts[5], revision_id: u.searchParams.get("revision_id"), revision_number: 1,
+    platform: "instagram", placement: "feed", content_type: "text", workflow: "review", content_status: creativeMedia.length ? "unavailable" : "available",
+    copy_status: Object.values(creativeCopy).some(Boolean) ? "available" : "unavailable", copy: creativeCopy, media: creativeMedia,
+    provenance: { source: "persisted_revision", revision_source: "manual", created_at: "2026-10-22T09:00:00.000Z" },
+    approval_status: "not_approved", platform_preview: { status: "unrendered", artifact_url: null, reason: "NO_PERSISTED_PLATFORM_ARTIFACT" },
+    acknowledgement_status: "not_acknowledged", read_only: true,
+  } });
+}
+
 beforeEach(() => {
   getCustomerSessionMock.mockReset();
   getCustomerSessionMock.mockResolvedValue(session);
-  global.fetch = vi.fn();
+  creativeCopy = { title: null, body: "Server persisted review copy", caption: null, alt_text: null };
+  creativeMedia = [];
+  creativeHandler = defaultCreativeHandler;
+  const queue = [];
+  const fetchMock = vi.fn(async (url, options) => (isCreativeUrl(url) ? creativeHandler(url, options) : queue.shift()));
+  fetchMock.mockResolvedValueOnce = (value) => { queue.push(value); return fetchMock; };
+  global.fetch = fetchMock;
 });
 
 describe("recommendation-to-campaign creation", () => {
@@ -173,6 +202,8 @@ describe("recommendation-to-campaign creation", () => {
     const generated = JSON.parse(JSON.stringify(saved));
     generated.campaign.items[0].variants[0].workflow = "review";
     generated.campaign.items[0].variants[0].current_content = "Persisted generated copy";
+    generated.campaign.items[0].variants[0].current_revision_id = "revision-1";
+    creativeCopy.body = "Persisted generated copy";
     global.fetch
       .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
       .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
@@ -191,7 +222,7 @@ describe("recommendation-to-campaign creation", () => {
 
     await screen.findByText("Persisted generated copy");
     expect(screen.getByText(/ready for review/i)).toBeInTheDocument();
-    const [url, options] = global.fetch.mock.calls.at(-1);
+    const [url, options] = apiCalls().at(-1);
     expect(url).toContain("/customer/campaigns/22222222-2222-4222-8222-222222222222/variants/");
     expect(options.headers.authorization).toBe("Bearer customer-token");
     expect(JSON.parse(options.body)).toMatchObject({
@@ -224,7 +255,7 @@ describe("recommendation-to-campaign creation", () => {
     fireEvent.change(screen.getByLabelText(/execution brief/i), { target: { value: "Open with a founder-led explanation." } });
     fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
     await waitFor(() => expect(global.fetch.mock.calls.filter(([url]) => url.includes("/generate")).length).toBe(1));
-    const body = JSON.parse(global.fetch.mock.calls.at(-1)[1].body);
+    const body = JSON.parse(apiCalls().at(-1)[1].body);
     expect(body).toMatchObject({ execution_mode: "ai", execution_brief: "Open with a founder-led explanation." });
     expect(body.brand_id).toBeUndefined();
     expect(screen.getByRole("option", { name: /Hybrid/i })).toBeDisabled();
@@ -296,7 +327,7 @@ describe("recommendation-to-campaign creation", () => {
 
     expect(await screen.findByLabelText(/campaign calendar/i)).toBeInTheDocument();
     expect(screen.getByText("Published")).toBeInTheDocument();
-    const [url, options] = global.fetch.mock.calls.at(-1);
+    const [url, options] = apiCalls().at(-1);
     expect(url).toContain("/customer/campaigns/22222222-2222-4222-8222-222222222222/calendar?");
     expect(url).toContain("tenant_id=tenant-1");
     expect(url).toContain("project_id=project-1");
@@ -326,7 +357,7 @@ describe("recommendation-to-campaign creation", () => {
     expect(await screen.findByLabelText(/campaign results/i)).toBeInTheDocument();
     expect(screen.getByText(/1250 count/)).toBeInTheDocument();
     expect(screen.getByText(/customer attestation/i)).toBeInTheDocument();
-    const [url, options] = global.fetch.mock.calls.at(-1);
+    const [url, options] = apiCalls().at(-1);
     expect(url).toContain("/customer/campaigns/22222222-2222-4222-8222-222222222222/measurements?");
     expect(url).toContain("tenant_id=tenant-1");
     expect(url).toContain("project_id=project-1");
@@ -368,15 +399,15 @@ describe("recommendation-to-campaign creation", () => {
     await screen.findByText("Server persisted review copy");
     fireEvent.click(screen.getByRole("button", { name: /render preview/i }));
     await screen.findByRole("button", { name: /acknowledge preview/i });
-    const previewBody = JSON.parse(global.fetch.mock.calls[6][1].body);
+    const previewBody = JSON.parse(apiCalls()[6][1].body);
     expect(previewBody).toMatchObject({ tenant_id: "tenant-1", project_id: "project-1", revision_id: "revision-1" });
     fireEvent.click(screen.getByRole("button", { name: /acknowledge preview/i }));
     await screen.findByRole("button", { name: /^approve$/i });
-    const ackBody = JSON.parse(global.fetch.mock.calls[7][1].body);
+    const ackBody = JSON.parse(apiCalls()[7][1].body);
     expect(ackBody).toMatchObject({ expected_campaign_version: 4, revision_id: "revision-1", render_receipt_id: "receipt-1", acknowledged: true });
     fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
     await screen.findByText("Approved");
-    const approvalBody = JSON.parse(global.fetch.mock.calls[8][1].body);
+    const approvalBody = JSON.parse(apiCalls()[8][1].body);
     expect(approvalBody).toMatchObject({ expected_campaign_version: 5, revision_id: "revision-1", preview_id: "preview-1", approved: true });
   });
   it("retries a failed acknowledgement without re-rendering and recovers from a failed preview", async () => {
@@ -544,6 +575,8 @@ describe("recommendation-to-campaign creation", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: approved.campaign }) });
 
+    creativeCopy = { title: "Spring offer", body: "Book a free consultation this week.", caption: "Limited places.", alt_text: "An adviser at a desk" };
+    creativeMedia = [{ asset_id: "9b2f7c1e-4d3a-4f6b-8a1c-0e5d7a9b3c21", role: "primary", media_kind: "image", mime_type: "image/png", source_kind: "generated", status: "unavailable", reason: "PRIVATE_MEDIA_DELIVERY_UNAVAILABLE", url: null }];
     const { container } = render(<App />);
     fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
     fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
@@ -557,7 +590,7 @@ describe("recommendation-to-campaign creation", () => {
     expect(card).toHaveTextContent("Book a free consultation this week.");
     expect(card).toHaveTextContent("Limited places.");
     expect(card).toHaveTextContent("An adviser at a desk");
-    expect(card).toHaveTextContent(/primary visual attached/i);
+    expect(card).toHaveTextContent(/primary image attached/i);
     expect(container.querySelector("figure img")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
@@ -567,5 +600,113 @@ describe("recommendation-to-campaign creation", () => {
     expect(screen.getByText(/manual publication required/i)).toBeInTheDocument();
     expect(screen.getByRole("figure", { name: /creative preview for instagram/i })).toHaveTextContent("Spring offer");
     expect(global.fetch.mock.calls.some(([url]) => /publish|schedule/.test(url) && !/manual-publication/.test(url))).toBe(false);
+  });
+  describe("creative preview contract (bizgenie-api PR #205)", () => {
+    // Drives the app to a campaign with one variant in review. `reviewCampaign` is returned by generate.
+    async function reachReview({ version = 4 } = {}) {
+      const saved = campaign(version, 3);
+      const generated = JSON.parse(JSON.stringify(saved));
+      const v = generated.campaign.items[0].variants[0];
+      v.workflow = "review";
+      v.platform = "instagram";
+      v.placement = "feed";
+      v.current_revision_id = "revision-1";
+      v.current_content = { title: null, body: "stale list copy", caption: null, alt_text: null, asset_refs: [] };
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+        .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+        .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+        .mockResolvedValueOnce({ ok: true, json: async () => saved })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: generated.campaign }) });
+      render(<App />);
+      fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+      fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+      await screen.findByText("Audi A3 Offer Campaign");
+      fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+      await screen.findByText(/saved to your workspace/i);
+      fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+      return generated;
+    }
+    const writes = () => apiCalls().filter(([, o]) => o?.method === "POST").map(([url]) => url);
+
+    it("loads the exact saved creative first, blocks review while loading, escapes it, and never acknowledges or approves by itself", async () => {
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      creativeCopy = { title: "Spring offer", body: "<img src=x onerror=alert(1)> Book now", caption: null, alt_text: null };
+      creativeHandler = async (url) => { await gate; return defaultCreativeHandler(url); };
+      await reachReview();
+      const container = document.body;
+      const render = await screen.findByRole("button", { name: /^render preview$/i });
+      expect(render).toBeDisabled();
+      expect(screen.getByText(/review starts once it has loaded/i)).toBeInTheDocument();
+      expect(writes().some((url) => /preview-renders|preview-acknowledgements|approval/.test(url))).toBe(false);
+      release();
+      const card = await screen.findByRole("figure", { name: /creative preview for instagram/i });
+      await waitFor(() => expect(card).toHaveTextContent("Spring offer"));
+      expect(card).toHaveTextContent("<img src=x onerror=alert(1)> Book now");
+      expect(container.querySelector("figure img")).toBeNull();
+      expect(screen.queryByText("stale list copy")).toBeNull();
+      await waitFor(() => expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled());
+      const [url, options] = creativeCalls()[0];
+      const u = new URL(url);
+      expect(Object.fromEntries(u.searchParams)).toEqual({ tenant_id: "tenant-1", project_id: "project-1", revision_id: "revision-1", expected_campaign_version: "4" });
+      expect(options.headers.authorization).toBe("Bearer customer-token");
+      expect(writes().some((w) => /preview-renders|preview-acknowledgements|approval/.test(w))).toBe(false);
+    });
+
+    it("says so and blocks review when no copy or media was saved", async () => {
+      creativeCopy = { title: null, body: null, caption: null, alt_text: null };
+      await reachReview();
+      expect(await screen.findByText(/this version has no saved text/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeDisabled();
+    });
+
+    it("shows unavailable media explicitly and does not claim it was reviewed", async () => {
+      creativeMedia = [
+        { asset_id: "9b2f7c1e-4d3a-4f6b-8a1c-0e5d7a9b3c21", role: "primary", media_kind: "image", mime_type: "image/png", source_kind: "generated", status: "unavailable", reason: "PRIVATE_MEDIA_DELIVERY_UNAVAILABLE", url: null },
+        { asset_id: "1a2b3c4d-4d3a-4f6b-8a1c-0e5d7a9b3c22", role: "supporting", media_kind: null, source_kind: null, status: "unavailable", reason: "ASSET_NOT_AVAILABLE", url: null },
+      ];
+      creativeCopy = { title: null, body: "Copy with media", caption: null, alt_text: "Adviser at a desk" };
+      await reachReview();
+      const card = await screen.findByRole("figure", { name: /creative preview for instagram/i });
+      await waitFor(() => expect(card).toHaveTextContent("Copy with media"));
+      expect(card).toHaveTextContent(/primary image attached/i);
+      expect(card).toHaveTextContent(/can’t be displayed here yet, so it has not been reviewed/i);
+      expect(card).toHaveTextContent(/a referenced visual is not available/i);
+      expect(card.querySelector("img, video")).toBeNull();
+      expect(screen.getByText(/acknowledging covers the text and the preview receipt only/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled();
+    });
+
+    it("on a version conflict clears the creative and reloads the campaign, then fetches against the new version", async () => {
+      let calls = 0;
+      creativeHandler = (url) => (++calls === 1 ? { ok: false, status: 409, json: async () => ({ error: { code: "VERSION_CONFLICT" } }) } : defaultCreativeHandler(url));
+      const generated = await reachReview();
+      const latest = JSON.parse(JSON.stringify(generated));
+      latest.campaign.version = 7;
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: latest.campaign }) });
+      expect(await screen.findByRole("alert")).toHaveTextContent(/campaign changed since you opened it/i);
+      expect(screen.queryByRole("button", { name: /^render preview$/i })).toBeNull();
+      expect(screen.getByRole("figure", { name: /creative preview for instagram/i })).toHaveTextContent(/could not be loaded/i);
+      fireEvent.click(screen.getByRole("button", { name: /reload latest campaign/i }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled());
+      expect(creativeCalls().map(([url]) => new URL(url).searchParams.get("expected_campaign_version"))).toEqual(["4", "7"]);
+    });
+
+    it("retries a transient failure without changing anything or inventing content", async () => {
+      let calls = 0;
+      creativeHandler = (url) => (++calls === 1 ? { ok: false, status: 503, json: async () => ({}) } : defaultCreativeHandler(url));
+      await reachReview();
+      expect(await screen.findByRole("alert")).toHaveTextContent(/temporarily unavailable/i);
+      expect(screen.queryByText("Server persisted review copy")).toBeNull();
+      const before = apiCalls().length;
+      fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+      expect(await screen.findByRole("figure", { name: /creative preview for instagram/i })).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled());
+      expect(screen.getByText("Server persisted review copy")).toBeInTheDocument();
+      expect(creativeCalls()).toHaveLength(2);
+      expect(apiCalls()).toHaveLength(before);
+    });
   });
 });
