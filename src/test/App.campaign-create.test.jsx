@@ -518,4 +518,54 @@ describe("recommendation-to-campaign creation", () => {
     expect(screen.queryByRole("button", { name: /^approve$/i })).toBeNull();
     expect(screen.getByRole("button", { name: /reload latest campaign/i })).toBeInTheDocument();
   });
+  it("renders the real persisted content object (title, body, caption, alt text, asset reference) through review to approval", async () => {
+    const saved = campaign(4, 3);
+    const generated = JSON.parse(JSON.stringify(saved));
+    const variant = generated.campaign.items[0].variants[0];
+    variant.workflow = "review";
+    variant.platform = "instagram";
+    variant.placement = "feed";
+    variant.current_revision_id = "revision-1";
+    variant.current_content = { title: "Spring offer", body: "Book a free consultation this week.", caption: "Limited places.", alt_text: "An adviser at a desk", asset_refs: [{ asset_id: "9b2f7c1e-4d3a-4f6b-8a1c-0e5d7a9b3c21", role: "primary" }] };
+    const acknowledged = JSON.parse(JSON.stringify(generated));
+    acknowledged.campaign.version = 5;
+    const approved = JSON.parse(JSON.stringify(acknowledged));
+    approved.campaign.version = 6;
+    approved.campaign.items[0].variants[0].workflow = "approved";
+
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: generated.campaign }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: { render_receipt_id: "receipt-1", revision_id: "revision-1" } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: approved.campaign }) });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+
+    const card = await screen.findByRole("figure", { name: /creative preview for instagram/i });
+    expect(card).toHaveTextContent("Spring offer");
+    expect(card).toHaveTextContent("Book a free consultation this week.");
+    expect(card).toHaveTextContent("Limited places.");
+    expect(card).toHaveTextContent("An adviser at a desk");
+    expect(card).toHaveTextContent(/primary visual attached/i);
+    expect(container.querySelector("figure img")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^approve$/i }));
+    await screen.findByText("Approved");
+    expect(screen.getByText(/manual publication required/i)).toBeInTheDocument();
+    expect(screen.getByRole("figure", { name: /creative preview for instagram/i })).toHaveTextContent("Spring offer");
+    expect(global.fetch.mock.calls.some(([url]) => /publish|schedule/.test(url) && !/manual-publication/.test(url))).toBe(false);
+  });
 });

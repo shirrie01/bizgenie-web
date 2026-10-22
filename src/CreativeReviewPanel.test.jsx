@@ -94,7 +94,7 @@ describe("CreativeReviewPanel", () => {
     expect(facts.getByText("Instagram · Feed · Text")).toBeInTheDocument();
     expect(facts.getByText("Version 2")).toBeInTheDocument();
     expect(facts.getByText("abcdef012345")).toBeInTheDocument();
-    expect(screen.getByText(/visual preview is not available yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/the version you are approving/i)).toBeInTheDocument();
   });
 
   it("omits the receipt block when the server returned no displayable fields", () => {
