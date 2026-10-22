@@ -1,0 +1,55 @@
+{
+ "390": [
+  [
+   "body-snippet",
+   "BizGenie | Sign out | START WITH THE OUTCOME | What do you want your campaign to achieve? | Tell BizGenie the goal in your own words. We’ll suggest a clear firs"
+  ],
+  [
+   "review-panel-present",
+   1
+  ],
+  [
+   "creative-card-text",
+   "INSTAGRAM\nFEED\nA\n\nThe saved content could not be loaded, so nothing is shown here."
+  ],
+  [
+   "outcome",
+   "review panel alert"
+  ],
+  [
+   "panel-alert",
+   "This content is no longer available to you."
+  ],
+  [
+   "creative-requests",
+   1
+  ],
+  [
+   "render-button-present",
+   0
+  ],
+  [
+   "real-writes",
+   []
+  ],
+  [
+   "blobs",
+   {
+    "created": 0,
+    "revoked": 0
+   }
+  ],
+  [
+   "aborted-media-requests",
+   []
+  ],
+  [
+   "media-calls",
+   ""
+  ],
+  [
+   "overflow",
+   false
+  ]
+ ]
+}

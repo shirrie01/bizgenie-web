@@ -11,6 +11,10 @@ on:
         description: 'Branch or SHA to test (default: this branch)'
         required: false
         default: ''
+      expected_sha:
+        description: 'Optional: fail unless the checked-out commit equals this SHA'
+        required: false
+        default: ''
 jobs:
   unit-build:
     runs-on: ubuntu-latest
@@ -18,7 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: '${{ inputs.ref || github.sha }}' }
-      - run: git rev-parse HEAD
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow/dispatch SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - run: npm ci
@@ -35,6 +44,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow/dispatch SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - run: npm ci
@@ -44,7 +59,10 @@ jobs:
         run: python3 -m http.server 4178 --bind 127.0.0.1 &
       - name: Run preview browser checks (v1 + v3)
         env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
-        run: npx playwright test studio-preview/browser.check.mjs studio-preview/v3/browser.check.mjs --config studio-preview/playwright.config.mjs
+        run: |
+          FILES=""; for f in studio-preview/browser.check.mjs studio-preview/v3/browser.check.mjs; do [ -f "$f" ] && FILES="$FILES $f"; done
+          if [ -z "$FILES" ] || [ ! -f studio-preview/playwright.config.mjs ]; then echo "no preview browser checks at this ref" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          npx playwright test $FILES --config studio-preview/playwright.config.mjs
   app-a11y-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -56,6 +74,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow/dispatch SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - run: npm ci
