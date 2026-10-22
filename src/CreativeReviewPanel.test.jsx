@@ -2,7 +2,7 @@
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import CreativeReviewPanel, { currentReviewStep } from "./CreativeReviewPanel";
+import CreativeReviewPanel, { currentReviewStep, receiptFacts } from "./CreativeReviewPanel";
 
 afterEach(cleanup);
 const variant = { variant_id: "v1", destination_label: "Instagram", current_content: "Launch copy", workflow: "review" };
@@ -78,5 +78,44 @@ describe("CreativeReviewPanel", () => {
   it("does not show another variant's error", () => {
     setup({ ...idle, status: "error", variantId: "other", error: "nope" });
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("places the error before the action buttons so it is read and seen first", () => {
+    setup(mine({ status: "error", receipt: {}, error: "Preview could not be acknowledged yet." }));
+    const alert = screen.getByRole("alert");
+    const firstButton = screen.getAllByRole("button")[0];
+    expect(alert.compareDocumentPosition(firstButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows only the receipt facts the server returned, without claiming a visual preview", () => {
+    const receipt = { render_receipt_id: "r", platform: "instagram", placement: "feed", format: "text", profile_version: 2, preview_digest: "abcdef0123456789ff", rendered_at: "2026-10-22T09:00:00Z" };
+    setup(mine({ status: "rendered", receipt }));
+    const facts = within(screen.getByLabelText("Preview receipt"));
+    expect(facts.getByText("Instagram · Feed · Text")).toBeInTheDocument();
+    expect(facts.getByText("Version 2")).toBeInTheDocument();
+    expect(facts.getByText("abcdef012345")).toBeInTheDocument();
+    expect(screen.getByText(/visual preview is not available yet/i)).toBeInTheDocument();
+  });
+
+  it("omits the receipt block when the server returned no displayable fields", () => {
+    expect(receiptFacts({ render_receipt_id: "r" })).toEqual([]);
+    expect(receiptFacts({ rendered_at: "not a date" })).toEqual([]);
+    setup(mine({ status: "rendered", receipt: { render_receipt_id: "r" } }));
+    expect(screen.queryByLabelText("Preview receipt")).toBeNull();
+  });
+
+  it("offers reload instead of a doomed retry when the campaign is stale", () => {
+    const props = setup(mine({ status: "error", receipt: {}, stale: true, error: "This campaign changed since you opened it." }), { onReload: vi.fn() });
+    expect(screen.getByRole("alert")).toHaveTextContent(/campaign changed/i);
+    expect(screen.queryByRole("button", { name: /^acknowledge preview$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /start again/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /reload latest campaign/i }));
+    expect(props.onReload).toHaveBeenCalled();
+  });
+
+  it("blocks actions while the latest campaign is loading", () => {
+    setup(mine({ status: "reloading", receipt: {} }));
+    expect(screen.getByRole("status")).toHaveTextContent(/loading the latest campaign/i);
+    screen.getAllByRole("button").forEach((button) => expect(button).toBeDisabled());
   });
 });

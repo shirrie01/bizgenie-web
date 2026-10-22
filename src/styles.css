@@ -69,3 +69,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .review-actions button { min-height: 44px; }
 .review-panel .error { color: #a32d22; font-weight: 600; }
+.review-receipt { display: grid; gap: 6px; margin: 12px 0 0; padding: 10px 12px; border: 1px solid #d9dbd3; border-radius: 8px; background: #fff; }
+.review-receipt div { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.review-receipt dt { font-size: .8rem; color: #4b564f; font-weight: 600; }
+.review-receipt dd { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
