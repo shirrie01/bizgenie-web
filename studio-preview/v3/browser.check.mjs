@@ -155,3 +155,14 @@ test('every enabled interactive control on the six onboarding steps meets the 24
  }
  expect(small).toEqual([]);
 });
+test('proposal hero artwork never overlaps its label or headline at any width',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ await page.locator('#next').click();
+ await page.locator('#business-input').fill('Harbour Community Trust and Neighbourhood Kitchen Partnership');
+ for(let i=0;i<4;i++)await page.locator('#next').click();
+ for(const style of ['neutral','charity','takeaway']){
+  await page.getByLabel('Preview the layout in a demo style').selectOption(style);
+  const hit=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect();const a=box('.proposal-hero .art-symbol');return ['.proposal-hero .art-kicker','.proposal-hero .proposal-title'].some(s=>{const b=box(s);return a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top})});
+  expect(hit,style).toBe(false);
+ }
+});
