@@ -42,12 +42,21 @@ export function receiptFacts(receipt) {
   ].filter(([, value]) => value);
 }
 
-export default function CreativeReviewPanel({ variant, state, onRender, onAcknowledge, onApprove, onReload }) {
+export default function CreativeReviewPanel({ variant, state, onRender, onAcknowledge, onApprove, onReload, creative = null, onRetryCreative }) {
   const mine = state.variantId === variant.variant_id;
   const active = mine ? state : { status: "idle", receipt: null, previewId: "", error: "", stale: false };
-  const busy = BUSY.includes(state.status);
   const step = currentReviewStep(active);
-  const hasContent = hasCreativeText(variant.current_content);
+  // `creative` is the loaded server preview (GET creative-preview). Review cannot start until the exact
+  // saved content has loaded; without it (older callers) the variant's own content is used.
+  const creativeReady = !creative || creative.status === "ready";
+  const serverPreview = creative?.status === "ready" ? creative.preview : null;
+  const hasContent = serverPreview
+    ? serverPreview.copy_status === "available" || (serverPreview.media || []).length > 0
+    : hasCreativeText(variant.current_content);
+  const creativeLoading = Boolean(creative) && creative.status === "loading";
+  const creativeFailed = Boolean(creative) && creative.status === "error";
+  const busy = BUSY.includes(state.status) || creativeLoading;
+  const mediaNotShown = Boolean(serverPreview) && (serverPreview.media || []).some((m) => m.status !== "available");
   const failed = active.status === "error";
   const stale = failed && Boolean(active.stale) && typeof onReload === "function";
   const facts = receiptFacts(active.receipt);
@@ -74,12 +83,17 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
           );
         })}
       </ol>
-      {!hasContent ? (
+      {creativeLoading ? (
+        <p className="notice" role="status">Loading the saved content. Review starts once it has loaded.</p>
+      ) : creativeFailed ? (
+        <p className="error" role="alert">{creative.error}</p>
+      ) : !hasContent ? (
         <p className="notice">There is no generated copy to review yet. Generate a draft first.</p>
       ) : (
         <p className="notice" role="status">{failed ? "This step did not complete. Your content is unchanged." : MESSAGES[active.status] || MESSAGES.idle}</p>
       )}
-      {failed && <p className="error" role="alert">{active.error}</p>}
+      {failed && !creativeFailed && <p className="error" role="alert">{active.error}</p>}
+      {mediaNotShown && <p className="notice">An image or video is attached but can’t be displayed here yet. Acknowledging covers the text and the preview receipt only.</p>}
       {facts.length > 0 && (
         <dl className="review-receipt" aria-label="Preview receipt">
           {facts.map(([label, value]) => (<div key={label}><dt>{label}</dt><dd>{value}</dd></div>))}
@@ -87,11 +101,15 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
       )}
       {facts.length > 0 && <p className="notice">BizGenie confirmed a preview was rendered for this exact version of the content. The content shown is the version you are approving.</p>}
       <div className="review-actions">
-        {stale ? (
+        {creativeFailed ? (
+          creative.code === "stale" && typeof onReload === "function"
+            ? <button className="secondary" type="button" onClick={() => onReload()}>Reload latest campaign</button>
+            : <button className="secondary" type="button" onClick={() => onRetryCreative && onRetryCreative()}>Try again</button>
+        ) : stale ? (
           <button className="secondary" type="button" onClick={() => onReload()} disabled={busy}>Reload latest campaign</button>
         ) : (
           <>
-            <button className="secondary" type="button" onClick={() => action.run(variant)} disabled={!hasContent || busy} aria-busy={working || undefined}>
+            <button className="secondary" type="button" onClick={() => action.run(variant)} disabled={!hasContent || busy || !creativeReady} aria-busy={working || undefined}>
               {working ? action.busyLabel : action.label}
             </button>
             {step > 0 && (
