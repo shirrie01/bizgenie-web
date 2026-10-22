@@ -98,6 +98,7 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
         <p className="notice" role="status">{failed ? "This step did not complete. Your content is unchanged." : MESSAGES[active.status] || MESSAGES.idle}</p>
       )}
       {failed && !creativeFailed && <p className="error" role="alert">{active.error}</p>}
+      {failed && !creativeFailed && !active.stale && mediaNotShown && <p className="notice">An attached visual is not available here. If it was removed or its rights were withdrawn, approval may not be possible until it is replaced.</p>}
       {mediaNotShown && <p className="notice">An image or video is attached but couldn’t be displayed here. Acknowledging covers the text and the preview receipt only.</p>}
       {mediaViewed && <p className="notice">You have seen the attached media as saved. It is the original file, not a platform rendering. Acknowledging covers the text, the media shown and the preview receipt.</p>}
       {facts.length > 0 && (
