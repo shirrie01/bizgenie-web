@@ -471,6 +471,46 @@ describe("recommendation-to-campaign creation", () => {
     expect(global.fetch.mock.calls.filter(([url]) => url.includes("/preview-acknowledgements")).length).toBe(2);
     expect(screen.queryByRole("alert")).toBeNull();
   });
+  it("explains an unavailable destination preview profile, blocks the review and offers no retry (bizgenie-api #209)", async () => {
+    const saved = campaign(4, 3);
+    const generated = JSON.parse(JSON.stringify(saved));
+    const variant = generated.campaign.items[0].variants[0];
+    variant.workflow = "review";
+    variant.current_revision_id = "revision-1";
+    variant.current_content = "Server persisted review copy";
+
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: generated.campaign }) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ error: { code: "PREVIEW_VERSION_UNAVAILABLE", message: "The destination preview profile is unavailable" } }) });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await screen.findByText("Server persisted review copy");
+
+    fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/isn't available for this destination and format/i);
+    expect(alert).not.toHaveTextContent(/reload|try again/i);
+    expect(screen.getByRole("button", { name: /^render preview$/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /reload latest campaign/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /acknowledge preview|^approve$/i })).toBeNull();
+    // No refresh loop: the render was attempted exactly once and no campaign reload was requested.
+    expect(global.fetch.mock.calls.filter(([url]) => url.includes("/preview-renders")).length).toBe(1);
+    expect(global.fetch.mock.calls.filter(([url]) => url.includes("/preview-acknowledgements") || url.includes("/approval")).length).toBe(0);
+    const settled = global.fetch.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(global.fetch.mock.calls.length).toBe(settled);
+  });
   it("recovers from a stale campaign version by reloading, then acknowledges against the new version", async () => {
     const saved = campaign(4, 3);
     const generated = JSON.parse(JSON.stringify(saved));

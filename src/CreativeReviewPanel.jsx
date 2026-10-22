@@ -61,6 +61,10 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
   const mediaNotShown = mediaSummary ? mediaSummary.notDisplayed > 0 : Boolean(serverPreview) && (serverPreview.media || []).some((m) => m.status !== "available");
   const mediaViewed = Boolean(mediaSummary) && mediaSummary.pending === 0 && mediaSummary.notDisplayed === 0 && mediaSummary.displayed > 0;
   const failed = active.status === "error";
+  // On a failed (non-stale) step the specific hint replaces the generic "couldn't be displayed" note.
+  const mediaHint = failed && !creativeFailed && !active.stale && mediaNotShown;
+  // The server has no trusted preview profile for this destination and format: retrying cannot help.
+  const profileBlocked = failed && Boolean(active.unavailable);
   const stale = failed && Boolean(active.stale) && typeof onReload === "function";
   const facts = receiptFacts(active.receipt);
 
@@ -95,11 +99,12 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
       ) : !hasContent ? (
         <p className="notice">There is no generated copy to review yet. Generate a draft first.</p>
       ) : (
-        <p className="notice" role="status">{failed ? "This step did not complete. Your content is unchanged." : MESSAGES[active.status] || MESSAGES.idle}</p>
+        // A failed step is already announced by the alert below; a second "did not complete" status repeated it.
+        failed ? null : <p className="notice" role="status">{MESSAGES[active.status] || MESSAGES.idle}</p>
       )}
       {failed && !creativeFailed && <p className="error" role="alert">{active.error}</p>}
-      {failed && !creativeFailed && !active.stale && mediaNotShown && <p className="notice">An attached visual is not available here. If it was removed or its rights were withdrawn, approval may not be possible until it is replaced.</p>}
-      {mediaNotShown && <p className="notice">An image or video is attached but couldn’t be displayed here. Acknowledging covers the text and the preview receipt only.</p>}
+      {mediaHint && <p className="notice">An attached visual is not available here. If it was removed or its rights were withdrawn, approval may not be possible until it is replaced.</p>}
+      {mediaNotShown && !mediaHint && <p className="notice">An image or video is attached but couldn’t be displayed here. Acknowledging covers the text and the preview receipt only.</p>}
       {mediaViewed && <p className="notice">You have seen the attached media as saved. It is the original file, not a platform rendering. Acknowledging covers the text, the media shown and the preview receipt.</p>}
       {facts.length > 0 && (
         <dl className="review-receipt" aria-label="Preview receipt">
@@ -116,10 +121,10 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
           <button className="secondary" type="button" onClick={() => onReload()} disabled={busy}>Reload latest campaign</button>
         ) : (
           <>
-            <button className="secondary" type="button" onClick={() => action.run(variant)} disabled={!hasContent || busy || !creativeReady} aria-busy={working || undefined}>
+            <button className="secondary" type="button" onClick={() => action.run(variant)} disabled={!hasContent || busy || !creativeReady || profileBlocked} aria-busy={working || undefined}>
               {working ? action.busyLabel : action.label}
             </button>
-            {step > 0 && (
+            {step > 0 && !profileBlocked && (
               <button className="secondary" type="button" onClick={() => onRender(variant)} disabled={busy}>Start again with a new preview</button>
             )}
           </>

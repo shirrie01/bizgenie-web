@@ -158,13 +158,19 @@ async function generateCampaignVariant({ accessToken, session, campaign, variant
 
 const STALE_CODES = ["VERSION_CONFLICT", "IDEMPOTENCY_KEY_CONFLICT"];
 const STALE_MESSAGE = "This campaign changed since you opened it. Reload the latest version to continue; your content is not lost.";
+// The backend has no trusted preview profile for this destination and format. That is not a stale version:
+// reloading or retrying cannot help, and acknowledgement and approval stay blocked.
+const PROFILE_CODES = ["PREVIEW_VERSION_UNAVAILABLE"];
+const PROFILE_MESSAGE = "A preview isn't available for this destination and format yet, so this content can't be reviewed or approved here. Your content is unchanged.";
 
 // A conflict means our copy of the campaign is out of date; a plain retry would send the same stale version again.
 async function reviewRequestError(response, fallback) {
   let code = "";
   try { code = (await response.json())?.error?.code || ""; } catch { /* non-JSON error body */ }
-  const error = new Error(STALE_CODES.includes(code) ? STALE_MESSAGE : fallback);
+  const unavailable = PROFILE_CODES.includes(code);
+  const error = new Error(unavailable ? PROFILE_MESSAGE : STALE_CODES.includes(code) ? STALE_MESSAGE : fallback);
   error.stale = STALE_CODES.includes(code);
+  error.unavailable = unavailable;
   return error;
 }
 
@@ -195,7 +201,11 @@ async function renderCampaignPreview({ accessToken, session, campaign, variant }
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, revision_id: revisionId, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "preview-render") }),
   });
-  if (!response.ok) throw new Error("Preview could not be rendered yet. Your content is still safe.");
+  if (!response.ok) {
+    const failure = await reviewRequestError(response, "Preview could not be rendered yet. Your content is still safe.");
+    // Only the profile case is specialised here; a stale mapping would wrongly offer a reload for a render.
+    throw failure.unavailable ? failure : new Error("Preview could not be rendered yet. Your content is still safe.");
+  }
   const result = await response.json();
   if (!result?.preview?.render_receipt_id) throw new Error("Preview could not be confirmed yet.");
   return result.preview;
@@ -449,7 +459,7 @@ export default function App() {
     try {
       const receipt = await renderCampaignPreview({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant });
       setReviewState({ status: "rendered", variantId: variant.variant_id, receipt, previewId: "", error: "" });
-    } catch (error) { setReviewState({ status: "error", variantId: variant.variant_id, receipt: null, previewId: "", error: error.message, stale: false }); }
+    } catch (error) { setReviewState({ status: "error", variantId: variant.variant_id, receipt: null, previewId: "", error: error.message, stale: false, unavailable: Boolean(error.unavailable) }); }
   }
 
   async function runAcknowledge(variant) {
@@ -463,7 +473,7 @@ export default function App() {
       if (!previewId) throw new Error("Preview acknowledgement could not be confirmed yet.");
       setCampaignState({ status: "ready", campaign, error: "" });
       setReviewState((current) => ({ ...current, status: "acknowledged", previewId, error: "" }));
-    } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message, stale: Boolean(error.stale) })); }
+    } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message, stale: Boolean(error.stale), unavailable: Boolean(error.unavailable) })); }
   }
 
   async function runApprove(variant) {
@@ -479,7 +489,7 @@ export default function App() {
         throw unconfirmed;
       }
       setReviewState((current) => ({ ...current, status: "approved", error: "" }));
-    } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message, stale: Boolean(error.stale) })); }
+    } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message, stale: Boolean(error.stale), unavailable: Boolean(error.unavailable) })); }
   }
 
   async function runManualStart(variant) {
