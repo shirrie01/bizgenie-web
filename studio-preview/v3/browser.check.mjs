@@ -143,3 +143,15 @@ test('channels separate selection from connection and never claim a connected ac
  await expect(page.locator('#step-content')).toContainText('never publish without your approval');
  expect(outbound).toEqual([]);
 });
+test('every enabled interactive control on the six onboarding steps meets the 24px target size',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ const small=[];
+ for(let i=1;i<=6;i++){
+  if(i===2)await page.locator('#business-input').fill('Harbour Community Trust');
+  if(i===4){await page.getByRole('button',{name:'Add a colour'}).click();await page.locator('#message-input').fill('Free weekly meals for everyone in the neighbourhood');await page.keyboard.press('Enter');}
+  const found=await page.evaluate(()=>[...document.querySelectorAll('main button,main a,main input,main select,main textarea,#stepbar button')].filter(e=>!e.disabled).map(e=>{const r=e.getBoundingClientRect();return {w:r.width,h:r.height,n:(e.getAttribute('aria-label')||e.textContent||e.id||e.tagName).trim().slice(0,40)}}).filter(x=>x.w>0&&(x.w<24||x.h<24)));
+  small.push(...found.map(x=>`step ${i}: ${x.n} ${Math.round(x.w)}x${Math.round(x.h)}`));
+  if(i<6)await page.locator('#next').click();
+ }
+ expect(small).toEqual([]);
+});
