@@ -46,6 +46,11 @@ export function creativeAsText(content) {
 
 const shortId = (id) => String(id).slice(0, 8);
 
+// Media the delivery endpoint can be asked for. #205 reports media it cannot deliver as
+// PRIVATE_MEDIA_DELIVERY_UNAVAILABLE; once delivery exists that is the case to try. A revoked or foreign
+// reference (ASSET_NOT_AVAILABLE) is never requested.
+export const canAttemptMedia = (media) => (media.kind === "image" || media.kind === "video") && (media.status === "available" || media.reason === "PRIVATE_MEDIA_DELIVERY_UNAVAILABLE");
+
 const mediaLabel = (media) => {
   const what = media.kind || "visual";
   const which = media.role === "primary" ? "Primary " : "Supporting ";
@@ -53,7 +58,7 @@ const mediaLabel = (media) => {
   return { head: "A referenced " + what + " is not available", note: "It may have been removed or you may not have access. It has not been reviewed in this view." };
 };
 
-export default function CreativePreviewCard({ variant, preview = null, status = "ready" }) {
+export default function CreativePreviewCard({ variant, preview = null, status = "ready", renderMedia = null }) {
   const server = preview ? normalizePreview(preview) : null;
   const creative = server ? { ...server, assets: [] } : normalizeCreative(variant.current_content);
   const platform = PLATFORMS[variant.platform] || { label: variant.destination_label || "Content", kind: "generic" };
@@ -107,6 +112,7 @@ export default function CreativePreviewCard({ variant, preview = null, status = 
         <div className="creative-assets">
           {server.media.length === 0 && <p className="notice creative-noasset">No visual is attached to this version.</p>}
           {server.media.map((media) => {
+            if (renderMedia && canAttemptMedia(media)) return <React.Fragment key={media.id}>{renderMedia(media, creative.altText)}</React.Fragment>;
             const text = mediaLabel(media);
             return (
               <div className="creative-asset" key={media.id}>

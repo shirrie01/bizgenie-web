@@ -19,6 +19,17 @@ const MESSAGES = {
 };
 const fail = (code) => new CreativePreviewError(MESSAGES[code], code);
 
+const REFRESH_TIMEOUT_MS = 8000;
+
+// One refresh through the existing session path. A hung refresh must not leave the reviewer on a spinner
+// forever: after the timeout it is treated like a failed refresh (sign in again).
+export async function refreshSessionOnce() {
+  let timer;
+  try {
+    return await Promise.race([refreshCustomerSession(), new Promise((resolve) => { timer = setTimeout(() => resolve(null), REFRESH_TIMEOUT_MS); })]);
+  } finally { clearTimeout(timer); }
+}
+
 export function currentRevisionId(variant) {
   return variant?.current_revision_id || variant?.current_revision?.revision_id || "";
 }
@@ -48,7 +59,7 @@ export async function fetchCreativePreview({ apiBaseUrl, session, campaign, vari
     }
     if (response.status !== 401 || attempt === 1) break;
     // One refresh through the existing session path; never fall back to any other credential.
-    const next = await refreshCustomerSession();
+    const next = await refreshSessionOnce();
     if (next?.status !== "ready" || !next.accessToken) throw fail("auth");
     token = next.accessToken;
   }

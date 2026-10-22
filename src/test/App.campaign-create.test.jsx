@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import App from "../App";
 
 const getCustomerSessionMock = vi.fn();
@@ -91,7 +91,17 @@ let creativeMedia;
 let creativeHandler;
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
 const isCreativeUrl = (url) => typeof url === "string" && url.includes("/creative-preview?");
-const apiCalls = () => global.fetch.mock.calls.filter(([url]) => !isCreativeUrl(url));
+const isMediaUrl = (url) => typeof url === "string" && /\/assets\/[^/]+\/preview\?/.test(url);
+let mediaHandler;
+const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]);
+const mediaResponse = (status = 200, { mime = "image/png", bytes = PNG, method = "GET" } = {}) => ({
+  ok: status >= 200 && status < 300, status,
+  headers: new Headers(status === 200 ? { "content-type": mime, "content-length": String(bytes.byteLength) } : {}),
+  arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  json: async () => ({ error: { code: "X" } }),
+});
+const mediaCalls = () => global.fetch.mock.calls.filter(([url]) => isMediaUrl(url));
+const apiCalls = () => global.fetch.mock.calls.filter(([url]) => !isCreativeUrl(url) && !isMediaUrl(url));
 const creativeCalls = () => global.fetch.mock.calls.filter(([url]) => isCreativeUrl(url));
 function defaultCreativeHandler(url) {
   const u = new URL(url);
@@ -113,8 +123,12 @@ beforeEach(() => {
   creativeCopy = { title: null, body: "Server persisted review copy", caption: null, alt_text: null };
   creativeMedia = [];
   creativeHandler = defaultCreativeHandler;
+  mediaHandler = (url, options) => mediaResponse(200, { method: options?.method });
+  let blobCount = 0;
+  URL.createObjectURL = vi.fn(() => `blob:test/${++blobCount}`);
+  URL.revokeObjectURL = vi.fn();
   const queue = [];
-  const fetchMock = vi.fn(async (url, options) => (isCreativeUrl(url) ? creativeHandler(url, options) : queue.shift()));
+  const fetchMock = vi.fn(async (url, options) => (isCreativeUrl(url) ? creativeHandler(url, options) : isMediaUrl(url) ? mediaHandler(url, options) : queue.shift()));
   fetchMock.mockResolvedValueOnce = (value) => { queue.push(value); return fetchMock; };
   global.fetch = fetchMock;
 });
@@ -590,8 +604,14 @@ describe("recommendation-to-campaign creation", () => {
     expect(card).toHaveTextContent("Book a free consultation this week.");
     expect(card).toHaveTextContent("Limited places.");
     expect(card).toHaveTextContent("An adviser at a desk");
-    expect(card).toHaveTextContent(/primary image attached/i);
-    expect(container.querySelector("figure img")).toBeNull();
+    const image = await within(card).findByRole("img", { name: "An adviser at a desk" });
+    expect(image.getAttribute("src")).toMatch(/^blob:/);
+    expect(screen.getByRole("button", { name: /^render preview$/i })).toBeDisabled();
+    fireEvent.load(image);
+    await waitFor(() => expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled());
+    expect(screen.getByText(/you have seen the attached media as saved/i)).toBeInTheDocument();
+    expect(mediaCalls().map(([, o]) => o.method)).toEqual(["HEAD", "GET"]);
+    expect(mediaCalls().every(([url, o]) => !/token|bucket|storage|key=/i.test(url) && o.headers.authorization === "Bearer customer-token" && Object.keys(o.headers).join() === "authorization")).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
@@ -629,6 +649,7 @@ describe("recommendation-to-campaign creation", () => {
       return generated;
     }
     const writes = () => apiCalls().filter(([, o]) => o?.method === "POST").map(([url]) => url);
+    const reviewWrites = () => writes().filter((url) => /preview-renders|preview-acknowledgements|approval|publish|schedule/.test(url));
 
     it("loads the exact saved creative first, blocks review while loading, escapes it, and never acknowledges or approves by itself", async () => {
       let release;
@@ -667,16 +688,89 @@ describe("recommendation-to-campaign creation", () => {
         { asset_id: "9b2f7c1e-4d3a-4f6b-8a1c-0e5d7a9b3c21", role: "primary", media_kind: "image", mime_type: "image/png", source_kind: "generated", status: "unavailable", reason: "PRIVATE_MEDIA_DELIVERY_UNAVAILABLE", url: null },
         { asset_id: "1a2b3c4d-4d3a-4f6b-8a1c-0e5d7a9b3c22", role: "supporting", media_kind: null, source_kind: null, status: "unavailable", reason: "ASSET_NOT_AVAILABLE", url: null },
       ];
+      mediaHandler = () => mediaResponse(404);
       creativeCopy = { title: null, body: "Copy with media", caption: null, alt_text: "Adviser at a desk" };
       await reachReview();
       const card = await screen.findByRole("figure", { name: /creative preview for instagram/i });
       await waitFor(() => expect(card).toHaveTextContent("Copy with media"));
-      expect(card).toHaveTextContent(/primary image attached/i);
-      expect(card).toHaveTextContent(/can’t be displayed here yet, so it has not been reviewed/i);
+      expect(await within(card).findByText(/no longer available to you/i)).toBeInTheDocument();
       expect(card).toHaveTextContent(/a referenced visual is not available/i);
       expect(card.querySelector("img, video")).toBeNull();
-      expect(screen.getByText(/acknowledging covers the text and the preview receipt only/i)).toBeInTheDocument();
+      expect(mediaCalls().every(([url]) => url.includes("/assets/9b2f7c1e-4d3a-4f6b-8a1c-0e5d7a9b3c21/"))).toBe(true); // the revoked reference is never requested
+      await waitFor(() => expect(screen.getByText(/couldn’t be displayed here\. acknowledging covers the text and the preview receipt only/i)).toBeInTheDocument());
+      expect(screen.queryByText(/you have seen the attached media/i)).toBeNull();
       expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled();
+    });
+
+    const IMAGE_REF = { asset_id: "9b2f7c1e-4d3a-4f6b-8a1c-0e5d7a9b3c21", role: "primary", media_kind: "image", mime_type: "image/png", source_kind: "generated", status: "unavailable", reason: "PRIVATE_MEDIA_DELIVERY_UNAVAILABLE", url: null };
+
+    it("displays a delivered video with native controls and no autoplay, and viewing it writes nothing", async () => {
+      creativeMedia = [{ ...IMAGE_REF, media_kind: "video", mime_type: "video/mp4" }];
+      mediaHandler = () => mediaResponse(200, { mime: "video/mp4", bytes: new Uint8Array(16) });
+      await reachReview();
+      const card = await screen.findByRole("figure", { name: /creative preview for instagram/i });
+      await waitFor(() => expect(card.querySelector("video")).not.toBeNull());
+      const video = card.querySelector("video");
+      expect(video.getAttribute("src")).toMatch(/^blob:/);
+      expect(video.autoplay).toBe(false);
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeDisabled();
+      fireEvent.loadedMetadata(video);
+      await waitFor(() => expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled());
+      expect(reviewWrites()).toEqual([]);
+    });
+
+    it("retries a transient media failure on request and holds review until the media is displayed", async () => {
+      creativeMedia = [IMAGE_REF];
+      let calls = 0;
+      mediaHandler = (url, options) => (options.method === "HEAD" && ++calls === 1 ? mediaResponse(503) : mediaResponse(200));
+      await reachReview();
+      expect(await screen.findByText(/couldn’t be loaded right now/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled(); // an explicit failure does not pretend it was viewed
+      expect(screen.getByText(/couldn’t be displayed here\. acknowledging covers the text and the preview receipt only/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /try again: load primary image/i }));
+      const image = await screen.findByRole("img");
+      await waitFor(() => expect(screen.getByRole("button", { name: /^render preview$/i })).toBeDisabled());
+      fireEvent.load(image);
+      await waitFor(() => expect(screen.getByText(/you have seen the attached media as saved/i)).toBeInTheDocument());
+      expect(reviewWrites()).toEqual([]);
+    });
+
+    it("on a stale media request clears the media, reloads the campaign and fetches again against the new version", async () => {
+      creativeMedia = [IMAGE_REF];
+      let first = true;
+      mediaHandler = (url, options) => { if (options.method === "HEAD" && first) { first = false; return mediaResponse(409); } return mediaResponse(200); };
+      const generated = await reachReview();
+      const latest = JSON.parse(JSON.stringify(generated));
+      latest.campaign.version = 7;
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: latest.campaign }) });
+      expect(await screen.findByText(/campaign changed since you opened it/i)).toBeInTheDocument();
+      fireEvent.click(screen.getAllByRole("button", { name: /reload latest campaign/i })[0]);
+      fireEvent.load(await screen.findByRole("img"));
+      await waitFor(() => expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled());
+      const versions = mediaCalls().map(([url]) => new URL(url).searchParams.get("expected_campaign_version"));
+      expect(versions[0]).toBe("4");
+      expect(versions.at(-1)).toBe("7");
+      expect(reviewWrites()).toEqual([]);
+    });
+
+    it("keeps preview, acknowledge and approve intact with media and never calls a publish or schedule endpoint", async () => {
+      creativeMedia = [IMAGE_REF];
+      const generated = await reachReview();
+      const v = generated.campaign.items[0].variants[0];
+      const acknowledged = JSON.parse(JSON.stringify(generated)); acknowledged.campaign.version = 5;
+      const approved = JSON.parse(JSON.stringify(acknowledged)); approved.campaign.version = 6; approved.campaign.items[0].variants[0].workflow = "approved";
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: { render_receipt_id: "receipt-1", revision_id: "revision-1" } }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: approved.campaign }) });
+      fireEvent.load(await screen.findByRole("img"));
+      fireEvent.click(await screen.findByRole("button", { name: /^render preview$/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^approve$/i }));
+      await screen.findByText("Approved");
+      expect(reviewWrites().map((url) => url.split("/").pop())).toEqual(["preview-renders", "preview-acknowledgements", "approval"]);
+      expect(writes().some((url) => /publish|schedule/.test(url) && !/manual-publication/.test(url))).toBe(false);
+      expect(v.variant_id).toBeTruthy();
     });
 
     it("on a version conflict clears the creative and reloads the campaign, then fetches against the new version", async () => {

@@ -42,7 +42,7 @@ export function receiptFacts(receipt) {
   ].filter(([, value]) => value);
 }
 
-export default function CreativeReviewPanel({ variant, state, onRender, onAcknowledge, onApprove, onReload, creative = null, onRetryCreative }) {
+export default function CreativeReviewPanel({ variant, state, onRender, onAcknowledge, onApprove, onReload, creative = null, onRetryCreative, mediaSummary = null }) {
   const mine = state.variantId === variant.variant_id;
   const active = mine ? state : { status: "idle", receipt: null, previewId: "", error: "", stale: false };
   const step = currentReviewStep(active);
@@ -55,8 +55,11 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
     : hasCreativeText(variant.current_content);
   const creativeLoading = Boolean(creative) && creative.status === "loading";
   const creativeFailed = Boolean(creative) && creative.status === "error";
-  const busy = BUSY.includes(state.status) || creativeLoading;
-  const mediaNotShown = Boolean(serverPreview) && (serverPreview.media || []).some((m) => m.status !== "available");
+  const mediaLoading = Boolean(mediaSummary) && mediaSummary.pending > 0;
+  const busy = BUSY.includes(state.status) || creativeLoading || mediaLoading;
+  // Without a delivery summary (older callers) any attached media is treated as not shown.
+  const mediaNotShown = mediaSummary ? mediaSummary.notDisplayed > 0 : Boolean(serverPreview) && (serverPreview.media || []).some((m) => m.status !== "available");
+  const mediaViewed = Boolean(mediaSummary) && mediaSummary.pending === 0 && mediaSummary.notDisplayed === 0 && mediaSummary.displayed > 0;
   const failed = active.status === "error";
   const stale = failed && Boolean(active.stale) && typeof onReload === "function";
   const facts = receiptFacts(active.receipt);
@@ -85,6 +88,8 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
       </ol>
       {creativeLoading ? (
         <p className="notice" role="status">Loading the saved content. Review starts once it has loaded.</p>
+      ) : mediaLoading ? (
+        <p className="notice" role="status">Loading the attached media. Review starts once it has loaded.</p>
       ) : creativeFailed ? (
         <p className="error" role="alert">{creative.error}</p>
       ) : !hasContent ? (
@@ -93,7 +98,8 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
         <p className="notice" role="status">{failed ? "This step did not complete. Your content is unchanged." : MESSAGES[active.status] || MESSAGES.idle}</p>
       )}
       {failed && !creativeFailed && <p className="error" role="alert">{active.error}</p>}
-      {mediaNotShown && <p className="notice">An image or video is attached but can’t be displayed here yet. Acknowledging covers the text and the preview receipt only.</p>}
+      {mediaNotShown && <p className="notice">An image or video is attached but couldn’t be displayed here. Acknowledging covers the text and the preview receipt only.</p>}
+      {mediaViewed && <p className="notice">You have seen the attached media as saved. It is the original file, not a platform rendering. Acknowledging covers the text, the media shown and the preview receipt.</p>}
       {facts.length > 0 && (
         <dl className="review-receipt" aria-label="Preview receipt">
           {facts.map(([label, value]) => (<div key={label}><dt>{label}</dt><dd>{value}</dd></div>))}
