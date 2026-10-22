@@ -221,6 +221,13 @@ describe("CreativeReviewPanel", () => {
       expect(props.onRender).not.toHaveBeenCalled();
     });
 
+    it("does not talk about acknowledging media while acknowledgement is blocked by an unavailable profile", () => {
+      const unavailable = mine({ status: "error", error: "A preview isn't available for this destination and format yet.", unavailable: true });
+      setup(unavailable, { ...base, mediaSummary: { total: 1, pending: 0, displayed: 1, notDisplayed: 0 } });
+      expect(screen.queryByText(/acknowledging covers/i)).toBeNull();
+      expect(screen.queryByText(/you have seen the attached media/i)).toBeNull();
+    });
+
     it("still allows retry for an ordinary render failure", () => {
       setup(mine({ status: "error", error: "Preview could not be rendered yet. Your content is still safe." }), base);
       expect(screen.getByRole("button", { name: /^render preview$/i })).toBeEnabled();
