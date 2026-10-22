@@ -25,7 +25,7 @@ Also: goals and channels carry through; a visible "Your onboarding inputs" panel
 |---|---|---|---|---|
 | Industry-aware workspace | bg-launch28-w05-industry-aware-studio | 2f114f056bc096383280d60b221b7c122c50bacb | bg-studio-005-onboarding-standalone @ fb562410e2cab882ee7e5d5f21c37c9871229392 (#42) | #45 (draft) |
 | Review copy and profile 409 | bg-launch28-w05-review-copy-and-profile-409 | 49ad57b2fc4b4b643073cf37c80eb1934294b21c | bg-studio-006-approval-media-hint @ 26e01e46745cb9d52cb252a40212bd7c463a5611 (#44) | #46 (draft) |
-| Scratch integration (not a PR) | bg-studio-007-integration-rehearsal | INTEGRATION_SHA | bg-studio-005-integration-rehearsal @ a5057be66eb7cc188cf3559dae9f34986a658d5b | none |
+| Scratch integration (not a PR) | bg-studio-007-integration-rehearsal | 2f2a222be901fd7eeb96a6cbd29890fa0263ea2d (docs-only commits may follow it) | bg-studio-005-integration-rehearsal @ a5057be66eb7cc188cf3559dae9f34986a658d5b | none |
 
 `main` is unchanged at `e9e5a1f4f208787248fc9dd18ee8f5df1c60d05a`. Backend #208 is still `bf12050939817ae6da3f696808fc5a7f054d74ab`; a newer backend checkpoint exists, PR #209 at `6911ffc2aaa8687432b6e28fd34bdca59a40be90` (docs and tests only, no endpoint change). Existing PR heads #27 and #34 to #44 are unchanged.
 
@@ -43,7 +43,15 @@ Also: goals and channels carry through; a visible "Your onboarding inputs" panel
 - No page overflow in 24 scenario runs (6 scenarios, 4 widths). The new workspace had overflowed at 320 and Studio at 320; both fixed.
 - **Real #208 handlers (local; in-memory repository, stub auth, mocked storage with real bytes; session and non-review reads mocked in the browser):** PNG and VP9 MP4 review to approval (201, 200, 200); media revoked mid-review (approval 404, one alert plus one specific hint); revoked from the start; and an **Instagram-feed video returns 409 `PREVIEW_VERSION_UNAVAILABLE`**, which the UI now explains with every review action blocked and no further requests, at four widths.
 
-**Isolated GitHub workflow runs (my own workflow on the rehearsal branch, not native PR checks):** CI_TABLE_PLACEHOLDER
+**Isolated GitHub workflow runs (my own workflow on the rehearsal branch, not native PR checks):** 
+
+| Run | Tested SHA (checked out; passed as `ref` and `expected_sha`) | Workflow/dispatch SHA | Conclusion |
+|---|---|---|---|
+| 16 (id 39872672759) | 2f114f056bc096383280d60b221b7c122c50bacb (#45) | a5057be66eb7cc188cf3559dae9f34986a658d5b | success |
+| 17 (id 39872675807) | 49ad57b2fc4b4b643073cf37c80eb1934294b21c (#46) | a5057be | success |
+| 18 (id 39872773146) | 2f2a222be901fd7eeb96a6cbd29890fa0263ea2d (integration; code identical to the tree tested locally, the last commit adds docs only) | a5057be | success |
+
+Each run does `npm ci`, `npm test`, `npm run build`, the preview browser checks and the app accessibility checks at four widths. The run-to-SHA mapping follows my dispatch order, because the run list does not echo workflow inputs; the `expected_sha` guard would have failed any run whose checked-out commit differed from the SHA it was dispatched with. The preview and accessibility steps skip checks that a ref does not contain, so #45 and #46 (which sit on different stacks) exercise different subsets; the integration run covers both.
 
 **Native PR checks:** none. The repository's workflows trigger only for PRs targeting `main`, and #45 and #46 are stacked. #39 and #41 (which target `main`) have their own checks on their PR pages.
 
