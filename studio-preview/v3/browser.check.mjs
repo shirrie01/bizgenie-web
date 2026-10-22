@@ -103,7 +103,7 @@ test('business discovery never simulates import and shows an honest live profile
 });
 test('goal cards include an honest not-sure path that flows into the proposal',async({page})=>{
  await page.goto('/studio-preview/v3/');await toStep(page,2);
- await expect(page.getByRole('group',{name:'Primary goal'}).getByRole('button')).toHaveCount(5);
+ await expect(page.getByRole('group',{name:'Primary goal'}).getByRole('button')).toHaveCount(7);
  await page.getByRole('button',{name:/Not sure yet/}).click();
  await expect(page.getByRole('button',{name:/Not sure yet/})).toHaveAttribute('aria-pressed','true');
  await toStep(page,3);
@@ -165,4 +165,45 @@ test('proposal hero artwork never overlaps its label or headline at any width',a
   const hit=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect();const a=box('.proposal-hero .art-symbol');return ['.proposal-hero .art-kicker','.proposal-hero .proposal-title'].some(s=>{const b=box(s);return a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top})});
   expect(hit,style).toBe(false);
  }
+});
+
+test('onboarding is a focused standalone flow; the workspace rail returns afterwards',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ const rail=page.getByRole('navigation',{name:'Studio sections'});
+ for(let i=0;i<6;i++){
+  await expect(rail).toBeHidden();
+  await expect(page.locator('.brand:visible')).toHaveCount(1);
+  if(i===1)await page.locator('#business-input').fill('Harbour Community Trust');
+  if(i<5)await page.locator('#next').click();
+ }
+ await page.locator('#next').click();
+ await expect(page.getByRole('heading',{name:/Your growth plan/})).toBeVisible();
+ const w=await page.evaluate(()=>innerWidth);
+ if(w>850)await expect(rail).toBeVisible();
+ await expect(page.locator('body')).not.toHaveClass(/\bob\b/);
+});
+test('goals keep all original options and add online sales and a specific promotion',async({page})=>{
+ await page.goto('/studio-preview/v3/');await toStep(page,2);
+ const group=page.getByRole('group',{name:'Primary goal'});
+ for(const name of ['Get more customers','Increase online sales','Increase repeat purchases','Build brand awareness','Launch a product or service','Support a specific promotion','Not sure yet'])await expect(group.getByRole('button',{name:new RegExp(name)})).toHaveCount(1);
+ await group.getByRole('button',{name:/Support a specific promotion/}).click();
+ await expect(group.getByRole('button',{name:/Support a specific promotion/})).toHaveAttribute('aria-pressed','true');
+ await toStep(page,3);
+ await expect(page.locator('.basis-row',{has:page.locator('dt',{hasText:/^Goal$/})})).toContainText('Support a specific promotion');
+});
+test('welcome shows original multi-industry illustrations, honestly labelled, and the proposal offers more demo styles',async({page})=>{
+ await page.goto('/studio-preview/v3/');
+ const list=page.getByRole('list',{name:/examples of sectors/i});
+ await expect(list.getByRole('listitem')).toHaveCount(5);
+ for(const label of ['Aesthetics','Vehicle leasing','Fragrance','Drinks','Charities'])await expect(list).toContainText(label);
+ await expect(page.locator('#step-content')).toContainText('not photographs, not generated for your business');
+ await expect(list.locator('img')).toHaveCount(0);
+ await page.locator('#next').click();await page.locator('#business-input').fill('Harbour');
+ for(let i=0;i<4;i++)await page.locator('#next').click();
+ const select=page.getByLabel('Preview the layout in a demo style');
+ await select.selectOption('leasing');
+ await expect(page.locator('.proposal-title')).toHaveText('A clearer way to lease.');
+ await expect(page.locator('.demo-note')).toContainText('not your business and not a generated creative');
+ await select.selectOption('perfume');
+ await expect(page.locator('.proposal-title')).toHaveText('A signature worth remembering.');
 });
