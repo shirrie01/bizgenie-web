@@ -152,6 +152,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-src.customer { background: #fbe9d4; color: #7a3a08; }
 .ps-src.inferred { background: #e3ebf6; color: #1d4a7a; }
 .ps-src.missing { background: #eceeea; color: #3b463f; }
+.ps-src.saved_customer { background: #dff0e6; color: #1f5a38; }
+.ps-src.saved_inferred { background: #e3ebf6; color: #1d4a7a; }
+.ps-src.seeded { background: #eceeea; color: #3b463f; }
+.ps-confirm { margin-top: 24px; padding-top: 16px; border-top: 1px solid #d6dbd3; }
+.ps-confirm ul { padding-left: 20px; margin: 8px 0; }
 .ps-empty { max-width: 880px; margin: 0 auto; padding: 24px 0; }
 .ps-empty h2 { margin-top: 0; }
 .ps-onboarding { max-width: 880px; margin: 0 auto; }

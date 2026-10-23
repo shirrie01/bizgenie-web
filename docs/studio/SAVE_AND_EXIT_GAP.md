@@ -1,3 +1,5 @@
+> **Status update (BG-STUDIO-010-FE):** in the **production Premium Studio** (default-off flag) Save progress, Save and exit and resume are implemented against the `workspace-onboarding.v1` contract in bizgenie-api **draft PR #213** (head `d0e1142`). That backend is **not merged, its migration has not been applied anywhere, and nothing here has been run against a real API**: the frontend evidence is mocked. The **V3 preview** described below is unchanged and still has no Save and exit, for the reasons given. See `BG_STUDIO_010_FE_REPORT.md`.
+
 # Onboarding "Save and exit" — gap (not implemented, not simulated)
 
 The founder reference shows **Save and exit** (and **Skip for now**) on onboarding screens. The V3 preview deliberately has no such control: it makes no network calls and has no storage, so any "saved" confirmation would be false.

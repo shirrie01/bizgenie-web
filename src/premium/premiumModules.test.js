@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { isPremiumStudioEnabled } from "./flag";
 import { SECTORS, SECTOR_ORDER, guidanceFor, resolveSector, sectorOptions, signatureTerms } from "./sectors";
-import { GENERIC_BRAND_NAMES, brainFacts, buildWorkspaceModel, summariseCampaigns } from "./workspaceModel";
+import { brainFacts, buildWorkspaceModel, summariseCampaigns } from "./workspaceModel";
 import { resolveSector as previewResolve } from "../../studio-preview/v3/industry-profiles.js";
 
 describe("feature flag", () => {
@@ -49,29 +49,80 @@ describe("sector resolution", () => {
 });
 
 const BRAIN = { name: "Northgate Vehicle Leasing", identity: { description: "We lease cars to small businesses." }, audience: { summary: "Small business owners." }, commercial: { primary_cta: "Request a quote" }, voice: { tone: "Clear and direct" }, metadata: { status: "draft", version: 1 } };
+// A saved, customer-confirmed onboarding record as workspace-onboarding.v1 returns it (mocked shape).
+const ONBOARDED = { contract_version: "workspace-onboarding.v1", version: 3, status: "completed", sector: { key: "leasing", source: "customer" }, industry_text: null, channels: { values: ["email"], source: "customer" }, current_step: 6, draft: {} };
+const DONE = { onboarding: ONBOARDED, onboardingStatus: "ready", brandNamePlaceholder: false };
 const WS = { tenant_id: "t1", project_id: "p1", brand_id: "b1", brand_name: "Northgate Vehicle Leasing" };
 
 describe("workspace model", () => {
   it("uses the real Brand Brain and labels every fact with its source", () => {
-    const m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "Get more enquiries", channels: ["Email"] });
+    const m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "Get more enquiries", channels: ["Email"], sectorChoice: "leasing", ...DONE });
     expect(m.brand).toMatchObject({ name: "Northgate Vehicle Leasing", source: "backend", hasName: true });
     expect(m.title).toBe("Welcome back, Northgate Vehicle Leasing.");
     const by = Object.fromEntries(m.profile.rows.map((r) => [r.key, r]));
     expect(by.description).toMatchObject({ value: "We lease cars to small businesses.", source: "backend" });
     expect(by.goal).toMatchObject({ value: "Get more enquiries", source: "customer" });
     expect(by.channels.note).toMatch(/no account is connected/i);
-    expect(by.sector).toMatchObject({ value: "Vehicle leasing", source: "inferred" });
+    expect(by.sector).toMatchObject({ value: "Vehicle leasing", source: "saved_customer", sourceLabel: "Saved · you chose this" });
+    expect(by.channels).toMatchObject({ value: "Email", source: "saved_customer" });
     expect(m.profile.complete).toBe(true);
   });
 
-  it("treats a placeholder brand name as missing and never invents a business", () => {
-    for (const generic of GENERIC_BRAND_NAMES) {
-      const m = buildWorkspaceModel({ workspace: { ...WS, brand_name: generic }, brain: { ...BRAIN, name: generic } });
-      expect(m.brand.hasName).toBe(false);
+  it("is complete only when the customer confirmed setup AND the backend says the name is real", () => {
+    const base = { workspace: WS, brain: BRAIN };
+    expect(buildWorkspaceModel({ ...base, ...DONE }).profile.complete).toBe(true);
+    // Bootstrap-populated Brand Brain alone is never "complete".
+    expect(buildWorkspaceModel({ ...base, onboarding: { ...ONBOARDED, version: 0, status: "not_started" }, onboardingStatus: "ready", brandNamePlaceholder: false }).profile.complete).toBe(false);
+    expect(buildWorkspaceModel({ ...base, onboarding: { ...ONBOARDED, status: "in_progress" }, onboardingStatus: "ready", brandNamePlaceholder: false }).profile.complete).toBe(false);
+    expect(buildWorkspaceModel({ ...base, ...DONE, brandNamePlaceholder: true }).profile.complete).toBe(false);
+    // Unknown is not complete, and not "needs input" either.
+    for (const status of ["idle", "loading", "error", "unavailable"]) {
+      const m = buildWorkspaceModel({ ...base, onboarding: null, onboardingStatus: status, brandNamePlaceholder: null });
+      expect(m.profile.complete, status).toBe(false);
+      expect(m.profile.unknown, status).toBe(true);
+      expect(m.nextActions.find((a) => a.id === "profile"), status).toBeUndefined();
+    }
+    expect(buildWorkspaceModel({ ...base, ...DONE, brandNamePlaceholder: null }).profile.complete).toBe(false);
+  });
+
+  it("does not treat the web address bootstrap seeds as a description the customer wrote", () => {
+    const seeded = { ...BRAIN, identity: { description: "Customer-provided website or profile: https://example.test" }, commercial: { primary_cta: "Get more enquiries" } };
+    const m = buildWorkspaceModel({ workspace: WS, brain: seeded, ...DONE });
+    const by = Object.fromEntries(m.profile.rows.map((r) => [r.key, r]));
+    expect(by.description).toMatchObject({ value: "", source: "missing" });
+    expect(by.description.note).toMatch(/web address given at setup/i);
+    expect(m.profile.complete).toBe(false);
+    expect(m.text.join(" ")).not.toContain("example.test");
+  });
+
+  it("labels saved, inferred and unsaved sector and channels truthfully", () => {
+    const by = (m) => Object.fromEntries(m.profile.rows.map((r) => [r.key, r]));
+    const inferredSaved = { ...ONBOARDED, sector: { key: "leasing", source: "inferred" }, channels: { values: ["email", "tiktok"], source: "customer" } };
+    let m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, onboarding: inferredSaved, onboardingStatus: "ready", brandNamePlaceholder: false, channels: ["Email", "TikTok"] });
+    expect(by(m).sector).toMatchObject({ source: "saved_inferred", sourceLabel: expect.stringMatching(/not confirmed/i) });
+    expect(by(m).channels.source).toBe("saved_customer");
+    m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, onboarding: inferredSaved, onboardingStatus: "ready", brandNamePlaceholder: false, channels: ["Email"], sectorChoice: "perfume" });
+    expect(by(m).sector).toMatchObject({ value: "Fragrance & perfume", source: "customer" });
+    expect(by(m).channels.source).toBe("customer");
+    m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, ...DONE, channels: [] });
+    expect(by(m).channels.source).toBe("missing");
+  });
+
+  it("treats a name the BACKEND flags as a placeholder as missing, with no browser-side list of names", () => {
+    // Whatever string the backend reports as a placeholder is missing, including strings this code has never heard of.
+    for (const generic of ["Customer Campaign Workspace", "BizGenie Workspace", "Some Future Placeholder"]) {
+      const m = buildWorkspaceModel({ workspace: { ...WS, brand_name: generic }, brain: { ...BRAIN, name: generic }, ...DONE, brandNamePlaceholder: true });
+      expect(m.brand.hasName, generic).toBe(false);
       expect(m.title).toBe("Welcome to your workspace.");
       expect(m.profile.complete).toBe(false);
       expect(m.text.join(" ")).not.toContain(generic);
     }
+    // Without the backend's flag the name is shown, but never counted as complete.
+    const unknown = buildWorkspaceModel({ workspace: WS, brain: BRAIN, onboarding: ONBOARDED, onboardingStatus: "ready", brandNamePlaceholder: null });
+    expect(unknown.brand.hasName).toBe(true);
+    expect(unknown.profile.complete).toBe(false);
+    const source = fs.readFileSync(path.join(__dirname, "workspaceModel.js"), "utf8");
+    expect(source).not.toMatch(/Customer Campaign Workspace|BizGenie Workspace|GENERIC_BRAND_NAMES/);
   });
 
   it("falls back to neutral, honest states when nothing is known", () => {
@@ -82,7 +133,9 @@ describe("workspace model", () => {
     expect(m.profile.rows.every((r) => r.source !== "missing" || r.value === "")).toBe(true);
     expect(m.campaign).toBeNull();
     expect(m.analytics.status).toBe("none");
-    expect(m.nextActions[0].id).toBe("profile");
+    expect(m.nextActions.find((a) => a.id === "profile")).toBeUndefined(); // nothing is known yet: no claim either way
+    const loaded = buildWorkspaceModel({ onboarding: { ...ONBOARDED, version: 0, status: "not_started" }, onboardingStatus: "ready", brandNamePlaceholder: false });
+    expect(loaded.nextActions[0].id).toBe("profile");
   });
 
   it("does not count typed-but-unsaved values as saved", () => {
@@ -95,7 +148,7 @@ describe("workspace model", () => {
   });
 
   it("never invents metrics, results, posts, creative or schedule", () => {
-    const m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "g", channels: ["Instagram"] });
+    const m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "g", channels: ["Instagram"], ...DONE });
     const text = m.text.join(" ");
     expect(text).not.toMatch(/\d{2,}(\.\d)?[KkMm]\b/);
     expect(text).not.toMatch(/example|illustrative|simulated|demo/i);
@@ -105,7 +158,7 @@ describe("workspace model", () => {
 
   it("summarises only the real campaign and derives next actions from its real status", () => {
     const campaign = { campaign_id: "c1", name: "Real campaign", items: [{ variants: [{ workflow: "draft", destination_label: "Instagram" }, { workflow: "review", destination_label: "Email" }, { workflow: "approved", destination_label: "Email" }] }] };
-    const m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "g", campaign, hasRecommendation: true });
+    const m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "g", campaign, hasRecommendation: true, ...DONE });
     expect(m.campaign).toMatchObject({ id: "c1", name: "Real campaign", total: 3, destinations: ["Instagram", "Email"] });
     expect(m.campaign.counts).toMatchObject({ draft: 1, review: 1, approved: 1, published: 0 });
     expect(m.nextActions.map((a) => a.id)).toEqual(["generate", "review", "publish", "calendar"]);
@@ -114,9 +167,14 @@ describe("workspace model", () => {
   });
 
   it("walks the first-run actions in order", () => {
-    expect(buildWorkspaceModel({ workspace: WS, brain: BRAIN }).nextActions[0].id).toBe("goal");
-    expect(buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "g" }).nextActions[0].id).toBe("recommend");
-    expect(buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "g", hasRecommendation: true }).nextActions[0].id).toBe("create");
+    expect(buildWorkspaceModel({ workspace: WS, brain: BRAIN, ...DONE }).nextActions[0].id).toBe("goal");
+    expect(buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "g", ...DONE }).nextActions[0].id).toBe("recommend");
+    expect(buildWorkspaceModel({ workspace: WS, brain: BRAIN, goal: "g", hasRecommendation: true, ...DONE }).nextActions[0].id).toBe("create");
+  });
+
+  it("resumes an unfinished setup at the saved step", () => {
+    const m = buildWorkspaceModel({ workspace: WS, brain: BRAIN, onboarding: { ...ONBOARDED, status: "in_progress", current_step: 4 }, onboardingStatus: "ready", brandNamePlaceholder: false });
+    expect(m.nextActions[0]).toMatchObject({ id: "profile", title: "Continue your setup", target: { view: "onboarding", stage: 4 } });
   });
 });
 

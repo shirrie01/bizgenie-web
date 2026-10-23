@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import PremiumOnboarding, { STAGES } from "./PremiumOnboarding";
 import PremiumWorkspace from "./PremiumWorkspace";
 import { buildWorkspaceModel } from "./workspaceModel";
+import { buildSavePayload, formFromOnboarding, hasUnsavedChanges, isSeededDescription } from "./onboardingModel";
 
 // Premium Studio container (BG-STUDIO-008-FE), rendered only when VITE_PREMIUM_STUDIO_ENABLED is "true".
 //
@@ -9,8 +10,9 @@ import { buildWorkspaceModel } from "./workspaceModel";
 // authentication, tenancy, idempotency, entitlements and the review flow keep their existing implementations.
 // The parent mounts this with key={tenant:project:brand}, so switching account or workspace discards the draft.
 //
-// Where the first screen opens is decided from BACKEND data when it loads (a real business name and description
-// in the Brand Brain), never from a local "completed" flag, so a refresh is always consistent with what is saved.
+// Where the first screen opens is decided from BACKEND data when it loads: the saved onboarding record (status,
+// sector, channels, step, unsaved-answer draft) and the Brand Brain. Never from a local "completed" flag, and never
+// from a bootstrap-seeded web address or challenge, so a refresh or a new sign-in always matches what is saved.
 
 const VIEWS = [
   ["overview", "Overview"],
@@ -23,7 +25,7 @@ const VIEWS = [
 
 const EMPTY_DRAFT = { businessName: "", website: "", challenge: "", industryText: "", sectorChoice: "", description: "", audience: "", cta: "", goal: "" };
 
-export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
+export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
   const [view, setView] = useState(null); // null until the starting point has been decided
   const [stage, setStage] = useState(0);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -38,19 +40,36 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
   // Load the real campaigns once, alongside the Brand Brain. A failure is shown, never hidden.
   useEffect(() => { if (ready && campaignList.status === "idle") onLoadCampaigns(); }, [ready, campaignList.status, onLoadCampaigns]);
 
-  // Prefill empty draft fields from what the backend holds, once, without overwriting anything the customer typed.
+  // Load the saved onboarding record alongside the Brand Brain. A failure is shown, never treated as "not started".
+  useEffect(() => { if (ready && onboardingState.status === "idle") onLoadOnboarding(); }, [ready, onboardingState.status, onLoadOnboarding]);
+
+  const onboardingSettled = onboardingState.status === "ready" || onboardingState.status === "error" || onboardingState.status === "unavailable";
+  const brainSettled = brainState.status === "ready" || brainState.status === "error";
+
+  // Restore the form once, from what the backend holds, without overwriting anything typed on this screen.
+  // Priority per field: typed now > saved setup draft (answers typed but not yet saved to the Brand Brain) > Brand Brain.
+  // A placeholder name and a bootstrap-seeded web-address "description" are never prefilled as the customer's words.
   useEffect(() => {
-    if (prefilled || brainState.status !== "ready" || !brainState.brain) return;
-    const b = brainState.brain;
+    if (prefilled || !ready || !brainSettled || !onboardingSettled) return;
+    const saved = onboardingState.status === "ready" ? formFromOnboarding(onboardingState.onboarding) : formFromOnboarding(null);
+    const b = brainState.status === "ready" ? brainState.brain : null;
+    const placeholder = onboardingState.brandNamePlaceholder === true;
+    const brainDescription = b && b.identity && b.identity.description && !isSeededDescription(b.identity.description) ? b.identity.description : "";
     setDraft((d) => ({
       ...d,
-      businessName: d.businessName || (b.name && b.name !== "Customer Campaign Workspace" ? b.name : ""),
-      description: d.description || b.identity?.description || "",
-      audience: d.audience || b.audience?.summary || "",
-      cta: d.cta || b.commercial?.primary_cta || "",
+      businessName: d.businessName || saved.draft.businessName || (b && b.name && !placeholder ? b.name : ""),
+      website: d.website || saved.draft.website || "",
+      challenge: d.challenge || saved.draft.challenge || "",
+      description: d.description || saved.draft.description || brainDescription,
+      audience: d.audience || saved.draft.audience || (b && b.audience && b.audience.summary) || "",
+      cta: d.cta || saved.draft.cta || (b && b.commercial && b.commercial.primary_cta) || "",
+      goal: d.goal || saved.draft.goal || "",
+      industryText: d.industryText || saved.industryText,
+      sectorChoice: d.sectorChoice || saved.sectorChoice,
     }));
+    setChannels((current) => (current.size ? current : new Set(saved.channels)));
     setPrefilled(true);
-  }, [brainState, prefilled]);
+  }, [prefilled, ready, brainSettled, onboardingSettled, brainState, onboardingState]);
 
   const model = useMemo(() => buildWorkspaceModel({
     brain: brainState.brain,
@@ -61,18 +80,43 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
     campaign,
     campaigns: campaignList.campaigns,
     hasRecommendation: Boolean(recommendationState.recommendation),
-  }), [brainState.brain, draft, channels, campaign, campaignList.campaigns, recommendationState.recommendation]);
+    onboarding: onboardingState.onboarding,
+    onboardingStatus: onboardingState.status,
+    brandNamePlaceholder: onboardingState.brandNamePlaceholder,
+  }), [brainState.brain, draft, channels, campaign, campaignList.campaigns, recommendationState.recommendation, onboardingState]);
 
-  // Decide the starting view exactly once.
+  // The form as the contract sees it, and whether it differs from what is saved. Only meaningful once restored.
+  const form = useMemo(() => ({ sectorChoice: draft.sectorChoice, industryText: draft.industryText, businessName: draft.businessName, description: draft.description, channels: [...channels], draft }), [draft, channels]);
+  const dirty = prefilled && onboardingState.status === "ready" && hasUnsavedChanges({ onboarding: onboardingState.onboarding, form, brain: brainState.brain });
+  // Warn before a refresh or tab close throws away answers that are not saved.
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = (event) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  // Decide the starting view exactly once, from saved data only. Resume at the saved step when setup is unfinished.
   useEffect(() => {
     if (view !== null) return;
     if (scopeMissing) { setView("onboarding"); setStage(0); return; }
-    if (!ready) return;
-    if (brainState.status === "ready") {
-      if (model.profile.complete) setView("overview");
-      else { setView("onboarding"); setStage(model.brand.source === "backend" ? 2 : 1); }
-    } else if (brainState.status === "error") setView("overview");
-  }, [view, scopeMissing, ready, brainState.status, model.profile.complete, model.brand.source]);
+    if (!ready || !prefilled) return;
+    if (brainState.status === "error" || onboardingState.status !== "ready") { setView("overview"); return; }
+    if (model.profile.complete) { setView("overview"); return; }
+    const saved = onboardingState.onboarding;
+    const resume = saved.status === "in_progress" && Number.isInteger(saved.current_step) && saved.current_step >= 0 && saved.current_step < STAGES.length ? saved.current_step : null;
+    setView("onboarding");
+    setStage(resume !== null ? resume : model.brand.source === "backend" ? 2 : 1);
+  }, [view, scopeMissing, ready, prefilled, brainState.status, onboardingState.status, onboardingState.onboarding, model.profile.complete, model.brand.source]);
+
+  // Save setup progress (and optionally confirm completion). Returns { ok, message, noop }.
+  const saveProgress = useCallback(async ({ complete } = {}) => {
+    if (onboardingState.status !== "ready") return { ok: false, message: "Saving your setup progress is not available right now. Nothing was saved." };
+    const { body, errors, hasChanges } = buildSavePayload({ onboarding: onboardingState.onboarding, form, brain: brainState.brain, step: stage, complete });
+    if (errors.length) return { ok: false, message: errors.join(" ") };
+    if (!hasChanges) return { ok: true, noop: true };
+    return onSaveOnboarding(body);
+  }, [onboardingState.status, onboardingState.onboarding, form, brainState.brain, stage, onSaveOnboarding]);
 
   const setField = useCallback((key, value) => setDraft((d) => ({ ...d, [key]: value })), []);
   const toggleChannel = useCallback((name) => setChannels((current) => { const next = new Set(current); if (next.has(name)) next.delete(name); else next.add(name); return next; }), []);
@@ -94,12 +138,13 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
       <PremiumOnboarding
         stage={stage} setStage={setStage} draft={draft} setField={setField} channels={channels} toggleChannel={toggleChannel}
         session={session} brainState={brainState} onLoadBrain={onLoadBrain} onSave={onSaveBrain} onBootstrap={onBootstrap}
+        onboardingState={onboardingState} onLoadOnboarding={onLoadOnboarding} onSaveProgress={saveProgress} dirty={dirty}
         recommendationState={recommendationState} onRecommend={onRecommend}
         onFinish={() => go({ view: "overview" })} onOpenStudio={() => go({ view: "studio" })}
       />
     );
   } else if (view === "overview") {
-    content = <PremiumWorkspace model={model} brainState={brainState} campaignList={campaignList} onGo={go} onRetryBrain={onLoadBrain} onRetryCampaigns={onLoadCampaigns} calendarState={calendarState} />;
+    content = <PremiumWorkspace model={model} brainState={brainState} campaignList={campaignList} onGo={go} onRetryBrain={onLoadBrain} onRetryCampaigns={onLoadCampaigns} calendarState={calendarState} onboardingState={onboardingState} onRetryOnboarding={onLoadOnboarding} />;
   } else if (view === "studio") {
     content = (sections.recommendation || sections.campaign) ? (<>{sections.recommendation}{sections.campaign}</>) : (
       <section className="ps-empty" aria-label="Campaign Studio">

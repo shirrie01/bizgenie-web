@@ -86,3 +86,16 @@ Per row: frontend SHA (checked-out), backend SHA, timestamp, viewport, screensho
 - H.264 playback (M3), and the 8 MiB per-response cap against real provider video sizes (not yet measured).
 - CORS and `Range` behaviour on real infrastructure (P3).
 - Token refresh timing against the real Supabase configuration (A2).
+
+
+## BG-STUDIO-010-FE addendum: persistent onboarding (run only after the API migration is separately approved and applied to STAGING)
+Preconditions: API draft PR #213 deployed to staging with migration `20261023100000_create_workspace_onboarding_profiles.sql` applied (founder approval required; not done). Premium Studio flag ON in a staging build only.
+1. Fresh account: onboarding opens with nothing saved; `GET /customer/workspace/onboarding` returns version 0.
+2. Choose a sector and two channels, press Save and exit: `PUT` returns 200 with version 1; reload: the same sector, channels and step return. Record the request/response (no tokens).
+3. Type an answer, do not save, reload: the browser warns, and the unsaved answer is lost (truthfully). Save progress first, reload: it returns.
+4. Confirm setup without a real description: Confirm stays disabled. Save a real description, then Confirm: status `completed`; the workspace opens.
+5. Two browser tabs: save in tab A, then save in tab B from stale data: tab B shows the version-conflict message and keeps its typed answers.
+6. Stop the table (or point at an API build without the routes): the app says saved setup is unavailable and does not claim any save.
+7. Account switch / second workspace: no data from the first account appears; each workspace has its own record.
+8. A customer whose Brand Brain was only seeded by bootstrap (website address, challenge) must not appear complete.
+Record real SHAs, URLs and results here; none of the above has been executed.
