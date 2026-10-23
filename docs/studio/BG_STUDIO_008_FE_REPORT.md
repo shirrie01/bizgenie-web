@@ -10,7 +10,7 @@
 | **Blocked** | Sector and channel persistence (no backend field); Save and exit; website import; logo/UGC upload; channel OAuth; captions/transcripts; real publishing, analytics, learning; the Instagram-feed video preview profile (owner decision, #210); staging E2E (needs approval); H.264 in real Chrome (no Chrome here). |
 | **Exact SHA** | Code head `9ad697f300095984ff1a8b5a6739705c50edc7af`, branch `bg-studio-008-fe-production-integration`, base `bg-studio-007-integration-rehearsal` @ `fb80c97af2f47f2a0e89a1950bbeefdcffc9fe79`. Docs-only commits may follow. |
 | **Draft PR** | [#47](https://github.com/shirrie01/bizgenie-web/pull/47) (draft). Base is the scratch integration branch, not `main` (see section 2). |
-| **CI** | CI_TABLE_008 |
+| **CI** | Isolated workflow run 20 on the code head `9ad697f…`: 13 of 13 jobs succeeded (not native PR checks; see section 7). |
 | **Founder review evidence** | `docs/evidence/008/` (section 8) and the walkthrough in section 9. |
 | **Next action** | Founder reviews #47 and decides the open questions (section 10); Codex answers the contract questions (`FE_BE_CONTRACT_BG_STUDIO_008.md`); then, only with founder approval, a staging E2E per `STAGING_E2E_TEST_PLAN.md`. |
 
@@ -71,7 +71,12 @@ Failure handling: an unavailable Brand Brain or campaign list is stated **once**
 
 CI results (isolated workflow runs of my own workflow, not native PR checks):
 
-CI_TABLE_008_DETAIL
+| Run | Tested SHA (checked out; passed as `ref` and `expected_sha`) | Workflow/dispatch SHA | Jobs | Conclusion |
+|---|---|---|---|---|
+| 20 (id 39924580621) | `9ad697f300095984ff1a8b5a6739705c50edc7af` (code head) | `9ad697f` (the branch head when dispatched; the workflow file lives on this branch) | `unit-build` (`npm ci`, `npm test`, `npm run build`), `preview-browser` x4, `app-a11y-browser` x4, `premium-browser` x4 at 1440x900, 768x1024, 390x844, 320x568 | **success, 13 of 13 jobs** |
+| 19 (id 39923916174) | `9303758d9d0e9346d82ff40d9958fe2f93ead003` (the first commit; superseded by run 20's code) | `9303758` | same jobs | success |
+
+I checked the job list for run 20 rather than relying on the run's overall result: the `premium-browser` jobs did not skip. Each installed Playwright and axe-core, built with the flag on, started the preview server and ran `qa/premium.playwright.config.mjs`, and each step succeeded. Each job also ran the step that records the workflow SHA against the checked-out SHA, and the `expected_sha` guard would have failed any run whose checked-out commit differed. Commits after `9ad697f` (this report and the governance and evidence files) are documentation only.
 
 There are **no native PR checks**: the repository's workflows run only for PRs targeting `main`.
 
