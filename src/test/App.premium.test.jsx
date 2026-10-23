@@ -197,8 +197,15 @@ describe("missing Brand Brain information", () => {
     render(<App />);
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/brand brain could not be loaded/i);
+    // The message is said once, not repeated by the underlying error text.
+    expect(alert.textContent.match(/could not be loaded/gi)).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: /welcome back/i })).toBeNull();
     expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    // Unknown is not "missing": no field is reported as absent, and no next step is guessed, while it cannot load.
+    expect(screen.queryByText("Missing")).toBeNull();
+    expect(screen.queryByText("Not provided yet")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /recommended next steps/i })).toBeNull();
+    expect(screen.getAllByText(/shown once your brand brain loads/i).length).toBeGreaterThanOrEqual(1);
     fireEvent.click(within(alert).getByRole("button", { name: /try again/i }));
     expect(await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." })).toBeInTheDocument();
     expect(attempts).toBe(2);

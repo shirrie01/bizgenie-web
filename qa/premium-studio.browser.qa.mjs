@@ -153,7 +153,10 @@ test('failure state: an unavailable Brand Brain is stated plainly and shows noth
   await setup(page, { brainStatus: 500 });
   await page.goto('/');
   await expect(page.getByRole('alert')).toContainText(/brand brain could not be loaded/i);
-  await expect(page.getByText('Unavailable')).toBeVisible();
+  await expect(page.getByText('Unavailable', { exact: true })).toBeVisible();
+  // Unknown is not missing: nothing is reported as absent while the Brand Brain cannot load.
+  await expect(page.getByText('Missing', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /recommended next steps/i })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: /welcome back/i })).toHaveCount(0);
   await scan(page, 'failure-brand-brain');
 });
