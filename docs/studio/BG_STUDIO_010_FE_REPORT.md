@@ -54,5 +54,12 @@ Issues found while building and fixed before the first commit: an "unsaved chang
 4. The recommendation request is unchanged. Per the API contract, completed channel preferences reorder its suggestions server-side; the frontend does not duplicate that.
 5. Workspace chooser (G5) and recovery for revoked media / the Instagram video profile are outside this slice.
 
-## 5. CI
-Dispatched on the exact head with `expected_sha`. Results are recorded in the PR and in the final commit of this branch (docs only).
+## 5. CI (isolated workflow dispatches of `studio-005-integration-ci.yml`; there are no native PR checks because the repository's workflows run only for PRs targeting `main`)
+Tested code: `e1db8afd67de4fa4afc82b4b2b3a06597e2905c8`. Each job records the checked-out SHA and fails if it differs from `expected_sha`; both dispatches passed `expected_sha = e1db8af`. Commit `1aab6a1` (this report and evidence) is docs only. Run 22's GitHub "head SHA" shows `1aab6a1` because that is the branch head it was dispatched from; its `ref` input made it check out and test `e1db8af`.
+
+| Run | Result |
+|---|---|
+| 21 (id 39934076514) | **11 of 13 jobs succeeded**, including `unit-build` (`npm ci`, `npm test`, `npm run build`), `premium-browser` at 1440x900, 768x1024 and 320x568 (the flag-on suite with axe, ran and passed), all `app-a11y-browser`, and `preview-browser` at 1440x900 and 320x568. `preview-browser` 768x1024 and 390x844 sat for over five minutes in the `playwright install --with-deps chromium` step (the same step takes about 20 s in the other jobs), before any test ran. I cancelled the run. Conclusion: **cancelled**. |
+| 22 (id 39934885548) | A fresh dispatch on the same tested code. **11 of 13 jobs succeeded**, including `unit-build`, `premium-browser` at 1440x900, 768x1024 and 320x568, and `preview-browser` at 768x1024 and 390x844. `premium-browser` 390x844 and `app-a11y-browser` 1440x900 again sat in the same Chromium install step with no test started. |
+
+What this does and does not show: **no job failed a test.** Every one of the 13 distinct jobs (unit-build; premium-browser x4; app-a11y-browser x4; preview-browser x4) completed with success on the tested code in at least one of the two runs, and the premium-browser steps ran rather than skipping. But **no single run is 13/13**, because in each run two jobs stalled in a runner/Chromium-install step. I did not treat that as green. I used the allowed re-run once and the hang recurred on different jobs, so I stopped rather than keep re-running; a clean 13/13 run still needs to be obtained (re-run the workflow when the runners are healthy). The same suites also pass locally (§3).
