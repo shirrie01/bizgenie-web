@@ -1,0 +1,106 @@
+[
+ {
+  "scenario": "png",
+  "width": 1440,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 201",
+   "preview-acknowledgements 200",
+   "approval 200"
+  ]
+ },
+ {
+  "scenario": "png",
+  "width": 320,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 201",
+   "preview-acknowledgements 200",
+   "approval 200"
+  ]
+ },
+ {
+  "scenario": "vp9",
+  "width": 1440,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 201",
+   "preview-acknowledgements 200",
+   "approval 200"
+  ]
+ },
+ {
+  "scenario": "vp9",
+  "width": 390,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 201",
+   "preview-acknowledgements 200",
+   "approval 200"
+  ]
+ },
+ {
+  "scenario": "revokemid",
+  "width": 1440,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 201",
+   "preview-acknowledgements 200",
+   "approval 404"
+  ]
+ },
+ {
+  "scenario": "revokemid",
+  "width": 390,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 201",
+   "preview-acknowledgements 200",
+   "approval 404"
+  ]
+ },
+ {
+  "scenario": "igvideo",
+  "width": 1440,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 409"
+  ]
+ },
+ {
+  "scenario": "igvideo",
+  "width": 768,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 409"
+  ]
+ },
+ {
+  "scenario": "igvideo",
+  "width": 390,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 409"
+  ]
+ },
+ {
+  "scenario": "igvideo",
+  "width": 320,
+  "overflow": false,
+  "real_writes": [
+   "preview-renders 409"
+  ]
+ },
+ {
+  "scenario": "revoked",
+  "width": 1440,
+  "overflow": false,
+  "real_writes": []
+ },
+ {
+  "scenario": "revoked",
+  "width": 320,
+  "overflow": false,
+  "real_writes": []
+ }
+]

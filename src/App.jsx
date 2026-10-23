@@ -1,5 +1,5 @@
 import BrandBrainProfile from "./BrandBrainProfile";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getCustomerSession, refreshCustomerSession } from "./session";
 import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
@@ -8,6 +8,8 @@ import BillingPanel from "./BillingPanel";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import { operationKey } from "./operationKey";
+import PremiumStudio from "./premium/PremiumStudio";
+import { isPremiumStudioEnabled } from "./premium/flag";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -80,6 +82,43 @@ async function bootstrapCustomerWorkspace({ accessToken, goal }) {
   });
   if (!response.ok) throw new Error("Workspace could not be created yet.");
   return response.json();
+}
+
+// Premium Studio only (BG-STUDIO-008-FE). A request that never answers must not leave a spinner forever. The
+// request itself is not cancelled, so callers say plainly when a write may still have completed.
+const PREMIUM_TIMEOUT_MS = 20000;
+function withTimeout(promise, message = "This is taking longer than expected. Please try again.", ms = PREMIUM_TIMEOUT_MS) {
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// Explicit onboarding values, only through the existing bootstrap contract. Optional fields are omitted when
+// empty because the backend rejects empty strings.
+async function bootstrapWorkspaceWithProfile({ accessToken, businessName, website, challenge }) {
+  const body = { business_name: businessName };
+  if (website) body.website_or_social_profile = website;
+  if (challenge) body.primary_marketing_challenge = challenge;
+  const response = await fetch(`${API_BASE_URL}/customer/workspace/bootstrap`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error("Your workspace could not be created yet. Nothing was saved.");
+  return response.json();
+}
+
+// Existing real campaigns for the selected workspace (GET /customer/campaigns). Read only.
+async function getCampaignList({ accessToken, session }) {
+  const query = new URLSearchParams({ tenant_id: session.tenantId, project_id: session.projectId });
+  const response = await fetch(`${API_BASE_URL}/customer/campaigns?${query.toString()}`, { headers: authorizationHeader(accessToken) });
+  if (!response.ok) throw new Error("Your campaigns could not be loaded yet.");
+  const result = await response.json();
+  return Array.isArray(result?.campaigns) ? result.campaigns : [];
+}
+
+function mergeSection(section, key, value) {
+  return value ? { ...(section || {}), [key]: value } : section;
 }
 
 async function createCampaignFromRecommendation({ accessToken, session, recommendation }) {
@@ -316,6 +355,45 @@ export default function App() {
   const [session, setSession] = useState({ status: "loading" });
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const [brandBrainState, setBrandBrainState] = useState({ status: "idle", brain: null, draft: "", error: "" });
+  const premiumEnabled = isPremiumStudioEnabled();
+  const [campaignList, setCampaignList] = useState({ status: "idle", campaigns: [], error: "" });
+  const [premiumEpoch, setPremiumEpoch] = useState(0);
+  const hadSessionRef = useRef(false);
+  const lastScopeRef = useRef("");
+  // Bumped whenever the account or workspace changes. Responses that started under an earlier value are ignored.
+  const scopeTokenRef = useRef(0);
+
+  function resetCustomerState() {
+    scopeTokenRef.current += 1;
+    setGoal("");
+    setState({ status: "idle", recommendation: null, error: "" });
+    setCampaignState({ status: "idle", campaign: null, error: "" });
+    setGenerationState({ status: "idle", error: "" });
+    setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
+    setManualState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
+    setCalendarState({ status: "idle", entries: [], error: "" });
+    setResultsState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
+    setBrandBrainState({ status: "idle", brain: null, draft: "", error: "" });
+    setCampaignList({ status: "idle", campaigns: [], error: "" });
+    setPendingSubmit(false);
+  }
+
+  // Premium Studio: never carry one account's or workspace's data into another. Runs only when the flag is on.
+  useEffect(() => {
+    if (!premiumEnabled) return;
+    const scope = session.status === "ready" ? `${session.tenantId}:${session.projectId}:${session.brandId}` : "";
+    const signedOut = session.status === "signed-out" || session.status === "unconfigured";
+    const scopeChanged = Boolean(scope) && Boolean(lastScopeRef.current) && scope !== lastScopeRef.current;
+    if (scopeChanged || (signedOut && hadSessionRef.current)) {
+      resetCustomerState();
+      setPremiumEpoch((value) => value + 1);
+      hadSessionRef.current = false;
+      lastScopeRef.current = "";
+    }
+    if (session.status === "ready" || session.status === "scope-missing") hadSessionRef.current = true;
+    if (scope) lastScopeRef.current = scope;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [premiumEnabled, session.status, session.tenantId, session.projectId, session.brandId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -389,7 +467,9 @@ export default function App() {
     return refreshed;
   }
 
-  async function runRecommendation(activeSession) {
+  async function runRecommendation(activeSession, goalOverride) {
+    const scopeToken = scopeTokenRef.current;
+    const goalText = (typeof goalOverride === "string" ? goalOverride : goal).trim();
     setState({ status: "loading", recommendation: null, error: "" });
     setCampaignState({ status: "idle", campaign: null, error: "" });
     setGenerationState({ status: "idle", error: "" });
@@ -401,16 +481,19 @@ export default function App() {
       if (readySession.status !== "ready") {
         throw new Error("Your workspace is ready. Please sign out and sign back in, then press Get my recommendation again.");
       }
-      const result = await requestRecommendation({
+      const request = requestRecommendation({
         accessToken: readySession.accessToken,
         tenantId: readySession.tenantId,
         projectId: readySession.projectId,
         brandId: readySession.brandId,
-        goal: goal.trim(),
+        goal: goalText,
         idempotencyKey: crypto.randomUUID(),
       });
+      const result = await (premiumEnabled ? withTimeout(request, "Your recommendation is taking longer than expected. Please try again.") : request);
+      if (scopeToken !== scopeTokenRef.current) return;
       setState({ status: "ready", recommendation: result.recommendation, error: "" });
     } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
       setState({ status: "error", recommendation: null, error: error.message });
     }
   }
@@ -578,49 +661,7 @@ export default function App() {
     setPendingSubmit(false);
   }
 
-  return (
-    <main className="shell">
-      <nav className="topbar">
-        <span className="wordmark">BizGenie</span>
-        {session.status === "ready" ? (
-          <button type="button" className="secondary" onClick={handleSignOut}>Sign out</button>
-        ) : (
-          <span className="status">Campaign workspace</span>
-        )}
-      </nav>
-      {(session.status === "signed-out" || session.status === "unconfigured") && (
-        <section className="recommendation" aria-label="Account access">
-          <div className="recommendation-header">
-            <div><p className="eyebrow">Your workspace</p><h2>Sign in to BizGenie</h2></div>
-            <span className="pill">Account</span>
-          </div>
-          <p>Sign in before you start a campaign to access your existing workspace and Brand Brain.</p>
-          <AuthPanel onAuthenticated={() => {}} />
-        </section>
-      )}
-      <section className="hero">
-        <p className="eyebrow">Start with the outcome</p>
-        <h1>What do you want your campaign to achieve?</h1>
-        <p className="lede">Tell BizGenie the goal in your own words. We’ll suggest a clear first campaign shape for you to review.</p>
-        <form onSubmit={submit} className="goal-form">
-          <label htmlFor="goal">Your goal</label>
-          <textarea id="goal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="e.g. Launch our new strawberry lemonade next Friday" maxLength={2000} />
-          <button type="submit" disabled={!goal.trim() || state.status === "loading"}>{state.status === "loading" ? "Thinking…" : "Get my recommendation"}</button>
-        </form>
-
-        {pendingSubmit && (session.status === "signed-out" || session.status === "unconfigured") && (
-          <div className="account-prompt" role="status">
-            <strong>Sign in to get your recommendation.</strong>
-            <p>Your goal stays right here — nothing is created until you sign in.</p>
-            <AuthPanel onAuthenticated={() => {}} />
-          </div>
-        )}
-
-        {state.status === "error" && <p className="error" role="alert">{state.error}</p>}
-      </section>
-      <Founding100Panel />
-      <BillingPanel session={session} />
-      {session.status === "ready" && (
+  const brandSection = session.status === "ready" && (
         <section className="recommendation" aria-label="Brand Brain">
           <div className="recommendation-header"><div><p className="eyebrow">Selected brand intelligence</p><h2>Brand Brain</h2></div><span className="pill">{brandBrainState.brain?.metadata?.status || "Loading"}</span></div>
           <p>Review the approved intelligence BizGenie will use. Changes stay bound to your currently selected brand.</p>
@@ -629,9 +670,9 @@ export default function App() {
           {brandBrainState.brain && <button className="secondary" type="button" onClick={saveBrandBrain} disabled={brandBrainState.status === "saving"}>{brandBrainState.status === "saving" ? "Saving…" : "Save Brand Brain changes"}</button>}
           {brandBrainState.status === "error" && <p className="error" role="alert">{brandBrainState.error}</p>}
         </section>
-      )}
+  );
 
-      {state.recommendation && (
+  const recommendationSection = state.recommendation && (
         <section className="recommendation" aria-live="polite">
           <div className="recommendation-header"><div><p className="eyebrow">Your starting point</p><h2>{state.recommendation.campaign_name}</h2></div><span className="pill">Review first</span></div>
           {state.recommendation.summary && <p><strong>Recommended approach:</strong> {state.recommendation.summary}</p>}
@@ -642,8 +683,9 @@ export default function App() {
           </button>
           {campaignState.status === "error" && <p className="error" role="alert">{campaignState.error}</p>}
         </section>
-      )}
-      {campaignState.campaign && (
+  );
+
+  const campaignSection = campaignState.campaign && (
         <section className="recommendation" aria-live="polite">
           <div className="recommendation-header"><div><p className="eyebrow">Saved to your workspace</p><h2>{campaignState.campaign.name}</h2></div><span className="pill">Draft</span></div>
           <p>Your campaign and recommended starting items are now saved. Nothing has been scheduled or published.</p>
@@ -754,7 +796,184 @@ export default function App() {
             {calendarState.status === "error" && <p className="error" role="alert">{calendarState.error}</p>}
           </div>
         </section>
+  );
+
+  const topbar = (
+      <nav className="topbar">
+        <span className="wordmark">BizGenie</span>
+        {session.status === "ready" ? (
+          <button type="button" className="secondary" onClick={handleSignOut}>Sign out</button>
+        ) : (
+          <span className="status">Campaign workspace</span>
+        )}
+      </nav>
+  );
+
+  // ---- Premium Studio handlers (BG-STUDIO-008-FE). Used only when the flag is on. ----
+  const premiumLoadBrain = useCallback(async () => {
+    if (session.status !== "ready") return;
+    const scopeToken = scopeTokenRef.current;
+    setBrandBrainState((current) => (current.status === "loading" ? current : { ...current, status: "loading", error: "" }));
+    try {
+      const result = await withTimeout(getSelectedBrandBrain(session.accessToken), "Your Brand Brain is taking longer than expected to load.");
+      if (scopeToken !== scopeTokenRef.current) return;
+      setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "" });
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
+      setBrandBrainState({ status: "error", brain: null, draft: "", error: error.message });
+    }
+  }, [session.status, session.accessToken]);
+
+  const premiumLoadCampaigns = useCallback(async () => {
+    if (session.status !== "ready") return;
+    const scopeToken = scopeTokenRef.current;
+    setCampaignList((current) => (current.status === "loading" ? current : { ...current, status: "loading", error: "" }));
+    try {
+      const campaigns = await withTimeout(getCampaignList({ accessToken: session.accessToken, session }), "Your campaigns are taking longer than expected to load.");
+      if (scopeToken !== scopeTokenRef.current) return;
+      setCampaignList({ status: "ready", campaigns, error: "" });
+      // After a refresh, restore the newest real campaign so the workspace matches what is actually saved.
+      const latest = campaigns.filter((c) => c && c.campaign_id && !c.archived_at).sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))[0];
+      if (latest) {
+        const detail = await withTimeout(fetchCampaign({ accessToken: session.accessToken, session, campaignId: latest.campaign_id }), "Your latest campaign is taking longer than expected to load.");
+        if (scopeToken !== scopeTokenRef.current) return;
+        setCampaignState((current) => (current.campaign ? current : { status: "ready", campaign: detail, error: "" }));
+      }
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
+      setCampaignList((current) => ({ ...current, status: "error", error: error.message }));
+    }
+  }, [session.status, session.accessToken, session.tenantId, session.projectId]);
+
+  async function premiumSaveBrain(fields) {
+    if (session.status !== "ready") return { ok: false, message: "Sign in to save changes." };
+    const brain = brandBrainState.brain;
+    if (!brain) return { ok: false, message: "Your Brand Brain has not loaded, so nothing can be saved yet." };
+    const scopeToken = scopeTokenRef.current;
+    const merged = { ...brain };
+    if (fields.name) merged.name = fields.name;
+    const identity = mergeSection(brain.identity, "description", fields.description);
+    const audience = mergeSection(brain.audience, "summary", fields.audience);
+    const commercial = mergeSection(brain.commercial, "primary_cta", fields.cta);
+    if (identity) merged.identity = identity;
+    if (audience) merged.audience = audience;
+    if (commercial) merged.commercial = commercial;
+    try {
+      const result = await withTimeout(correctSelectedBrandBrain({ accessToken: session.accessToken, brandBrain: merged }), "Saving is taking longer than expected. It may or may not have been saved: reload your Brand Brain to check before trying again.");
+      if (scopeToken !== scopeTokenRef.current) return { ok: false, message: "Your account changed while saving. Nothing was shown as saved." };
+      setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "" });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  }
+
+  async function premiumBootstrap({ businessName, website, challenge }) {
+    if (session.status !== "scope-missing") return { ok: false, message: "Your workspace is already set up." };
+    const scopeToken = scopeTokenRef.current;
+    try {
+      const current = await withTimeout(getCustomerWorkspace(session.accessToken), "Checking your workspace is taking longer than expected. Nothing was created.");
+      if (current.status === "selection_required") return { ok: false, message: "You have more than one workspace. Choosing between workspaces is not available in this view yet." };
+      if (current.status !== "ready" && current.status !== "missing_workspace") return { ok: false, message: "Your workspace could not be checked yet. Nothing was created." };
+      // Bootstrap is idempotent: an existing workspace is kept and only its trusted scope is provisioned.
+      const created = await withTimeout(bootstrapWorkspaceWithProfile({ accessToken: session.accessToken, businessName, website, challenge }), "Creating your workspace is taking longer than expected. It may have been created: reload the page to check before trying again.");
+      if (created.status !== "ready") return { ok: false, message: "Your workspace could not be created yet. Nothing was saved." };
+      const refreshed = created.requires_session_refresh ? await refreshCustomerSession() : await getCustomerSession();
+      if (scopeToken !== scopeTokenRef.current) return { ok: false, message: "Your account changed while setting up." };
+      setSession(refreshed);
+      if (refreshed.status !== "ready") return { ok: false, message: "Your workspace was created. Please sign out and sign back in to continue." };
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  }
+
+  async function premiumRecommend(goalText) {
+    if (session.status !== "ready" || state.status === "loading") return;
+    setGoal(goalText);
+    await runRecommendation(session, goalText);
+  }
+
+  const premiumView = premiumEnabled ? (
+    <main className="shell premium">
+      {topbar}
+      <PremiumStudio
+        key={premiumEpoch}
+        session={session}
+        brainState={brandBrainState}
+        onLoadBrain={premiumLoadBrain}
+        onSaveBrain={premiumSaveBrain}
+        onBootstrap={premiumBootstrap}
+        recommendationState={state}
+        onRecommend={premiumRecommend}
+        campaign={campaignState.campaign}
+        campaignList={campaignList}
+        onLoadCampaigns={premiumLoadCampaigns}
+        calendarState={calendarState}
+        onLoadCalendar={runCalendar}
+        sections={{
+          auth: (
+            <section className="recommendation ps-auth" aria-label="Account access">
+              <div className="recommendation-header">
+                <div><p className="eyebrow">Your workspace</p><h2>Sign in to BizGenie</h2></div>
+                <span className="pill">Account</span>
+              </div>
+              <p>Sign in to set up your workspace and open your Brand Brain, campaigns and calendar.</p>
+              <AuthPanel onAuthenticated={() => {}} />
+            </section>
+          ),
+          recommendation: recommendationSection,
+          campaign: campaignSection,
+          brand: brandSection,
+          account: <BillingPanel session={session} />,
+        }}
+      />
+    </main>
+  ) : null;
+
+  // Premium Studio (BG-STUDIO-008-FE) is behind a build-time flag that is off by default. With the flag off,
+  // the markup below is exactly what it was before, in the same order.
+  if (premiumEnabled) return premiumView;
+
+  return (
+    <main className="shell">
+      {topbar}
+      {(session.status === "signed-out" || session.status === "unconfigured") && (
+        <section className="recommendation" aria-label="Account access">
+          <div className="recommendation-header">
+            <div><p className="eyebrow">Your workspace</p><h2>Sign in to BizGenie</h2></div>
+            <span className="pill">Account</span>
+          </div>
+          <p>Sign in before you start a campaign to access your existing workspace and Brand Brain.</p>
+          <AuthPanel onAuthenticated={() => {}} />
+        </section>
       )}
+      <section className="hero">
+        <p className="eyebrow">Start with the outcome</p>
+        <h1>What do you want your campaign to achieve?</h1>
+        <p className="lede">Tell BizGenie the goal in your own words. We’ll suggest a clear first campaign shape for you to review.</p>
+        <form onSubmit={submit} className="goal-form">
+          <label htmlFor="goal">Your goal</label>
+          <textarea id="goal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="e.g. Launch our new strawberry lemonade next Friday" maxLength={2000} />
+          <button type="submit" disabled={!goal.trim() || state.status === "loading"}>{state.status === "loading" ? "Thinking…" : "Get my recommendation"}</button>
+        </form>
+
+        {pendingSubmit && (session.status === "signed-out" || session.status === "unconfigured") && (
+          <div className="account-prompt" role="status">
+            <strong>Sign in to get your recommendation.</strong>
+            <p>Your goal stays right here — nothing is created until you sign in.</p>
+            <AuthPanel onAuthenticated={() => {}} />
+          </div>
+        )}
+
+        {state.status === "error" && <p className="error" role="alert">{state.error}</p>}
+      </section>
+      <Founding100Panel />
+      <BillingPanel session={session} />
+      {brandSection}
+
+      {recommendationSection}
+      {campaignSection}
     </main>
   );
 }

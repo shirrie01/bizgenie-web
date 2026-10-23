@@ -104,3 +104,103 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .media-error .error { margin: 0; }
 /* Form controls inside cards must never be wider than the card (Execution mode select overflowed at <=430px). */
 .item select, .item textarea, .item input { width: 100%; max-width: 100%; min-width: 0; }
+
+/* ---- Premium Studio (BG-STUDIO-008-FE). Only rendered when VITE_PREMIUM_STUDIO_ENABLED is "true". ---- */
+.premium .recommendation { padding-top: 24px; padding-bottom: 24px; }
+.ps-shell { max-width: 1120px; margin: 0 auto; padding: 24px clamp(16px, 4vw, 48px) 72px; }
+.ps-content { min-width: 0; }
+.ps-loading { max-width: 880px; margin: 48px auto; padding: 0 24px; color: #4b564f; }
+.ps-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.ps-nav button { justify-self: auto; min-height: 44px; padding: 10px 18px; background: #fff; color: #16211d; border: 1px solid #bfc3b9; }
+.ps-nav button.on { background: #16211d; color: #fff; border-color: #16211d; }
+.ps-header { display: flex; gap: 20px; align-items: center; padding: clamp(18px, 3vw, 30px); background: #fff; border: 1px solid #d9dbd3; border-left: 8px solid var(--ps-accent, #0b4943); border-radius: 20px; }
+.ps-avatar { flex: none; width: 64px; height: 64px; border-radius: 18px; background: var(--ps-accent, #0b4943); color: #fff; display: grid; place-items: center; font: 600 1.7rem Fraunces, serif; }
+.ps-header-text { min-width: 0; }
+.ps-header h2 { font-size: clamp(1.7rem, 4vw, 2.6rem); margin: 4px 0 10px; overflow-wrap: anywhere; }
+.ps-sub { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0; }
+.ps-chip { background: var(--ps-accent, #0b4943); color: #fff; padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: .85rem; }
+.ps-chip-note { color: #4b564f; font-size: .85rem; }
+.ps-goal { margin: 12px 0 0; overflow-wrap: anywhere; }
+.ps-banner { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 16px 0; padding: 14px 18px; background: #f4dfc9; border: 1px solid #b9560f; border-radius: 12px; }
+.ps-banner p { margin: 0; }
+.ps-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+.ps-tile { display: grid; gap: 4px; padding: 16px; background: #fff; border: 1px solid #d9dbd3; border-radius: 14px; min-width: 0; }
+.ps-tile small { color: #4b564f; text-transform: uppercase; font-size: .72rem; letter-spacing: .08em; }
+.ps-tile strong { font-size: 1.15rem; overflow-wrap: anywhere; }
+.ps-tile span { color: #4b564f; font-size: .85rem; }
+.ps-tile.ok { border-color: #2f7a52; }
+.ps-tile.todo { border-color: #b9560f; }
+.ps-actions-panel { margin: 24px 0; }
+.ps-actions-panel h3, .ps-card h3 { margin: 0 0 12px; font-size: 1.15rem; }
+.ps-next { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.ps-next button { width: 100%; justify-self: stretch; display: grid; gap: 6px; text-align: left; padding: 16px; background: #fff; color: #16211d; border: 1px solid #bfc3b9; border-radius: 14px; font-weight: 400; min-height: 44px; }
+.ps-next button strong { font-size: 1rem; }
+.ps-next button span { color: #4b564f; font-size: .9rem; line-height: 1.4; }
+.ps-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.ps-card { min-width: 0; padding: 22px; background: #fff; border: 1px solid #d9dbd3; border-radius: 16px; }
+.ps-muted { color: #4b564f; line-height: 1.5; margin: 8px 0 0; }
+.ps-angles { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.ps-angles li { display: grid; gap: 2px; }
+.ps-angles strong { color: #a34a0a; font-size: .78rem; letter-spacing: .1em; text-transform: uppercase; }
+.ps-facts { margin: 0 0 16px; display: grid; gap: 12px; }
+.ps-facts > div { display: grid; gap: 2px; min-width: 0; }
+.ps-facts dt { font-weight: 600; font-size: .85rem; color: #4b564f; }
+.ps-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ps-facts dd small { display: block; color: #4b564f; margin-top: 2px; }
+.ps-src { font-style: normal; font-size: .72rem; font-weight: 600; padding: 3px 8px; border-radius: 999px; margin-left: 6px; white-space: nowrap; }
+.ps-src.backend { background: #dff0e6; color: #1f5a38; }
+.ps-src.customer { background: #fbe9d4; color: #7a3a08; }
+.ps-src.inferred { background: #e3ebf6; color: #1d4a7a; }
+.ps-src.missing { background: #eceeea; color: #3b463f; }
+.ps-empty { max-width: 880px; margin: 0 auto; padding: 24px 0; }
+.ps-empty h2 { margin-top: 0; }
+.ps-onboarding { max-width: 880px; margin: 0 auto; }
+.ps-progress { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; padding: 0; }
+.ps-progress li { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; background: #fff; border: 1px solid #d9dbd3; border-radius: 999px; color: #4b564f; font-size: .85rem; }
+.ps-progress li.current { border-color: #16211d; color: #16211d; font-weight: 600; }
+.ps-progress li.done { color: #1f5a38; }
+.ps-step-n { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #eceeea; font-weight: 600; font-size: .78rem; }
+.ps-progress li.current .ps-step-n { background: #16211d; color: #fff; }
+.ps-progress li.done .ps-step-n { background: #dff0e6; }
+.ps-stage { padding: clamp(20px, 4vw, 36px); background: #fff; border: 1px solid #d9dbd3; border-radius: 20px; }
+.ps-stage h2 { font-size: clamp(1.7rem, 4vw, 2.6rem); margin: 0 0 12px; outline: none; overflow-wrap: anywhere; }
+.ps-stage h3 { margin: 0 0 8px; font-size: 1rem; }
+.ps-lede { color: #4b564f; font-size: 1.05rem; line-height: 1.6; max-width: 62ch; }
+.ps-field { display: grid; gap: 6px; margin: 18px 0; }
+.ps-field input, .ps-field textarea, .ps-field select { width: 100%; min-height: 44px; padding: 12px 14px; border: 1px solid #8f948a; border-radius: 10px; font: inherit; background: #fff; color: #16211d; }
+.ps-field textarea { min-height: 0; }
+.ps-hint { margin: 0; color: #4b564f; font-size: .88rem; line-height: 1.45; }
+.ps-truth { margin: 16px 0 0; padding: 10px 14px; background: #f3f4f0; border-left: 4px solid #a34a0a; border-radius: 8px; color: #3b463f; line-height: 1.5; }
+.ps-saved { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+.ps-saved > div { padding: 16px; background: #f3f4f0; border-radius: 12px; }
+.ps-saved ul { margin: 0; padding-left: 18px; line-height: 1.5; color: #3b463f; }
+.ps-sector-status { margin: 6px 0 0; color: #3b463f; }
+.ps-channels { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 16px 0; }
+.ps-channel { justify-self: stretch; display: grid; gap: 4px; text-align: left; padding: 14px 16px; background: #fff; color: #16211d; border: 1px solid #8f948a; border-radius: 14px; min-height: 44px; }
+.ps-channel small { color: #4b564f; font-weight: 400; }
+.ps-channel.on { background: #f3f4f0; border-color: #16211d; box-shadow: inset 0 0 0 1px #16211d; }
+.ps-rec { margin-top: 24px; padding: 20px; background: #f3f4f0; border-radius: 14px; }
+.ps-rec h3 { font-family: Fraunces, serif; font-size: 1.5rem; margin: 6px 0 10px; }
+.ps-rec-items { margin: 12px 0; padding-left: 18px; line-height: 1.6; }
+.ps-rec-items span { color: #4b564f; font-size: .88rem; }
+.ps-ok { color: #1f5a38; margin-top: 16px; }
+.ps-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.ps-actions button, .ps-primary { min-height: 44px; }
+.ps-actions .secondary { justify-self: auto; }
+.ps-auth { padding-top: 48px; }
+@media (max-width: 860px) { .ps-two, .ps-saved { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) {
+  .ps-header { flex-direction: column; align-items: flex-start; }
+  .ps-step-l { display: none; }
+  .ps-progress li.current .ps-step-l { display: inline; }
+  .ps-actions button { flex: 1 1 100%; justify-self: stretch; }
+}
+/* The existing campaign and sign-in controls are shorter than the 24px WCAG 2.2 target minimum. Raised inside the premium shell only. */
+.premium select, .premium input:not([type="checkbox"]):not([type="radio"]), .premium textarea { min-height: 44px; padding: 10px 12px; border: 1px solid #8f948a; border-radius: 10px; font: inherit; background: #fff; color: #16211d; max-width: 100%; }
+.premium textarea { min-height: 96px; }
+.ps-two { align-items: start; }
+@media (max-width: 560px) { .ps-nav { gap: 6px; } .ps-nav button { min-height: 40px; padding: 8px 13px; font-size: .9rem; } }
+.ps-campaigns { margin-bottom: 16px; }
+.ps-camp-list { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 10px; }
+.ps-camp-list li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.ps-camp-list small { color: #4b564f; }
