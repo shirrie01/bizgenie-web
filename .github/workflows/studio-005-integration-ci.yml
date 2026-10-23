@@ -102,3 +102,44 @@ jobs:
       - if: steps.has.outputs.run == 'true'
         env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
         run: npx playwright test --config qa/playwright.config.mjs
+  premium-browser:
+    # BG-STUDIO-008-FE: the flag-ON production build, real browser, mocked API and session (no network, no secrets).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ['1440x900', '768x1024', '390x844', '320x568']
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow/dispatch SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - name: Skip when this ref has no premium browser checks
+        id: has
+        run: test -f qa/premium.playwright.config.mjs && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
+      - if: steps.has.outputs.run == 'true'
+        run: npm install --no-save --package-lock=false @playwright/test@1.56.1 axe-core@4.10.2
+      - if: steps.has.outputs.run == 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.has.outputs.run == 'true'
+        name: Build with the flag ON and placeholder public values (API and session are mocked in the browser)
+        env:
+          VITE_PREMIUM_STUDIO_ENABLED: 'true'
+          VITE_SUPABASE_URL: http://supabase.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
+          VITE_BIZGENIE_API_URL: http://api.test
+        run: npx vite build --outDir dist-premium
+      - if: steps.has.outputs.run == 'true'
+        run: npx vite preview --outDir dist-premium --port 4180 --strictPort --host 127.0.0.1 &
+      - if: steps.has.outputs.run == 'true'
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
+        run: npx playwright test --config qa/premium.playwright.config.mjs
