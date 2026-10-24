@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { SECTORS, sectorOptions } from "./sectors";
 import { SOURCE_LABEL } from "./workspaceModel";
-import { CHANNEL_LABELS, MISSING_GUIDANCE, confirmationReadiness, effectiveSector, isNotADescription } from "./onboardingModel";
+import ProvenanceLegend from "./ProvenanceLegend";
+import { CHANNEL_LABELS, MISSING_GUIDANCE, confirmationReadiness, effectiveSector, isNotADescription, isSeededDescription } from "./onboardingModel";
 import { roleLabel } from "./membershipClient";
 import { changedBrainFields, describeBrainFailure } from "./brainClient";
 
@@ -178,6 +179,9 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         </select>
       </Field>
       <p className="ps-sector-status" role="status">Sector: <strong>{SECTORS[sector.key].label}</strong> · {sectorLabel}</p>
+      {(sector.source === "inferred" || sector.source === "saved_inferred") && (
+        <p className="ps-hint">BizGenie worked this out from your words. It needs your confirmation before it counts as your answer. <button type="button" className="secondary" onClick={() => setField("sectorChoice", sector.key)}>Yes, {SECTORS[sector.key].label} is right</button></p>
+      )}
       <Field id="ps-description" label="Describe what the business does" hint={identityLocked ? "Only the workspace owner can change the description of the business." : "Saved to your Brand Brain when you press Save. A website address alone is not a description."}>
         <textarea id="ps-description" rows={4} value={identityLocked ? storedDescription : draft.description} readOnly={identityLocked} onChange={(e) => setField("description", e.target.value)} aria-invalid={errors.description ? "true" : undefined} />
         {errors.description && <p className="error" role="alert">{errors.description}</p>}
@@ -270,6 +274,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         {STAGES.map((s, i) => (<li key={s.id} aria-current={i === stage ? "step" : undefined} className={i < stage ? "done" : i === stage ? "current" : ""}><span className="ps-step-n">{i + 1}</span><span className="ps-step-l">{s.label}</span></li>))}
       </ol>
       <div className="ps-stage">
+        <ProvenanceLegend />
         {body}
         {message.text && (
           <div className={message.kind === "ok" ? "ps-ok" : message.kind === "unconfirmed" ? "ps-warn" : "error"} role={message.kind === "ok" ? "status" : "alert"} data-kind={message.kind}>
@@ -291,7 +296,9 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         {!scopeMissing && (storage === "unavailable" || storage === "error") && (
           <div className="ps-banner" role="alert">
             <p>{onboardingState.error || "Your saved setup could not be loaded."} {storage === "unavailable" ? "You can keep going, but your sector, channels and progress will not be remembered." : ""}</p>
-            <button type="button" className="secondary" onClick={onLoadOnboarding}>Try again</button>
+            {onboardingState.errorCode === "WORKSPACE_NOT_AUTHORIZED" && onChooseWorkspace
+              ? <button type="button" className="ps-primary" onClick={onChooseWorkspace}>Choose a workspace</button>
+              : <button type="button" className="secondary" onClick={onLoadOnboarding}>Try again</button>}
           </div>
         )}
         {canSaveProgress && !readOnly && <p className="ps-hint" role="status" aria-live="polite" data-testid="ps-save-state">{dirty ? "You have changes that are not saved yet." : onboarding && onboarding.version > 0 ? `Setup progress saved (version ${onboarding.version}).` : "Nothing saved yet."}</p>}

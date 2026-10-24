@@ -13,6 +13,7 @@ import PremiumErrorBoundary from "./premium/PremiumErrorBoundary";
 import { isPremiumStudioEnabled } from "./premium/flag";
 import { SAVE_NOT_CONFIRMED_RETRY, createSaveKeeper, fetchOnboarding, putOnboarding } from "./premium/onboardingClient";
 import { fetchMembershipRole, isReadOnlyRole } from "./premium/membershipClient";
+import { fetchWorkspaces, normaliseWorkspace, sameWorkspace, selectWorkspace } from "./premium/workspaceClient";
 import { BRAIN_SAVE_UNCONFIRMED, fetchBrandBrain, hasUntrimmedIdentity, identityChanged, mergeBrainFields, putBrandBrain } from "./premium/brainClient";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
@@ -360,6 +361,9 @@ export default function App() {
   const [premiumEpoch, setPremiumEpoch] = useState(0);
   // Persistent onboarding (BG-STUDIO-010-FE): the saved record for the selected workspace, as the API returned it.
   const [onboardingState, setOnboardingState] = useState({ status: "idle", onboarding: null, brandNamePlaceholder: null, error: "" });
+  // Workspace list and selection (BG-STUDIO-011-FE). `selectionRequired` is true only when the API said so; the
+  // browser never picks a workspace for the customer.
+  const [workspaceState, setWorkspaceState] = useState({ status: "idle", workspaces: [], selectionRequired: false, error: "", errorCode: "", notice: "", target: null });
   // The customer's role in this workspace (from the existing workspace list). Unknown until read; the server decides writes.
   const [roleState, setRoleState] = useState({ status: "idle", role: null });
   const saveKeeperRef = useRef(null);
@@ -395,6 +399,7 @@ export default function App() {
     const scopeChanged = Boolean(scope) && Boolean(lastScopeRef.current) && scope !== lastScopeRef.current;
     if (scopeChanged || (signedOut && hadSessionRef.current)) {
       resetCustomerState();
+      setWorkspaceState({ status: "idle", workspaces: [], selectionRequired: false, error: "", errorCode: "", notice: "", target: null });
       setPremiumEpoch((value) => value + 1);
       hadSessionRef.current = false;
       lastScopeRef.current = "";
@@ -810,7 +815,7 @@ export default function App() {
   const topbar = (
       <nav className="topbar">
         <span className="wordmark">BizGenie</span>
-        {session.status === "ready" ? (
+        {session.status === "ready" || (premiumEnabled && session.status === "scope-missing") ? (
           <button type="button" className="secondary" onClick={handleSignOut}>Sign out</button>
         ) : (
           <span className="status">Campaign workspace</span>
@@ -866,7 +871,7 @@ export default function App() {
     } catch (error) {
       if (scopeToken !== scopeTokenRef.current) return;
       // Never keep an earlier record on screen as if it were current once a reload has failed.
-      setOnboardingState({ status: error.code === "ONBOARDING_UNAVAILABLE" ? "unavailable" : "error", onboarding: null, brandNamePlaceholder: null, error: error.message });
+      setOnboardingState({ status: error.code === "ONBOARDING_UNAVAILABLE" ? "unavailable" : "error", onboarding: null, brandNamePlaceholder: null, error: error.message, errorCode: error.code || "" });
     }
   }, [session.status, session.accessToken]);
 
@@ -909,6 +914,66 @@ export default function App() {
       if (error.outcome === "unknown" || error.code === "NETWORK") return { ok: false, unconfirmed: true, message: error.message };
       if (error.code === "ONBOARDING_INCOMPLETE") return { ok: false, missing: error.missing || [], message: error.message };
       return { ok: false, message: error.message };
+    }
+  }
+
+  // ---- Workspace list and selection (BG-STUDIO-011-FE). Uses the identity token, so it works before a workspace is selected. ----
+  const premiumLoadWorkspaces = useCallback(async () => {
+    if (session.status !== "ready" && session.status !== "scope-missing") return;
+    const scopeToken = scopeTokenRef.current;
+    // A list already on screen stays while it refreshes; a failed refresh then replaces it (never left looking current).
+    setWorkspaceState((current) => (current.status === "idle" || current.status === "error" ? { ...current, status: "loading", error: "", errorCode: "" } : current));
+    try {
+      const result = await withTimeout(fetchWorkspaces({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken }), "Your workspaces are taking longer than expected to load.");
+      if (scopeToken !== scopeTokenRef.current) return;
+      setWorkspaceState((current) => (current.status === "switching" ? current : { ...current, status: "ready", workspaces: result.workspaces, selectionRequired: result.status === "selection_required", error: "", errorCode: "", target: null }));
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
+      // Never keep an earlier list on screen as if it were current once a reload has failed.
+      setWorkspaceState((current) => (current.status === "switching" ? current : { ...current, status: "error", workspaces: [], selectionRequired: false, error: error.message, errorCode: error.code || "", target: null }));
+    }
+  }, [session.status, session.accessToken]);
+
+  // A customer who has not been placed in a workspace yet: ask the API whether they must choose one.
+  useEffect(() => {
+    if (premiumEnabled && session.status === "scope-missing" && workspaceState.status === "idle") premiumLoadWorkspaces();
+  }, [premiumEnabled, session.status, workspaceState.status, premiumLoadWorkspaces]);
+
+  // Choose a workspace explicitly. The previous workspace's state is cleared at once (and any in-flight response for it
+  // is ignored); the new workspace's data loads only after the API confirms the choice AND the refreshed sign-in
+  // carries exactly that scope. Nothing from the previous workspace is ever shown for the new one.
+  async function premiumSelectWorkspace(workspace) {
+    if (session.status !== "ready" && session.status !== "scope-missing") return;
+    if (workspaceState.status === "switching") return;
+    const previous = session;
+    resetCustomerState();
+    const scopeToken = scopeTokenRef.current;
+    setWorkspaceState((current) => ({ ...current, status: "switching", error: "", errorCode: "", notice: "", target: workspace }));
+    const backToCurrent = (message, extra = {}) => {
+      // Reload whatever the session still points at; show the list again with the reason.
+      setWorkspaceState((current) => ({ ...current, status: "ready", notice: message, errorCode: extra.errorCode || "", target: null, ...(extra.workspaces ? { workspaces: extra.workspaces, selectionRequired: extra.workspaces.length > 1 } : {}) }));
+      setPremiumEpoch((value) => value + 1);
+    };
+    try {
+      const chosen = await withTimeout(selectWorkspace({ apiBaseUrl: API_BASE_URL, accessToken: previous.accessToken, workspace }), "Switching workspace is taking longer than expected. It may or may not have switched: reload the page to check.");
+      if (scopeToken !== scopeTokenRef.current) return;
+      const refreshed = chosen.requiresSessionRefresh ? await refreshCustomerSession() : await getCustomerSession();
+      if (scopeToken !== scopeTokenRef.current) return;
+      if (refreshed.status === "signed-out" || refreshed.status === "unconfigured") { setSession(refreshed); setWorkspaceState({ status: "idle", workspaces: [], selectionRequired: false, error: "", errorCode: "", notice: "", target: null }); return; }
+      const carries = refreshed.status === "ready" && sameWorkspace({ tenant_id: refreshed.tenantId, project_id: refreshed.projectId, brand_id: refreshed.brandId }, workspace);
+      if (!carries) {
+        backToCurrent("Your workspace was chosen, but your sign-in has not switched to it yet, so nothing from it is shown. Press the workspace again, or sign out and back in.");
+        return;
+      }
+      setSession(refreshed);
+      setWorkspaceState({ status: "idle", workspaces: [], selectionRequired: false, error: "", errorCode: "", notice: "", target: null });
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
+      if (error.unavailable) {
+        let fresh;
+        try { fresh = (await fetchWorkspaces({ apiBaseUrl: API_BASE_URL, accessToken: previous.accessToken })).workspaces; } catch { fresh = []; }
+        backToCurrent(error.message, { errorCode: error.code, workspaces: fresh });
+      } else backToCurrent(error.message, { errorCode: error.code });
     }
   }
 
@@ -978,7 +1043,11 @@ export default function App() {
     const scopeToken = scopeTokenRef.current;
     try {
       const current = await withTimeout(getCustomerWorkspace(session.accessToken), "Checking your workspace is taking longer than expected. Nothing was created.");
-      if (current.status === "selection_required") return { ok: false, message: "You have more than one workspace. Choosing between workspaces is not available in this view yet." };
+      if (current.status === "selection_required") {
+        // Never guess: hand the customer the list and let them choose.
+        setWorkspaceState({ status: "ready", notice: "", workspaces: (Array.isArray(current.workspaces) ? current.workspaces : []).map(normaliseWorkspace), selectionRequired: true, error: "", errorCode: "", target: null });
+        return { ok: false, message: "You have more than one workspace. Choose which one to use." };
+      }
       if (current.status !== "ready" && current.status !== "missing_workspace") return { ok: false, message: "Your workspace could not be checked yet. Nothing was created." };
       // Bootstrap is idempotent: an existing workspace is kept and only its trusted scope is provisioned.
       const created = await withTimeout(bootstrapWorkspaceWithProfile({ accessToken: session.accessToken, businessName, website, challenge }), "Creating your workspace is taking longer than expected. It may have been created: reload the page to check before trying again.");
@@ -1002,6 +1071,12 @@ export default function App() {
   const premiumView = premiumEnabled ? (
     <main className="shell premium">
       {topbar}
+      {workspaceState.status === "switching" ? (
+        <section className="ps-empty ps-switching" aria-label="Switching workspace" role="status" aria-live="polite">
+          <h2>Switching to {workspaceState.target ? (workspaceState.target.brand_name || "your workspace") : "your workspace"}…</h2>
+          <p>Your previous workspace has been cleared from this screen. Nothing from it is shown while your sign-in switches. Nothing is created, scheduled or published.</p>
+        </section>
+      ) : (
       <PremiumErrorBoundary key={premiumEpoch}>
       <PremiumStudio
         key={premiumEpoch}
@@ -1010,6 +1085,9 @@ export default function App() {
         onLoadBrain={premiumLoadBrain}
         onSaveBrain={premiumSaveBrain}
         onBootstrap={premiumBootstrap}
+        workspaceState={workspaceState}
+        onLoadWorkspaces={premiumLoadWorkspaces}
+        onSelectWorkspace={premiumSelectWorkspace}
         membershipRole={roleState.role}
         readOnly={isReadOnlyRole(roleState.role)}
         onboardingState={onboardingState}
@@ -1040,6 +1118,7 @@ export default function App() {
         }}
       />
       </PremiumErrorBoundary>
+      )}
     </main>
   ) : null;
 

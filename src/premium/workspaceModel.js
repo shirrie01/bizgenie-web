@@ -97,7 +97,7 @@ export function buildWorkspaceModel({ workspace = null, brain = null, draft = {}
     fact("audience", "Who it serves", facts.audience.value, facts.audience.source),
     fact("cta", "What a customer should do next", facts.cta.value, facts.cta.source),
     fact("tone", "Brand tone", facts.tone.value, facts.tone.source),
-    fact("sector", "Sector", sectorEntry.label, sectorSource, sector.source === "none" ? "Neutral layout: general guidance that suits any business. Choose a sector if one of them fits." : ""),
+    fact("sector", "Sector", sectorEntry.label, sectorSource, sector.source === "none" ? "Neutral layout: general guidance that suits any business. Choose a sector if one of them fits." : sector.source === "inferred" || sector.source === "saved_inferred" ? "Inferred from your words. Confirm it in Set up before it counts as your answer." : ""),
     fact("goal", "Goal", goalText, goalText ? "customer" : "missing", "Used for your recommendation. Saved only when you create a campaign."),
     fact("channels", "Channels you are planning for", channelList.join(", "), channelInfo.source, "Planning only. No account is connected and nothing is published."),
   ];
@@ -122,7 +122,7 @@ export function buildWorkspaceModel({ workspace = null, brain = null, draft = {}
     sector: { key: sector.key, label: sectorEntry.label, source: sectorSource, sourceLabel: SOURCE_LABEL[sectorSource] || SOURCE_LABEL.missing, accent: sectorEntry.accent },
     goal: { value: goalText, source: goalText ? "customer" : "missing" },
     plannedChannels: channelList,
-    profile: { complete: profileComplete, unknown: profileUnknown, confirmed: onboardingCompleted, rows },
+    profile: { complete: profileComplete, unknown: profileUnknown, confirmed: onboardingCompleted, rows, missingDetails: rows.filter((r) => ["name", "description", "audience", "cta"].includes(r.key) && r.source === "missing").length },
     campaign: camp,
     campaigns: summariseCampaigns(campaigns),
     nextActions: actions,

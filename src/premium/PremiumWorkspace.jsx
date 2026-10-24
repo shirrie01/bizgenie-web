@@ -1,4 +1,5 @@
 import React from "react";
+import ProvenanceLegend from "./ProvenanceLegend";
 
 // Production workspace overview (BG-STUDIO-008-FE). Everything shown is real or plainly labelled:
 // the business and profile come from the Brand Brain, the campaign from the real campaign, and anything the
@@ -18,6 +19,8 @@ export default function PremiumWorkspace({ model, brainState, campaignList, onGo
   const brainLoading = brainState.status === "loading" || brainState.status === "idle";
   const reviewCount = campaign ? campaign.counts.review : 0;
   const onboardingFailed = onboardingState && (onboardingState.status === "error" || onboardingState.status === "unavailable");
+  // The API says this account can no longer use the workspace: one clear message and the chooser, not a stack of "try again" banners.
+  const workspaceGone = brainState.errorCode === "WORKSPACE_NOT_AUTHORIZED" || Boolean(onboardingState && onboardingState.errorCode === "WORKSPACE_NOT_AUTHORIZED");
 
   return (
     <div className="ps-workspace" style={{ "--ps-accent": model.sector.accent }}>
@@ -36,28 +39,38 @@ export default function PremiumWorkspace({ model, brainState, campaignList, onGo
         </div>
       </header>
 
-      {brainFailed && (
+      {workspaceGone && (
         <div className="ps-banner" role="alert">
-          <p><strong>Your Brand Brain could not be loaded.</strong> {extra(brainState.error, "could not be loaded")} Nothing is shown as saved until it loads.</p>
-          <button type="button" className="secondary" onClick={onRetryBrain}>Try again</button>
+          <p><strong>This workspace is not available to your account right now.</strong> Nothing from it is shown as saved or missing. Choose a workspace to continue.</p>
+          <button type="button" className="ps-primary" onClick={() => onGo({ view: "workspaces" })}>Choose a workspace</button>
         </div>
       )}
-      {onboardingFailed && (
+      {brainFailed && !workspaceGone && (
+        <div className="ps-banner" role="alert">
+          <p><strong>Your Brand Brain could not be loaded.</strong> {extra(brainState.error, "could not be loaded")} Nothing is shown as saved until it loads.</p>
+          {brainState.errorCode === "WORKSPACE_NOT_AUTHORIZED"
+            ? <button type="button" className="ps-primary" onClick={() => onGo({ view: "workspaces" })}>Choose a workspace</button>
+            : <button type="button" className="secondary" onClick={onRetryBrain}>Try again</button>}
+        </div>
+      )}
+      {onboardingFailed && !workspaceGone && (
         <div className="ps-banner" role="alert">
           <p><strong>Your saved setup could not be loaded.</strong> {onboardingState.error} Setup is not shown as complete or incomplete until it loads.</p>
-          <button type="button" className="secondary" onClick={onRetryOnboarding}>Try again</button>
+          {onboardingState.errorCode === "WORKSPACE_NOT_AUTHORIZED"
+            ? <button type="button" className="ps-primary" onClick={() => onGo({ view: "workspaces" })}>Choose a workspace</button>
+            : <button type="button" className="secondary" onClick={onRetryOnboarding}>Try again</button>}
         </div>
       )}
       {brainLoading && <p className="ps-loading" role="status">Loading your workspace…</p>}
 
       <section className="ps-tiles" aria-label="Status">
-        <Tile label="Business profile" value={model.profile.complete ? "Complete" : brainFailed || model.profile.unknown ? "Unavailable" : "Needs your input"} detail={model.profile.complete ? "Confirmed by you and saved" : brainFailed ? "Shown once your Brand Brain loads" : model.profile.unknown ? "Shown once your saved setup loads" : "Finish setup and confirm it"} tone={model.profile.complete ? "ok" : "todo"} />
+        <Tile label="Business profile" value={model.profile.complete ? (model.profile.missingDetails ? "Confirmed" : "Complete") : brainFailed || model.profile.unknown ? "Unavailable" : "Needs your input"} detail={model.profile.complete ? (model.profile.missingDetails ? `Setup confirmed by you. ${model.profile.missingDetails} detail${model.profile.missingDetails === 1 ? " is" : "s are"} still not provided.` : "Confirmed by you and saved") : brainFailed ? "Shown once your Brand Brain loads" : model.profile.unknown ? "Shown once your saved setup loads" : "Finish setup and confirm it"} tone={model.profile.complete ? "ok" : "todo"} />
         <Tile label="Campaign" value={campaign ? campaign.name || "Saved" : "None yet"} detail={campaign ? `${campaign.total} item${campaign.total === 1 ? "" : "s"} saved` : "Nothing created or published"} />
         <Tile label="Creative review" value={campaign ? (reviewCount ? `${reviewCount} waiting` : "Nothing waiting") : "—"} detail="Approval never publishes" />
         <Tile label="Publishing" value="Manual only" detail="BizGenie records what you confirm" />
       </section>
 
-      {campaignList && campaignList.status === "error" && (
+      {campaignList && campaignList.status === "error" && !workspaceGone && (
         <div className="ps-banner" role="alert">
           <p><strong>Your campaigns could not be loaded.</strong> {extra(campaignList.error, "could not be loaded")} Nothing is shown as saved until they load.</p>
           <button type="button" className="secondary" onClick={onRetryCampaigns}>Try again</button>
@@ -96,6 +109,7 @@ export default function PremiumWorkspace({ model, brainState, campaignList, onGo
               ))}
             </dl>
           )}
+          {!brainFailed && <ProvenanceLegend />}
           <button type="button" className="secondary" onClick={() => onGo({ view: "onboarding", stage: 1 })}>Edit these details</button>
         </section>
       </div>

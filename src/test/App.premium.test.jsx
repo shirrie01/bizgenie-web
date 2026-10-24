@@ -766,7 +766,7 @@ describe("persistent onboarding: Save progress, Save and exit, and confirmation"
     expect(Object.keys(body).sort()).toEqual(["complete", "expected_version", "idempotency_key"]);
     fireEvent.click(await screen.findByRole("button", { name: "Overview" }));
     expect(await screen.findByRole("heading", { name: "Welcome back, Maison Aurelle." })).toBeInTheDocument();
-    expect(screen.getByText("Confirmed by you and saved")).toBeInTheDocument();
+    expect(screen.getByText(/Setup confirmed by you\. 2 details are still not provided\./)).toBeInTheDocument();
   });
 
   it("Confirm setup is blocked when the backend flags the name as a placeholder, or typing is unsaved", async () => {
@@ -1552,4 +1552,21 @@ describe("unexpected but valid JSON from the API (BG-STUDIO-015)", () => {
       expect(called("PUT", "/brand-brain")).toHaveLength(0);
     });
   }
+});
+
+describe("the business profile tile never says 'Complete' while details are missing (BG-STUDIO-015)", () => {
+  it("shows 'Confirmed' with the missing count when setup was confirmed but details are still not provided", async () => {
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Harbour Partners", "Business consulting.") });
+    render(<App />);
+    const tiles = await screen.findByRole("region", { name: /^status$/i });
+    expect(within(tiles).getByText("Confirmed")).toBeInTheDocument();
+    expect(within(tiles).queryByText("Complete")).toBeNull();
+    expect(tiles).toHaveTextContent(/setup confirmed by you\. 2 details are still not provided/i);
+  });
+  it("shows 'Complete' only when nothing is missing", async () => {
+    render(<App />); // NORTHGATE has a name, description, audience and customer action
+    const tiles = await screen.findByRole("region", { name: /^status$/i });
+    expect(within(tiles).getByText("Complete")).toBeInTheDocument();
+    expect(within(tiles).queryByText("Confirmed")).toBeNull();
+  });
 });
