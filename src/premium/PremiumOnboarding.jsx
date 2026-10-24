@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { SECTORS, sectorOptions } from "./sectors";
 import { SOURCE_LABEL } from "./workspaceModel";
-import { CHANNEL_LABELS, confirmationReadiness, effectiveSector, isSeededDescription } from "./onboardingModel";
+import { CHANNEL_LABELS, MISSING_GUIDANCE, confirmationReadiness, effectiveSector, isNotADescription } from "./onboardingModel";
+import { roleLabel } from "./membershipClient";
 
 // Production onboarding (BG-STUDIO-008-FE, persistent since BG-STUDIO-010-FE). Each step says exactly what it saves and where:
 //  - Business identity: created through POST /customer/workspace/bootstrap (only when no workspace exists yet).
@@ -35,7 +36,7 @@ function Field({ id, label, hint, children }) {
 
 function Truth({ children }) { return <p className="ps-truth">{children}</p>; }
 
-export default function PremiumOnboarding({ stage, setStage, draft, setField, channels, toggleChannel, session, brainState, onLoadBrain, onSave, onBootstrap, onRecommend, recommendationState, onFinish, onOpenStudio, onboardingState, onLoadOnboarding, onSaveProgress, dirty = false }) {
+export default function PremiumOnboarding({ stage, setStage, draft, setField, channels, toggleChannel, session, brainState, onLoadBrain, onSave, onBootstrap, onRecommend, recommendationState, onFinish, onOpenStudio, onboardingState, onLoadOnboarding, onSaveProgress, dirty = false, readOnly = false, membershipRole = null, onGoToStep }) {
   const headingRef = useRef(null);
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -50,6 +51,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   const sectorLabel = { customer: "You chose this · not saved yet", saved_customer: SOURCE_LABEL.saved_customer, inferred: "Inferred from what you typed · not saved yet · you can change it", saved_inferred: SOURCE_LABEL.saved_inferred, none: "Not identified. A neutral layout is used." }[sector.source];
   const scopeMissing = session.status === "scope-missing";
   const storage = onboardingState ? onboardingState.status : "idle";
+  // View-only members keep read access to everything but cannot save or confirm (the API allows only the owner to write).
   const canSaveProgress = !scopeMissing && storage === "ready";
   const readiness = confirmationReadiness({ onboarding, brain: brainState.brain, brandNamePlaceholder: onboardingState ? onboardingState.brandNamePlaceholder : null });
   const brainReady = brainState.status === "ready" && brainState.brain;
@@ -93,10 +95,17 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
     });
   }
 
+  // How a failed save is shown. "unconfirmed" is NOT "not saved": the request may have been stored.
+  function failureMessage(result) {
+    if (result.unconfirmed) return { kind: "unconfirmed", text: result.message };
+    if (result.missing && result.missing.length) return { kind: "incomplete", text: result.message, missing: result.missing };
+    return { kind: "error", text: result.message };
+  }
+
   async function saveProgress({ exit = false } = {}) {
     await guarded(async () => {
       const result = await onSaveProgress({});
-      if (!result.ok) { setMessage({ kind: "error", text: result.message }); return; }
+      if (!result.ok) { setMessage(failureMessage(result)); return; }
       if (exit) { onFinish(); return; }
       setMessage({ kind: "ok", text: result.noop ? "Everything on this screen is already saved." : "Setup progress saved. You can leave and come back to continue." });
     });
@@ -105,7 +114,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   async function confirmSetup() {
     await guarded(async () => {
       const result = await onSaveProgress({ complete: true });
-      setMessage(result.ok ? { kind: "ok", text: "Setup confirmed and saved." } : { kind: "error", text: result.message });
+      setMessage(result.ok ? { kind: "ok", text: "Setup confirmed and saved." } : failureMessage(result));
     });
   }
 
@@ -203,7 +212,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
       {brainState.status === "error" && <p className="error" role="alert">{brainState.error || "Your Brand Brain could not be loaded yet."} Nothing has been changed.</p>}
       {brainReady && (<dl className="ps-facts" aria-label="Saved Brand Brain">
         <div><dt>Business name</dt><dd>{brainState.brain.name || "Not provided yet"}</dd></div>
-        <div><dt>What it does</dt><dd>{isSeededDescription(brainState.brain.identity?.description) ? "Only the web address given at setup is stored. That is not a description of what the business does." : brainState.brain.identity?.description || "Not provided yet"}</dd></div>
+        <div><dt>What it does</dt><dd>{isNotADescription(brainState.brain.identity?.description) && brainState.brain.identity?.description ? "Only a web address is stored here. That is not a description of what the business does." : brainState.brain.identity?.description || "Not provided yet"}</dd></div>
         <div><dt>Who it serves</dt><dd>{brainState.brain.audience?.summary || "Not provided yet"}</dd></div>
         <div><dt>Customer action</dt><dd>{brainState.brain.commercial?.primary_cta || "Not provided yet"}</dd></div>
         <div><dt>Status</dt><dd>{brainState.brain.metadata?.status || "Unknown"}</dd></div>
@@ -219,7 +228,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
           : (<>
             <p className="ps-hint">Your setup counts as complete only when you confirm it, and only from details you have saved yourself. A website address or challenge given when the workspace was created does not count as a description.</p>
             {!readiness.ready && <ul className="ps-hint" aria-label="Still needed to confirm">{readiness.missing.map((m) => <li key={m}>{m}</li>)}</ul>}
-            <button type="button" className="secondary" onClick={confirmSetup} disabled={busy || !readiness.ready || !canSaveProgress || dirty} aria-describedby={dirty ? "ps-confirm-dirty" : undefined}>Confirm setup</button>
+            <button type="button" className="secondary" onClick={confirmSetup} disabled={busy || readOnly || !readiness.ready || !canSaveProgress || dirty} aria-describedby={dirty ? "ps-confirm-dirty" : undefined}>Confirm setup</button>
             {dirty && <p className="ps-hint" id="ps-confirm-dirty">Save your progress first so the confirmation matches what is saved.</p>}
           </>)}
       </section>
@@ -252,14 +261,29 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
       </ol>
       <div className="ps-stage">
         {body}
-        {message.text && <p className={message.kind === "ok" ? "ps-ok" : "error"} role={message.kind === "ok" ? "status" : "alert"}>{message.text}</p>}
+        {message.text && (
+          <div className={message.kind === "ok" ? "ps-ok" : message.kind === "unconfirmed" ? "ps-warn" : "error"} role={message.kind === "ok" ? "status" : "alert"} data-kind={message.kind}>
+            <p>{message.text}</p>
+            {message.kind === "unconfirmed" && <button type="button" className="secondary" onClick={onLoadOnboarding} disabled={busy}>Check what was saved</button>}
+            {message.kind === "incomplete" && (
+              <ul className="ps-missing" aria-label="What is still needed">
+                {message.missing.filter((path) => MISSING_GUIDANCE[path]).map((path) => (
+                  <li key={path}><strong>{MISSING_GUIDANCE[path].label}.</strong> {MISSING_GUIDANCE[path].text}{onGoToStep && <> <button type="button" className="secondary" aria-label={`Go to the step for: ${MISSING_GUIDANCE[path].label}`} onClick={() => onGoToStep(MISSING_GUIDANCE[path].step)}>Go to this step</button></>}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {readOnly && !scopeMissing && (
+          <p className="ps-hint ps-readonly" role="status">View only. Your role in this workspace is {roleLabel(membershipRole) || "not the owner"}. Only the workspace owner can save or confirm setup, so Save progress, Save and exit and Confirm setup are turned off for you. You can still read everything here.</p>
+        )}
         {!scopeMissing && (storage === "unavailable" || storage === "error") && (
           <div className="ps-banner" role="alert">
             <p>{onboardingState.error || "Your saved setup could not be loaded."} {storage === "unavailable" ? "You can keep going, but your sector, channels and progress will not be remembered." : ""}</p>
             <button type="button" className="secondary" onClick={onLoadOnboarding}>Try again</button>
           </div>
         )}
-        {canSaveProgress && <p className="ps-hint" role="status" aria-live="polite" data-testid="ps-save-state">{dirty ? "You have changes that are not saved yet." : onboarding && onboarding.version > 0 ? `Setup progress saved (version ${onboarding.version}).` : "Nothing saved yet."}</p>}
+        {canSaveProgress && !readOnly && <p className="ps-hint" role="status" aria-live="polite" data-testid="ps-save-state">{dirty ? "You have changes that are not saved yet." : onboarding && onboarding.version > 0 ? `Setup progress saved (version ${onboarding.version}).` : "Nothing saved yet."}</p>}
         {scopeMissing && stage > 0 && <p className="ps-hint">Save and exit becomes available after your workspace is created on the Your business step.</p>}
         <div className="ps-actions">
           {stage > 0 && <button type="button" className="secondary" onClick={back} disabled={busy}>Back</button>}
@@ -267,8 +291,8 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
             ? <button type="button" className="ps-primary" onClick={createWorkspace} disabled={busy}>{busy ? "Creating your workspace…" : "Create my workspace"}</button>
             : !last && <button type="button" className="ps-primary" onClick={next} disabled={busy}>Continue</button>}
           {last && <button type="button" className="ps-primary" onClick={onFinish}>Go to my workspace</button>}
-          {canSaveProgress && <button type="button" className="secondary" onClick={() => saveProgress({})} disabled={busy}>Save progress</button>}
-          {canSaveProgress && <button type="button" className="secondary" onClick={() => saveProgress({ exit: true })} disabled={busy}>Save and exit</button>}
+          {canSaveProgress && <button type="button" className="secondary" onClick={() => saveProgress({})} disabled={busy || readOnly}>Save progress</button>}
+          {canSaveProgress && <button type="button" className="secondary" onClick={() => saveProgress({ exit: true })} disabled={busy || readOnly}>Save and exit</button>}
         </div>
       </div>
     </section>

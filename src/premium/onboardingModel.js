@@ -11,6 +11,19 @@ import { SECTORS, SECTOR_ORDER, resolveSector } from "./sectors";
 
 export const SEEDED_DESCRIPTION_PREFIX = "Customer-provided website or profile:";
 export const isSeededDescription = (text) => String(text || "").trim().startsWith(SEEDED_DESCRIPTION_PREFIX);
+// The API (hardened, PR #213 at 120a874) also refuses a description that is only a web address.
+export const isBareUrl = (text) => /^(?:https?:\/\/|www\.)\S+$/i.test(String(text || "").trim());
+// Not something the customer wrote about the business: empty, the bootstrap-seeded address, or a bare address.
+export const isNotADescription = (text) => !String(text || "").trim() || isSeededDescription(text) || isBareUrl(text);
+
+// What to tell the customer for each path the API can list under 422 ONBOARDING_INCOMPLETE. Shared by the error text
+// and the on-screen guidance so they cannot drift. `step` is the onboarding stage that fixes it.
+export const MISSING_GUIDANCE = {
+  sector_key: { label: "Sector", text: "Choose your sector and save your progress.", step: 2 },
+  channels: { label: "Channels", text: "Choose at least one channel and save your progress.", step: 4 },
+  business_name: { label: "Business name", text: "Your Brand Brain has no real business name yet (it is empty or still a placeholder). Enter your business name and save it to your Brand Brain.", step: 1 },
+  description: { label: "What the business does", text: "Your Brand Brain has no description of what the business does (a website address alone is not a description). Write one and save it to your Brand Brain.", step: 2 },
+};
 
 export const CHANNEL_LABELS = ["Instagram", "TikTok", "Facebook", "LinkedIn", "Email", "Website"];
 export const channelKey = (label) => String(label || "").trim().toLowerCase();
@@ -140,13 +153,17 @@ export function hasUnsavedChanges(args) {
 
 // The user may confirm setup only from saved, genuinely customer-supplied facts.
 export function confirmationReadiness({ onboarding, brain, brandNamePlaceholder }) {
-  const missing = [];
-  if (!onboarding || onboarding.version === 0 || !onboarding.sector.key) missing.push("Save your sector.");
-  if (!onboarding || !onboarding.channels.values.length) missing.push("Save at least one channel.");
-  if (!brain || !trimmed(brain.name) || brandNamePlaceholder !== false) missing.push("Save your real business name to your Brand Brain.");
+  const need = new Map(); // API path -> what to tell the customer
+  if (!onboarding || onboarding.version === 0 || !onboarding.sector.key) need.set("sector_key", "Save your sector.");
+  if (!onboarding || !onboarding.channels.values.length) need.set("channels", "Save at least one channel.");
+  if (!brain || !trimmed(brain.name) || brandNamePlaceholder !== false) need.set("business_name", "Save your real business name to your Brand Brain.");
   const description = brain && brain.identity && brain.identity.description;
-  if (!trimmed(description) || isSeededDescription(description)) missing.push("Save a description of what the business does (a website address is not a description).");
-  return { ready: missing.length === 0, missing };
+  if (isNotADescription(description)) need.set("description", "Save a description of what the business does (a website address is not a description).");
+  // The server is the authority: anything it lists as missing keeps Confirm closed even if this screen thinks otherwise.
+  const server = onboarding && onboarding.completeness && Array.isArray(onboarding.completeness.missing) ? onboarding.completeness.missing : [];
+  for (const path of server) if (MISSING_GUIDANCE[path] && !need.has(path)) need.set(path, MISSING_GUIDANCE[path].text);
+  const missing = [...need.values()];
+  return { ready: missing.length === 0, missing, paths: [...need.keys()] };
 }
 
 export const SECTOR_KEYS = ["neutral", ...SECTOR_ORDER];

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { CONTRACT_VERSION, OnboardingError, createSaveKeeper, fetchOnboarding, parseOnboardingResponse, putOnboarding } from "./onboardingClient";
+import { CONTRACT_VERSION, OnboardingError, SAVE_NOT_CONFIRMED, createSaveKeeper, fetchOnboarding, parseOnboardingResponse, putOnboarding } from "./onboardingClient";
 
 // The mock shapes below are the workspace-onboarding.v1 responses documented in API draft PR #213 (head d0e1142).
 // They are NOT staging evidence.
@@ -54,29 +54,54 @@ describe("error mapping tells the truth about what was saved", () => {
   it("409 idempotency conflict asks for a new request", async () => {
     expect(await put(409, { error: { code: "IDEMPOTENCY_KEY_CONFLICT" } })).toMatchObject({ code: "IDEMPOTENCY_KEY_CONFLICT" });
   });
-  it("422 incomplete names what is missing in plain words", async () => {
-    const e = await put(422, { error: { code: "ONBOARDING_INCOMPLETE", details: [{ path: "sector_key" }, { path: "channels" }] } });
-    expect(e.message).toMatch(/choose a sector and choose at least one channel/i);
+  it("422 incomplete lists exactly the paths the API sent, including the business name and description", async () => {
+    const e = await put(422, { error: { code: "ONBOARDING_INCOMPLETE", details: [{ path: "sector_key" }, { path: "channels" }, { path: "business_name" }, { path: "description" }, { path: "something_new" }] } });
+    expect(e.code).toBe("ONBOARDING_INCOMPLETE");
+    expect(e.missing).toEqual(["sector_key", "channels", "business_name", "description", "something_new"]);
+    expect(e.message).toMatch(/Still needed: Sector, Channels, Business name, What the business does\./);
+    expect(e.message).toMatch(/nothing on this screen has been marked as confirmed/i);
+    expect(e.message).not.toMatch(/something_new/); // an unknown path is carried but not shown as raw text
   });
   it("400 validation shows the first reason and says nothing was saved", async () => {
     const e = await put(400, { error: { code: "ONBOARDING_VALIDATION_ERROR", details: [{ path: "draft.goal", message: "Too big" }] } });
     expect(e.message).toMatch(/draft\.goal: Too big/);
     expect(e.message).toMatch(/nothing was saved/i);
   });
-  it("503 and 404 mean unavailable and NOT saved (an API without the routes or table behaves the same)", async () => {
+  it("a 503 on a WRITE is 'save not confirmed', never 'not saved': the commit may have succeeded and only its acknowledgement was lost", async () => {
+    const e = await put(503, { error: { code: "ONBOARDING_UNAVAILABLE" } });
+    expect(e).toMatchObject({ code: "ONBOARDING_UNAVAILABLE", outcome: "unknown" });
+    expect(e.message).toContain("Save not confirmed — your changes may already have been saved.");
+    expect(e.message).not.toMatch(/NOT saved/);
+    expect(e.message).toMatch(/same request is sent, so it cannot be saved twice/i);
+    expect(SAVE_NOT_CONFIRMED).toBe("Save not confirmed — your changes may already have been saved.");
+  });
+  it("a 404 on a write means the service was not there, so the request was not processed: that one IS 'not saved'", async () => {
+    const e = await put(404, {});
+    expect(e).toMatchObject({ code: "ONBOARDING_UNAVAILABLE", outcome: "not_saved" });
+    expect(e.message).toMatch(/NOT saved/);
+  });
+  it("a 503 or 404 on a READ changed nothing and says so without the word 'saved' as a verdict", async () => {
     for (const status of [503, 404]) {
-      const e = await put(status, status === 503 ? { error: { code: "ONBOARDING_UNAVAILABLE" } } : {});
+      const e = await get(status, status === 503 ? { error: { code: "ONBOARDING_UNAVAILABLE" } } : {});
       expect(e).toMatchObject({ code: "ONBOARDING_UNAVAILABLE", outcome: "not_saved" });
-      expect(e.message).toMatch(/NOT saved/);
+      expect(e.message).toMatch(/Nothing has been changed/);
     }
-    expect((await get(503, { error: { code: "ONBOARDING_UNAVAILABLE" } })).code).toBe("ONBOARDING_UNAVAILABLE");
+  });
+  it("403 on a write says only the owner can save, flags it as a refused write, and keeps the read path unchanged", async () => {
+    const w = await put(403, { error: { code: "WORKSPACE_NOT_AUTHORIZED" } });
+    expect(w).toMatchObject({ code: "WORKSPACE_NOT_AUTHORIZED", forbiddenWrite: true, outcome: "not_saved" });
+    expect(w.message).toMatch(/only the workspace owner can save or confirm setup/i);
+    expect(w.message).toMatch(/can still view/i);
+    const r = await get(403, { error: { code: "WORKSPACE_NOT_AUTHORIZED" } });
+    expect(r.forbiddenWrite).toBe(false);
+    expect(r.message).toMatch(/not available to your account/i);
   });
   it("a dropped connection on a write is an UNKNOWN outcome, on a read it is not", async () => {
     const boom = vi.fn(async () => { throw new TypeError("network"); });
     const w = await putOnboarding({ ...BASE, body: {}, fetchImpl: boom }).catch((e) => e);
     expect(w).toMatchObject({ code: "NETWORK", outcome: "unknown" });
-    expect(w.message).toMatch(/may or may not have been saved/i);
-    expect(w.message).toMatch(/safe/i);
+    expect(w.message).toContain("Save not confirmed — your changes may already have been saved.");
+    expect(w.message).toMatch(/safely/i);
     const r = await fetchOnboarding({ ...BASE, fetchImpl: boom }).catch((e) => e);
     expect(r).toMatchObject({ code: "NETWORK", outcome: "not_saved" });
   });
