@@ -97,7 +97,7 @@ export function buildWorkspaceModel({ workspace = null, brain = null, draft = {}
     fact("audience", "Who it serves", facts.audience.value, facts.audience.source),
     fact("cta", "What a customer should do next", facts.cta.value, facts.cta.source),
     fact("tone", "Brand tone", facts.tone.value, facts.tone.source),
-    fact("sector", "Sector", sectorEntry.label, sectorSource, sector.source === "none" ? "Neutral layout. Choose a sector to see sector-specific guidance." : ""),
+    fact("sector", "Sector", sectorEntry.label, sectorSource, sector.source === "none" ? "Neutral layout: general guidance that suits any business. Choose a sector if one of them fits." : ""),
     fact("goal", "Goal", goalText, goalText ? "customer" : "missing", "Used for your recommendation. Saved only when you create a campaign."),
     fact("channels", "Channels you are planning for", channelList.join(", "), channelInfo.source, "Planning only. No account is connected and nothing is published."),
   ];

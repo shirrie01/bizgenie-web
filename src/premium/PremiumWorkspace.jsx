@@ -29,7 +29,7 @@ export default function PremiumWorkspace({ model, brainState, campaignList, onGo
           {!brainFailed && (
             <p className="ps-sub">
               <span className="ps-chip">{model.sector.label}</span>
-              <span className="ps-chip-note">{model.sector.source === "missing" ? "Neutral layout. Choose a sector in Set up." : model.sector.sourceLabel}</span>
+              <span className="ps-chip-note">{model.sector.source === "missing" ? "Neutral layout. Choose a sector in Set up if one fits." : model.sector.sourceLabel}</span>
             </p>
           )}
           {model.goal.value && <p className="ps-goal"><strong>Goal:</strong> {model.goal.value} <span className="ps-chip-note">(entered this session)</span></p>}

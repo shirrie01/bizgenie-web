@@ -372,18 +372,28 @@ test('a refused write (403) on an unknown role explains itself and switches to v
   await scan(page, 'write-refused');
 });
 
+async function editAudienceAtBrainStep(page, text) {
+  await page.getByRole('button', { name: /^back$/i }).click();
+  await page.getByRole('button', { name: /^back$/i }).click();
+  await page.getByLabel(/who are your customers/i).fill(text);
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await expect(page.getByRole('heading', { name: /your brand brain/i })).toBeVisible();
+}
+
 // Brand Brain identity ownership (DEC-021 / DEC-022; backend draft PR #214 at 2319e5e8). MOCKED API: not staging evidence.
 async function toBrainStep(page) {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: /your brand brain/i })).toBeVisible();
 }
 const BRAIN_STEP = onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 5, channels: { values: ['email'], source: 'customer' } });
-const FULL_BRAIN = { ...brain('Maison Aurelle', 'A small-batch perfume house.  '), audience: { summary: 'Gift buyers.' }, commercial: { primary_cta: 'Shop the new scent' } };
+const FULL_BRAIN = { ...brain('Maison Aurelle', 'A small-batch perfume house.'), audience: { summary: 'Gift buyers.' }, commercial: { primary_cta: 'Shop the new scent' } };
 
 test('member at the Brand Brain step: name and description are owner-only, the rest can still be saved, and the stored identity is repeated exactly', async ({ page }) => {
   const log = await setup(page, { brainDoc: FULL_BRAIN, role: 'member', onboarding: BRAIN_STEP });
   await toBrainStep(page);
   await expect(page.getByText(/only the workspace owner can change the business name and description/i)).toBeVisible();
+  await editAudienceAtBrainStep(page, 'Collectors and gift buyers');
   const save = page.getByRole('button', { name: /save who it serves and customer action/i });
   await expect(save).toBeEnabled();
   await scan(page, 'member-brain-step');
@@ -391,7 +401,7 @@ test('member at the Brand Brain step: name and description are owner-only, the r
   await expect(page.getByText(/business name and description are unchanged/i)).toBeVisible();
   expect(log.brainPuts).toHaveLength(1);
   expect(log.brainPuts[0].name).toBe('Maison Aurelle');
-  expect(log.brainPuts[0].identity.description).toBe('A small-batch perfume house.  ');
+  expect(log.brainPuts[0].identity.description).toBe('A small-batch perfume house.');
   await scan(page, 'member-brain-saved');
 });
 
@@ -400,6 +410,7 @@ test('refused (403) and conflicting (409) Brand Brain saves are explained, keep 
     const log = await setup(page, { brainDoc: FULL_BRAIN, brainPut: mode, onboarding: BRAIN_STEP });
     await page.goto('/');
     await expect(page.getByRole('heading', { name: /your brand brain/i })).toBeVisible();
+    await editAudienceAtBrainStep(page, 'Collectors');
     await page.getByRole('button', { name: /^save to brand brain$/i }).click();
     await expect(page.getByRole('alert')).toContainText(text);
     await expect(page.getByText(/saved to your brand brain/i)).toHaveCount(0);
@@ -412,10 +423,59 @@ test('refused (403) and conflicting (409) Brand Brain saves are explained, keep 
 test('an unavailable Brand Brain save says "not confirmed" and offers to check what was saved', async ({ page }) => {
   const log = await setup(page, { brainDoc: FULL_BRAIN, brainPut: 'unavailable', onboarding: BRAIN_STEP });
   await page.goto('/');
+  await expect(page.getByRole('heading', { name: /your brand brain/i })).toBeVisible();
+  await editAudienceAtBrainStep(page, 'Collectors');
   await page.getByRole('button', { name: /^save to brand brain$/i }).click();
   await expect(page.getByRole('alert')).toContainText(/save not confirmed — your changes may already have been saved/i);
   await expect(page.getByRole('button', { name: /check what was saved/i })).toBeVisible();
   expect(await page.getByRole('alert').innerText()).not.toMatch(/not saved/i);
   await scan(page, 'brain-save-not-confirmed');
   expect(log.brainPuts).toHaveLength(1);
+});
+
+// BG-STUDIO-015-FE: the Brand tab (replaces the shared legacy panel inside the flag-on Studio) and latest-version saves.
+// MOCKED API with the shapes in bizgenie-api #214; not staging evidence.
+const DONE = onboardingDoc();
+test('Brand tab, owner: edits are applied to the latest stored Brand Brain, not to the copy loaded earlier', async ({ page }) => {
+  const log = await setup(page, { brainDoc: FULL_BRAIN, role: 'owner', onboarding: DONE });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^brand$/i }).click();
+  await expect(page.getByRole('heading', { name: /^brand brain$/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^save to brand brain$/i })).toBeDisabled(); // nothing edited yet
+  await scan(page, 'brand-tab-owner');
+  await page.getByLabel(/what a customer should do next/i).fill('Book a discovery set');
+  await expect(page.getByRole('button', { name: /^save to brand brain$/i })).toBeEnabled();
+  await page.getByRole('button', { name: /^save to brand brain$/i }).click();
+  await expect(page.getByText(/saved to your brand brain/i)).toBeVisible();
+  expect(log.brainPuts).toHaveLength(1);
+  expect(log.brainPuts[0].commercial.primary_cta).toBe('Book a discovery set');
+  expect(log.brainPuts[0].audience.summary).toBe('Gift buyers.');
+});
+
+test('Brand tab, member: name and description are read-only with the reason, the rest saves', async ({ page }) => {
+  const log = await setup(page, { brainDoc: { ...FULL_BRAIN, identity: { description: 'A small-batch perfume house.' } }, role: 'member', onboarding: DONE });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^brand$/i }).click();
+  await expect(page.getByLabel(/^business name$/i)).toHaveAttribute('readonly', '');
+  await expect(page.getByLabel(/what the business does/i)).toHaveAttribute('readonly', '');
+  await expect(page.getByText(/only the workspace owner can change the business name and description/i).first()).toBeVisible();
+  await scan(page, 'brand-tab-member');
+  await page.getByLabel(/who it serves/i).fill('Collectors and gift buyers');
+  await page.getByRole('button', { name: /save who it serves and customer action/i }).click();
+  await expect(page.getByText(/business name and description are unchanged/i)).toBeVisible();
+  expect(log.brainPuts[0].name).toBe('Maison Aurelle');
+  expect(log.brainPuts[0].audience.summary).toBe('Collectors and gift buyers');
+});
+
+test('Brand tab, refused save (403): the Brand Brain stays on screen and is never reported as failing to load', async ({ page }) => {
+  const log = await setup(page, { brainDoc: FULL_BRAIN, brainPut: 'forbidden', role: 'owner', onboarding: DONE });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^brand$/i }).click();
+  await page.getByLabel(/who it serves/i).fill('Collectors');
+  await page.getByRole('button', { name: /^save to brand brain$/i }).click();
+  await expect(page.getByRole('alert')).toContainText(/saving was refused/i);
+  await expect(page.getByLabel(/who it serves/i)).toHaveValue('Collectors');
+  await expect(page.getByText(/could not be loaded/i)).toHaveCount(0);
+  expect(log.brainPuts).toHaveLength(1);
+  await scan(page, 'brand-tab-refused');
 });

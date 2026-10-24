@@ -213,3 +213,5 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-warn p, .ps-missing { margin: 0 0 8px; }
 .ps-missing { padding-left: 20px; display: grid; gap: 8px; }
 .ps-readonly { padding: 10px 14px; background: #e9ecf3; border-left: 4px solid #1d4a7a; border-radius: 6px; }
+.ps-brain .ps-truth { margin: 16px 0 14px; }
+.ps-brain .ps-field { margin-bottom: 14px; }

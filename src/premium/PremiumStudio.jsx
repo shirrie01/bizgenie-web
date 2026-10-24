@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PremiumOnboarding, { STAGES } from "./PremiumOnboarding";
 import PremiumWorkspace from "./PremiumWorkspace";
+import PremiumBrandBrain from "./PremiumBrandBrain";
+import { brainFormValues, rebaseDraft } from "./brainClient";
 import { buildWorkspaceModel } from "./workspaceModel";
 import { buildSavePayload, formFromOnboarding, hasUnsavedChanges, isSeededDescription } from "./onboardingModel";
 
@@ -31,6 +33,10 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [channels, setChannels] = useState(() => new Set());
   const [prefilled, setPrefilled] = useState(false);
+  // What the Brand Brain form fields were last known to be stored as. Only fields that differ from this are "edits" and are sent on Save.
+  const brainBaseline = useRef({ businessName: "", description: "", audience: "", cta: "" });
+  const lastBrain = useRef(null);
+  const getBrainBaseline = useCallback(() => brainBaseline.current, []);
 
   const ready = session.status === "ready";
   const scopeMissing = session.status === "scope-missing";
@@ -54,6 +60,8 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
     const saved = onboardingState.status === "ready" ? formFromOnboarding(onboardingState.onboarding) : formFromOnboarding(null);
     const b = brainState.status === "ready" ? brainState.brain : null;
     const placeholder = onboardingState.brandNamePlaceholder === true;
+    brainBaseline.current = brainFormValues(b, { isSeededDescription, placeholderName: placeholder });
+    lastBrain.current = b;
     const brainDescription = b && b.identity && b.identity.description && !isSeededDescription(b.identity.description) ? b.identity.description : "";
     setDraft((d) => ({
       ...d,
@@ -70,6 +78,16 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
     setChannels((current) => (current.size ? current : new Set(saved.channels)));
     setPrefilled(true);
   }, [prefilled, ready, brainSettled, onboardingSettled, brainState, onboardingState]);
+
+  // When the stored Brand Brain changes after the form was restored (reloaded, saved, re-read after a refusal or a conflict),
+  // fields the customer has not touched follow the stored value, and fields they typed in stay as typed.
+  useEffect(() => {
+    if (!prefilled || brainState.status !== "ready" || !brainState.brain || lastBrain.current === brainState.brain) return;
+    const next = brainFormValues(brainState.brain, { isSeededDescription, placeholderName: onboardingState.brandNamePlaceholder === true });
+    setDraft((d) => rebaseDraft(d, brainBaseline.current, next));
+    brainBaseline.current = next;
+    lastBrain.current = brainState.brain;
+  }, [prefilled, brainState.status, brainState.brain, onboardingState.brandNamePlaceholder]);
 
   const model = useMemo(() => buildWorkspaceModel({
     brain: brainState.brain,
@@ -140,7 +158,7 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
       <PremiumOnboarding
         stage={stage} setStage={setStage} draft={draft} setField={setField} channels={channels} toggleChannel={toggleChannel}
         session={session} brainState={brainState} onLoadBrain={onLoadBrain} onSave={onSaveBrain} onBootstrap={onBootstrap}
-        onboardingState={onboardingState} onLoadOnboarding={onLoadOnboarding} onSaveProgress={saveProgress} dirty={dirty} readOnly={readOnly} membershipRole={membershipRole} onGoToStep={setStage}
+        onboardingState={onboardingState} onLoadOnboarding={onLoadOnboarding} onSaveProgress={saveProgress} dirty={dirty} readOnly={readOnly} membershipRole={membershipRole} onGoToStep={setStage} getBrainBaseline={getBrainBaseline}
         recommendationState={recommendationState} onRecommend={onRecommend}
         onFinish={() => go({ view: "overview" })} onOpenStudio={() => go({ view: "studio" })}
       />
@@ -170,7 +188,7 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
       </section>
     );
   } else if (view === "brand") {
-    content = sections.brand;
+    content = <PremiumBrandBrain brainState={brainState} onLoadBrain={onLoadBrain} onSave={onSaveBrain} draft={draft} setField={setField} getBrainBaseline={getBrainBaseline} readOnly={readOnly} membershipRole={membershipRole} />;
   } else if (view === "account") {
     content = sections.account;
   }
