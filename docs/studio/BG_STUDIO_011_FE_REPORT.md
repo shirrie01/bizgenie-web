@@ -84,6 +84,8 @@ The corrections live on the #48 onboarding stack (commit `40f41ff3b1ba3622a0f341
 
 **Limits:** the role comes from a separate list request and can be stale (the server decides); a 403 on write cannot distinguish "member" from "access ended"; the 503 uncertainty cannot be removed, only handled safely; Brand Brain save permissions are a separate, unchanged backend policy, so "Save to Brand Brain" is not disabled for members; the hardened schema migration is not applied anywhere, so nothing here has met a real API.
 
+**Founder acceptance preparation (BG-STUDIO-013-FE):** the walkthrough, the mock-versus-staging split and the unrun evidence checklist are in `docs/studio/BG_STUDIO_013_FE_FOUNDER_ACCEPTANCE.md`. Nothing there is accepted.
+
 ## 4. Founder walkthrough (all screens mocked)
 1. **Two workspaces, none chosen** (`chooser-required`): a signed-in customer with two authorised workspaces sees "Choose a workspace… BizGenie will not pick one for you." Nothing is loaded yet.
 2. **Choose** (`workspace-after-select`): pressing "Use Brookside Aesthetics" shows "Switching…" with nothing from any workspace, then that workspace only (its name, sector and data).
