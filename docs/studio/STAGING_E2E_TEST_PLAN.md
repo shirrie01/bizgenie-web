@@ -98,4 +98,5 @@ Preconditions (corrected 24 Oct 2026): API draft PR #213 at `120a874` deployed t
 6. Stop the table (or point at an API build without the routes): the app says saved setup is unavailable and does not claim any save.
 7. Account switch / second workspace: no data from the first account appears; each workspace has its own record.
 8. A customer whose Brand Brain was only seeded by bootstrap (website address, challenge) must not appear complete.
+9. Brand Brain identity write policy (DEC-021 / LOCK-019): as an owner, change the business name and description (persists); as a member, a forced attempt to change either is refused and the row is unchanged, while changing only audience or customer action succeeds. Blocked until the backend enforcement and its response contract are final; see `BG_STUDIO_013_FE_FOUNDER_ACCEPTANCE.md`, F-08d and F-08e.
 Record real SHAs, URLs and results here; none of the above has been executed.
