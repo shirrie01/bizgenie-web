@@ -54,12 +54,32 @@ Issues found while building and fixed before the first commit: an "unsaved chang
 4. The recommendation request is unchanged. Per the API contract, completed channel preferences reorder its suggestions server-side; the frontend does not duplicate that.
 5. Workspace chooser (G5) and recovery for revoked media / the Instagram video profile are outside this slice.
 
-## 5. CI (isolated workflow dispatches of `studio-005-integration-ci.yml`; there are no native PR checks because the repository's workflows run only for PRs targeting `main`)
-Tested code: `e1db8afd67de4fa4afc82b4b2b3a06597e2905c8`. Each job records the checked-out SHA and fails if it differs from `expected_sha`; both dispatches passed `expected_sha = e1db8af`. Commit `1aab6a1` (this report and evidence) is docs only. Run 22's GitHub "head SHA" shows `1aab6a1` because that is the branch head it was dispatched from; its `ref` input made it check out and test `e1db8af`.
+## 5. CI (isolated workflow dispatches of `studio-005-integration-ci.yml`; no native PR checks exist because the repository's workflows run only for PRs targeting `main`)
 
-| Run | Result |
-|---|---|
-| 21 (id 39934076514) | **11 of 13 jobs succeeded**, including `unit-build` (`npm ci`, `npm test`, `npm run build`), `premium-browser` at 1440x900, 768x1024 and 320x568 (the flag-on suite with axe, ran and passed), all `app-a11y-browser`, and `preview-browser` at 1440x900 and 320x568. `preview-browser` 768x1024 and 390x844 sat for over five minutes in the `playwright install --with-deps chromium` step (the same step takes about 20 s in the other jobs), before any test ran. I cancelled the run. Conclusion: **cancelled**. |
-| 22 (id 39934885548) | A fresh dispatch on the same tested code. **11 of 13 jobs succeeded**, including `unit-build`, `premium-browser` at 1440x900, 768x1024 and 320x568, and `preview-browser` at 768x1024 and 390x844. `premium-browser` 390x844 and `app-a11y-browser` 1440x900 again sat in the same Chromium install step with no test started. |
+### 5.1 First attempts (tested code `e1db8af`): 11 of 13 twice, then cancelled
+Runs 21 (`39934076514`) and 22 (`39934885548`) each had two browser jobs sitting in `npx playwright install --with-deps chromium`; no test had started. I cancelled each after about six to seven minutes. No test failed.
 
-What this does and does not show: **no job failed a test.** Every one of the 13 distinct jobs (unit-build; premium-browser x4; app-a11y-browser x4; preview-browser x4) completed with success on the tested code in at least one of the two runs, and the premium-browser steps ran rather than skipping. But **no single run is 13/13**, because in each run two jobs stalled in a runner/Chromium-install step. I did not treat that as green. I used the allowed re-run once and the hang recurred on different jobs, so I stopped rather than keep re-running; a clean 13/13 run still needs to be obtained (re-run the workflow when the runners are healthy). The same suites also pass locally (§3).
+### 5.2 Root cause (from the job logs of the stalled jobs `120349201892` and `120351896145`)
+The time was spent in **`apt`, not in the Chromium download.** `--with-deps` runs `apt-get install` for about 17 packages (fonts, xvfb, glib, nss). The logs show `Get:N http://azure.archive.ubuntu.com/...` lines for small packages (50 kB to 5.6 MB) taking **2 to 2.5 minutes each**, one `Ign:` (a fetch given up on, then retried by name), then progress resuming. The runner's apt had no retries and a long default timeout, so a throttled Azure mirror turned a normal 20-second step into many minutes. Because the 13 jobs start together and all hit the same mirror, a different two jobs were slow each time. This also corrects my earlier wording: the jobs were **slow, probably not deadlocked**: the run-21 job I read had reached package 10 of 17 when I cancelled it, and my cancellations are what ended both runs. The job timeout (20 minutes) was never reached.
+
+Reviewed and not the cause: the workflow's `timeout-minutes` (20, ample), concurrency (none defined; unrelated), dependency caching (`npm ci` took 3 to 6 s; the browser download is not what stalled), runner setup (identical `ubuntu-latest`, Node 22, Playwright 1.56.1 in every job).
+
+### 5.3 Fix (`9fa0582`, `.github/workflows/studio-005-integration-ci.yml` only)
+In the three browser jobs the install step now writes `Acquire::Retries "5"; Acquire::http::Timeout "20"; Acquire::https::Timeout "20";` to `/etc/apt/apt.conf.d/` and then runs the **same** `npx playwright install --with-deps chromium`, with `timeout-minutes: 12`. A stalled fetch now fails after 20 s and is retried instead of waiting minutes. The same packages are installed, so rendering and every browser, accessibility, preview and onboarding check is unchanged: `git diff e1db8af 9fa0582` touches nothing under `src/`, `qa/`, `studio-preview/`, `package*.json` or the build config. No test, matrix entry or viewport was removed or weakened. `app-a11y-qa.yml` and `studio-browser-qa.yml` (which run for PRs to `main`) have the same install pattern; I left them unchanged to keep the fix minimal.
+
+### 5.4 Result: run 23 (`40096781641`), tested SHA `9fa058232ba50209c8c26946fcb4b8744a577332`, dispatched with `ref` and `expected_sha` both set to that SHA
+Run conclusion **success; 13 of 13 jobs succeeded**, each with the checked-out-SHA guard passing. The install step took **19 to 27 s** in every browser job (it had taken minutes in the stalled jobs).
+
+| Job | Viewports | Browser step actually ran | Evidence read in the job log |
+|---|---|---|---|
+| `unit-build` | n/a | `npm test`, `npm run build` | build output (`vite build ... built in 1.56s`); step succeeded |
+| `premium-browser` | 1440x900, 768x1024, 390x844, 320x568 | `playwright test --config qa/premium.playwright.config.mjs` | 390x844 log: **"Running 18 tests ... 18 passed"** with each test listed (all 7 onboarding journeys); the other three viewports' test steps ran for 10 to 15 s and succeeded |
+| `app-a11y-browser` | the same four | `playwright test --config qa/playwright.config.mjs` | 1440x900 log: **"2 passed"**; the "Skip when this ref has no app browser checks" step reported run=true |
+| `preview-browser` | the same four | `playwright test studio-preview/...` | 1440x900 log: **"33 passed"** (v1 + v3) |
+
+I read the full test listing for one viewport of each browser suite and the step timing for the rest; I did not read all 13 logs line by line.
+
+Honest limits: this is **one** clean run, so the fix is supported by the log evidence for the cause and by this result, not by repeated runs. The mirror slowness may have been transient, so a 13/13 would have been possible by chance; I deliberately did not re-dispatch the unchanged workflow to test that. The tested code is `9fa0582`; the report and later docs commits are documentation only.
+
+### 5.5 Governance note
+The API PR #213 owner comment of 24 Oct 2026 places the backend contract under an architectural hold (a competing Codex branch `bg-studio-010-be-persistent-onboarding` exists). This frontend was built against #213. **No frontend adapter change, new PR, merge, deployment, migration or flag activation was made in this CI work**, and none should be made until the architecture decision selects one canonical contract.
