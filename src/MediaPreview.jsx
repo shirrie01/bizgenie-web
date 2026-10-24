@@ -6,12 +6,17 @@ import { useMediaPreview } from "./useMediaPreview";
 // browser has actually rendered the bytes (image load / video metadata), never merely because they arrived.
 export default function MediaPreview({ apiBaseUrl, session, campaign, variant, media, altText, onStatus, onReload }) {
   const preview = useMediaPreview({ apiBaseUrl, session, campaign, variant, media });
-  const [renderFailed, setRenderFailed] = useState(false);
-  const [rendered, setRendered] = useState(false);
+  // The browser's verdict is remembered PER URL, not as a flag that an effect resets when the URL changes. A browser may
+  // deliver `load` before React has run the passive effects of the commit that created the element, and a reset effect
+  // running afterwards would erase a real "rendered" result and leave the preview "Preparing…" forever.
+  const [renderedUrl, setRenderedUrl] = useState("");
+  const [failedUrl, setFailedUrl] = useState("");
+  const currentUrl = preview.url;
+  const rendered = Boolean(currentUrl) && renderedUrl === currentUrl;
+  const renderFailed = Boolean(currentUrl) && failedUrl === currentUrl;
   const kind = media.kind;
   const label = (media.role === "primary" ? "Primary " : "Supporting ") + kind;
 
-  useEffect(() => { setRenderFailed(false); setRendered(false); }, [preview.url]);
   useEffect(() => { if (renderFailed) preview.discard(); }, [renderFailed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const status = preview.status === "error" || renderFailed ? "error" : preview.status === "ready" && rendered ? "displayed" : "loading";
@@ -33,10 +38,10 @@ export default function MediaPreview({ apiBaseUrl, session, campaign, variant, m
     <figure className="media-preview" aria-label={label} aria-busy={status === "loading" || undefined}>
       {status === "loading" && <p className="notice" role="status">{preview.status === "ready" ? `Preparing the ${kind}…` : `Loading the ${kind}…`}</p>}
       {preview.status === "ready" && kind === "image" && (
-        <img src={preview.url} alt={altText || `${label} attached to this content (no description provided)`} onLoad={() => setRendered(true)} onError={() => setRenderFailed(true)} />
+        <img src={preview.url} alt={altText || `${label} attached to this content (no description provided)`} onLoad={() => setRenderedUrl(currentUrl)} onError={() => setFailedUrl(currentUrl)} />
       )}
       {preview.status === "ready" && kind === "video" && (
-        <video src={preview.url} controls preload="metadata" playsInline aria-label={altText || `${label} attached to this content (no description provided)`} onLoadedMetadata={() => setRendered(true)} onError={() => setRenderFailed(true)}>
+        <video src={preview.url} controls preload="metadata" playsInline aria-label={altText || `${label} attached to this content (no description provided)`} onLoadedMetadata={() => setRenderedUrl(currentUrl)} onError={() => setFailedUrl(currentUrl)}>
           Your browser can’t play this video.
         </video>
       )}
