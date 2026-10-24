@@ -89,7 +89,7 @@ Per row: frontend SHA (checked-out), backend SHA, timestamp, viewport, screensho
 
 
 ## BG-STUDIO-010-FE addendum: persistent onboarding (run only after the API migration is separately approved and applied to STAGING)
-Preconditions: API draft PR #213 deployed to staging with migration `20261023100000_create_workspace_onboarding_profiles.sql` applied (founder approval required; not done). Premium Studio flag ON in a staging build only.
+Preconditions (corrected 24 Oct 2026): API draft PR #213 at `120a874` deployed to an isolated staging target with **both** migrations applied in order, `20261023100000_create_workspace_onboarding_profiles.sql` then `20261024090000_harden_workspace_onboarding_profiles.sql`, and the read-only schema preflight passing (separate founder approval; not done; staging is currently RED / NO-GO). The authoritative walkthrough, F-row evidence checklist and prerequisites are in `BG_STUDIO_013_FE_FOUNDER_ACCEPTANCE.md`; where that file and this addendum differ, use that file. Note that the hardened API now answers a save that may have committed with 'Save not confirmed', not 'NOT saved', and that only the workspace owner can write. Premium Studio flag ON in a staging build only.
 1. Fresh account: onboarding opens with nothing saved; `GET /customer/workspace/onboarding` returns version 0.
 2. Choose a sector and two channels, press Save and exit: `PUT` returns 200 with version 1; reload: the same sector, channels and step return. Record the request/response (no tokens).
 3. Type an answer, do not save, reload: the browser warns, and the unsaved answer is lost (truthfully). Save progress first, reload: it returns.
