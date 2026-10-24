@@ -43,13 +43,32 @@ Mocked API/session/Supabase-refresh fixtures throughout, explicitly labelled as 
 
 | Check | Result |
 |---|---|
-| Vitest | **360 / 360** across 23 files (#48 head: 331). New: workspace client (7), App workspace-selection (22). Production build passes. |
+| Vitest | **363 / 363** across 24 files (#48 head: 331). New: workspace client (7), App workspace-selection (22), MediaPreview load-order regression (3). Production build passes. |
 | Flag-OFF DOM vs the #48 head | identical in 7 states (`docs/evidence/011/flag-off-dom-equivalence/`) |
 | Flag-ON browser QA (Chromium): axe wcag2a/2aa/21aa/22aa, overflow, 24 px targets | **26 / 26 at each of 1440, 768, 390, 320** (18 earlier + 8 new journeys: two workspaces and forced choice; switching; session refresh and reload persistence; revoked access; unapproved workspace; stale-response isolation; save and resume across switching; unsaved-answer dialog; keyboard) |
 | Mutation checks | 8 distinct mutants: **7 caught** (session scope not checked; server confirmation not checked; a late select result applied after an account change; a late session refresh applied after an account change, which first survived and needed a new test; chooser bypassed; unsaved answers discarded silently; unapproved workspace selectable). The eighth, "do not clear state at the start of a switch", is behaviourally equivalent: the same state is cleared again when the new session arrives, so I kept the early clear as defence in depth and say so rather than claim it is tested. |
 | Real connected staging | **none**: no real API, database, migration, token or Supabase refresh. The staging plan in `STAGING_E2E_TEST_PLAN.md` still applies, and should add: two real workspaces, select, refresh, revoke one. |
 
-CI_PLACEHOLDER
+## 3a. CI repair: the failed run and the fix
+**Run 24 (`40100249994`, tested `a91d99f`): 12 of 13 jobs passed; `unit-build` failed.** `npm test`: 359 of 360 passed. The failure was `src/MediaPreview.test.jsx:37`: `expected 'loading' to be 'displayed'` after `fireEvent.load(img)`. The DOM dump in the log shows the `<img>` present, the figure `aria-busy` and "Preparing the image…" on screen.
+
+**Root cause: a latent race in production code (`src/MediaPreview.jsx`), not test synchronisation.** The component kept "the image rendered" as a state flag and reset it from a passive effect keyed on the image URL (`useEffect(() => { setRendered(false) }, [preview.url])`). A browser may deliver an image's `load` event before React has run the passive effects of the commit that created the element. The reset then runs afterwards and erases the real result, and the preview is stuck at "Preparing…" for good. Whether that ordering happens depends on timing (a slow first commit makes it likelier, and this was the first test in its file on a CI runner), which is why it failed there and not here.
+* **Reproduction:** I could **not** reproduce the timing flake locally: 400 repeats under CPU load and several ordering experiments all passed. I did reproduce the **defect itself** deterministically: a new test (`src/MediaPreview.loadOrder.test.jsx`) delivers `load` from a layout effect, which always runs before passive effects. On the old code it fails with the same message as CI (`expected 'loading' to be 'displayed'`); it passes after the fix. The original assertion is untouched.
+* **Fix:** the browser's verdict is stored **per URL** (`renderedUrl` / `failedUrl`) and compared with the current URL, with no reset effect, so effect ordering cannot undo it. A new URL still has to load for itself, and a failed image gets a fresh chance on a new URL (both pinned by tests). No timeout was changed, no test skipped or weakened, and nothing else in the product changed. The component is shared with the flag-off app, whose rendered output is unchanged.
+
+## 3b. CI result: run 25 (`40100866374`), tested SHA `4348e43b60af2426125c5419bea7c850e6accdc0`
+Isolated dispatch of `studio-005-integration-ci.yml` with `ref` and `expected_sha` both set to that SHA (every job's checked-out-SHA guard passed). **13 of 13 jobs succeeded** in one run:
+
+| Job | Viewports | Evidence read in the job log |
+|---|---|---|
+| `unit-build` | n/a | **"Test Files 24 passed (24), Tests 363 passed (363)"** (includes `MediaPreview.loadOrder.test.jsx` 3 tests and `MediaPreview.test.jsx` 9 tests), then `vite build` succeeded |
+| `premium-browser` | 1440x900, 768x1024, 390x844, 320x568 | 390x844 log: all **26 tests listed and "26 passed"**, including the 8 workspace-selection journeys; the other three ran the same step (21 to 26 s) and succeeded |
+| `app-a11y-browser` | the same four | 1440x900 log: "2 passed" |
+| `preview-browser` | the same four | 1440x900 log: "33 passed" |
+
+I read the full pass listing for one viewport of each suite and the step timings for the rest, not every log line. The Chromium install step took 19 to 39 s in every browser job (the apt fix from PR #48). Documentation commits after `4348e43` do not change tested code.
+
+
 
 ## 4. Founder walkthrough (all screens mocked)
 1. **Two workspaces, none chosen** (`chooser-required`): a signed-in customer with two authorised workspaces sees "Choose a workspace… BizGenie will not pick one for you." Nothing is loaded yet.
