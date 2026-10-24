@@ -17,10 +17,13 @@ const brain = (name, description) => ({ brand_id: 'b', project_id: 'p', name, ..
 const rec = { recommendation_id: '11111111-1111-4111-8111-111111111111', tenant_id: 't', project_id: 'p', brand_id: 'b', campaign_name: 'Lease Enquiry Campaign', summary: 'Start with one clear offer.', explanation: 'First safe campaign shape.',
   create_campaign_payload: { tenant_id: 't', project_id: 'p', brand_id: 'b', name: 'Lease Enquiry Campaign', goal: 'g', display_timezone: 'Europe/London' },
   suggested_items: [{ name: 'Offer announcement', format: 'text', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', reason: 'r' }] };
+// workspace-onboarding.v1 as the API (draft PR #213) returns it. MOCKED in the browser: not staging evidence.
+const onboardingDoc = (over = {}) => ({ contract_version: 'workspace-onboarding.v1', tenant_id: 't', project_id: 'p', brand_id: 'b', version: 3, status: 'completed', sector: { key: 'leasing', source: 'customer' }, industry_text: 'vehicle leasing', channels: { values: ['email'], source: 'customer' }, current_step: 6, draft: {}, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] }, completed_at: '2026-10-23T10:00:00.000Z', updated_at: '2026-10-23T10:00:00.000Z', ...over });
+const NOT_STARTED = onboardingDoc({ version: 0, status: 'not_started', sector: { key: null, source: null }, industry_text: null, channels: { values: [], source: null }, current_step: null, completed_at: null, updated_at: null });
 const camp = (version, items, workflow = 'draft') => ({ campaign_id: CID, tenant_id: 't', project_id: 'p', brand_id: 'b', name: 'Lease Enquiry Campaign', version, items: items ? [{ content_item_id: 'c1', name: 'Offer announcement', format: 'text', variants: [{ variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow, ...(workflow !== 'draft' ? { current_revision_id: 'rev-1', current_content: 'Server persisted review copy' } : {}) }] }] : [] });
 
-async function setup(page, { scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200 } = {}) {
-  const log = { calls: [], errors: [] };
+async function setup(page, { scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false } = {}) {
+  const log = { calls: [], errors: [], puts: [], doc: onboarding };
   page.on('pageerror', (e) => log.errors.push(e.message));
   if (!signedOut) await page.addInitScript(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(scoped)]);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
@@ -30,6 +33,24 @@ async function setup(page, { scoped = true, signedOut = false, brainDoc = brain(
     log.calls.push(`${m} ${u.pathname}`);
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }, body: JSON.stringify(body) });
     if (m === 'OPTIONS') return json({});
+    if (u.pathname.endsWith('/workspace/onboarding')) {
+      if (m === 'GET') return onboardingGetStatus === 200 ? json({ status: 'ready', onboarding: log.doc, brand_name_placeholder: placeholder }) : json({ status: 'failed', error: { code: 'ONBOARDING_UNAVAILABLE', message: 'x' } }, onboardingGetStatus);
+      if (m === 'PUT') {
+        const b = JSON.parse(req.postData()); log.puts.push(b);
+        if (onboardingPutStatus !== 200) return json({ status: 'failed', error: { code: 'ONBOARDING_UNAVAILABLE', message: 'x' } }, onboardingPutStatus);
+        if (b.expected_version !== log.doc.version) return json({ status: 'failed', error: { code: 'VERSION_CONFLICT', message: 'x', details: { current_version: log.doc.version } } }, 409);
+        const d = { ...log.doc, sector: { ...log.doc.sector }, channels: { ...log.doc.channels }, draft: { ...log.doc.draft } };
+        if (b.sector_key !== undefined) d.sector = b.sector_key === null ? { key: null, source: null } : { key: b.sector_key, source: b.sector_source || 'customer' };
+        if (b.industry_text !== undefined) d.industry_text = b.industry_text;
+        if (b.channels !== undefined) d.channels = b.channels.length ? { values: b.channels, source: b.channels_source || 'customer' } : { values: [], source: null };
+        if (b.current_step !== undefined) d.current_step = b.current_step;
+        for (const [k, v] of Object.entries(b.draft || {})) { if (v === null) delete d.draft[k]; else d.draft[k] = v; }
+        d.status = b.complete === true ? 'completed' : b.complete === false ? 'in_progress' : (d.status === 'not_started' ? 'in_progress' : d.status);
+        d.completed_at = d.status === 'completed' ? '2026-10-23T11:00:00.000Z' : null;
+        d.version = log.doc.version + 1; log.doc = d;
+        return json({ status: 'saved', replayed: false, onboarding: d, brand_name_placeholder: placeholder });
+      }
+    }
     if (u.pathname.endsWith('/brand-brain') && m === 'GET') return brainStatus === 200 ? json({ status: 'ready', brand_brain: brainDoc }) : json({}, brainStatus);
     if (u.pathname.endsWith('/brand-brain') && m === 'PUT') { const b = JSON.parse(req.postData()); brainDoc = { ...b, brand_id: 'b', project_id: 'p', metadata: { version: 2, status: 'draft' } }; return json({ status: 'ready', brand_brain: brainDoc }); }
     if (u.pathname === '/customer/campaigns' && m === 'GET') return json({ campaigns: [] });
@@ -75,15 +96,15 @@ test('workspace overview for a vehicle-leasing customer: real brand, no demonstr
   expect(log.errors).toEqual([]);
 });
 
-for (const [slug, name, description, label] of [
-  ['fragrance', 'Maison Aurelle', 'A fragrance house.', 'Fragrance & perfume'],
-  ['aesthetics', 'Clearskin Studio', 'An aesthetics clinic in Leeds.', 'Aesthetics clinic'],
-  ['soft-drinks', 'Fonzo', 'Soft drinks for everyone.', 'Soft drinks & beverages'],
-  ['charity', 'WOW Charity', 'We support local families.', 'Charity & community'],
-  ['unknown', 'Harbour Partners', 'Business consulting.', 'Not specified'],
+for (const [slug, name, description, label, key] of [
+  ['fragrance', 'Maison Aurelle', 'A fragrance house.', 'Fragrance & perfume', 'perfume'],
+  ['aesthetics', 'Clearskin Studio', 'An aesthetics clinic in Leeds.', 'Aesthetics clinic', 'aesthetics'],
+  ['soft-drinks', 'Fonzo', 'Soft drinks for everyone.', 'Soft drinks & beverages', 'beverage'],
+  ['charity', 'WOW Charity', 'We support local families.', 'Charity & community', 'charity'],
+  ['unknown', 'Harbour Partners', 'Business consulting.', 'Not specified', null],
 ]) {
   test(`workspace for ${name} follows its own sector`, async ({ page }) => {
-    await setup(page, { brainDoc: brain(name, description) });
+    await setup(page, { brainDoc: brain(name, description), onboarding: onboardingDoc({ sector: key ? { key, source: 'inferred' } : { key: null, source: null }, industry_text: null }) });
     await page.goto('/');
     await expect(page.getByRole('heading', { name: `Welcome back, ${name}.` })).toBeVisible();
     await expect(page.locator('.ps-chip')).toHaveText(label);
@@ -95,7 +116,7 @@ for (const [slug, name, description, label] of [
 }
 
 test('onboarding for a new customer: create workspace, save to Brand Brain, recommendation, Campaign Studio review to approval', async ({ page }) => {
-  const log = await setup(page, { scoped: false });
+  const log = await setup(page, { scoped: false, onboarding: NOT_STARTED });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: /let.s set up your workspace/i })).toBeVisible();
   await scan(page, 'onboarding-1-welcome');
@@ -124,7 +145,14 @@ test('onboarding for a new customer: create workspace, save to Brand Brain, reco
   await expect(page.getByRole('heading', { name: /your brand brain/i })).toBeVisible();
   await page.getByRole('button', { name: /save to brand brain/i }).click();
   await expect(page.getByText(/saved to your brand brain/i)).toBeVisible();
+  // Setup counts as complete only after the customer saves their progress and then confirms it.
+  await expect(page.getByRole('button', { name: /confirm setup/i })).toBeDisabled();
+  await page.getByRole('button', { name: /^save progress$/i }).click();
+  await expect(page.getByText(/setup progress saved\. you can leave/i)).toBeVisible();
+  await page.getByRole('button', { name: /confirm setup/i }).click();
+  await expect(page.getByText(/setup confirmed and saved/i)).toBeVisible();
   await scan(page, 'onboarding-6-brain');
+  expect(log.puts.map((b) => b.complete)).toEqual([undefined, true]);
   await page.getByRole('button', { name: /^continue$/i }).click();
   await page.getByRole('button', { name: /get my recommendation/i }).click();
   await expect(page.getByRole('heading', { name: 'Lease Enquiry Campaign' })).toBeVisible();
@@ -140,8 +168,9 @@ test('onboarding for a new customer: create workspace, save to Brand Brain, reco
   await expect(page.getByText('Approved', { exact: true })).toBeVisible();
   await expect(page.getByText(/manual publication required/i)).toBeVisible();
   await scan(page, 'studio-approved');
-  // Nothing was published or scheduled, and sector/channel choices never reached the backend.
+  // Nothing was published or scheduled, and sector/channel choices were saved only through the onboarding endpoint.
   expect(log.calls.some((c) => /\/(publish|schedule)/.test(c))).toBe(false);
+  expect(log.doc).toMatchObject({ status: 'completed', sector: { key: 'leasing', source: 'inferred' }, channels: { values: ['instagram'], source: 'customer' } });
   await page.getByRole('navigation', { name: /workspace sections/i }).getByRole('button', { name: 'Overview' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome back, Northgate Vehicle Leasing.' })).toBeVisible();
   await expect(page.getByText('Instagram').first()).toBeVisible();
@@ -186,4 +215,97 @@ test('keyboard: sections are reachable and operable without a mouse', async ({ p
   await page.keyboard.press('Enter');
   await expect(page.getByText(/create a campaign to see its calendar/i)).toBeVisible();
   await expect(nav.getByRole('button', { name: 'Calendar' })).toHaveAttribute('aria-current', 'page');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// BG-STUDIO-010-FE: persistent onboarding in a real browser. API and session are MOCKED (no staging, no database).
+// ---------------------------------------------------------------------------------------------------------------
+test('resume: an unfinished setup reopens at the saved step with saved sector, channels and unsaved answers', async ({ page }) => {
+  const log = await setup(page, { brainDoc: brain('Maison Aurelle'), onboarding: onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 4, sector: { key: 'perfume', source: 'customer' }, channels: { values: ['instagram', 'email'], source: 'customer' }, draft: { goal: 'Sell more discovery sets' } }) });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /where would you like to reach customers/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Instagram/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('ps-save-state')).toContainText('Setup progress saved (version 2)');
+  await scan(page, 'resume-channels');
+  await page.getByRole('button', { name: /^back$/i }).click();
+  await expect(page.getByLabel(/what do you want a campaign to achieve/i)).toHaveValue('Sell more discovery sets');
+  expect(log.puts).toEqual([]); // resuming writes nothing
+});
+
+test('Save and exit: saves exactly what changed, opens the workspace, and the next visit resumes', async ({ page }) => {
+  const log = await setup(page, { brainDoc: brain('Maison Aurelle'), onboarding: onboardingDoc({ version: 1, status: 'in_progress', completed_at: null, current_step: 2, sector: { key: null, source: null }, channels: { values: [], source: null }, industry_text: null }) });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /what does your business do/i })).toBeVisible();
+  await page.getByLabel(/sector used for guidance/i).selectOption('perfume');
+  await expect(page.getByTestId('ps-save-state')).toContainText('not saved yet');
+  await scan(page, 'unsaved-changes');
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByRole('button', { name: /^Email/ }).click();
+  await page.getByRole('button', { name: /save and exit/i }).click();
+  await expect(page.getByRole('heading', { name: /^welcome/i })).toBeVisible();
+  expect(log.puts).toHaveLength(1);
+  expect(log.puts[0]).toMatchObject({ expected_version: 1, sector_key: 'perfume', sector_source: 'customer', channels: ['email'], current_step: 4 });
+  expect(JSON.stringify(log.puts[0])).not.toMatch(/tenant|project|brand_id/i);
+  await expect(page.getByRole('button', { name: /continue your setup/i })).toBeVisible();
+  await scan(page, 'saved-and-exited');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: /where would you like to reach customers/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Email/ })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('unavailable storage (503 on save) says NOT saved, keeps the answers and never navigates away', async ({ page }) => {
+  const log = await setup(page, { brainDoc: brain('Maison Aurelle'), onboarding: onboardingDoc({ version: 1, status: 'in_progress', completed_at: null, current_step: 2, sector: { key: null, source: null }, channels: { values: [], source: null } }), onboardingPutStatus: 503 });
+  await page.goto('/');
+  await page.getByLabel(/describe what the business does/i).fill('Small-batch perfume house.');
+  await page.getByRole('button', { name: /save and exit/i }).click();
+  await expect(page.getByRole('alert')).toContainText(/NOT saved/);
+  await expect(page.getByLabel(/describe what the business does/i)).toHaveValue('Small-batch perfume house.');
+  await expect(page.getByRole('heading', { name: /what does your business do/i })).toBeVisible();
+  await scan(page, 'save-unavailable');
+  expect(log.doc.version).toBe(1);
+});
+
+test('unavailable storage on load is stated plainly and does not call setup complete or incomplete', async ({ page }) => {
+  await setup(page, { onboardingGetStatus: 503 });
+  await page.goto('/');
+  await expect(page.getByRole('alert')).toContainText(/saved setup could not be loaded/i);
+  await expect(page.getByText('Needs your input')).toHaveCount(0);
+  await scan(page, 'load-unavailable');
+});
+
+test('a bootstrap-seeded Brand Brain is not treated as a finished profile', async ({ page }) => {
+  await setup(page, { onboarding: NOT_STARTED, brainDoc: { ...brain('Halal Motor Leasing Ltd', 'Customer-provided website or profile: https://leaseexpert.example'), commercial: { primary_cta: 'Get more Audi A3 leasing enquiries' } } });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /what does your business do/i })).toBeVisible();
+  await expect(page.getByLabel(/describe what the business does/i)).toHaveValue('');
+  await expect(page.getByRole('heading', { name: /welcome back/i })).toHaveCount(0);
+  for (let i = 0; i < 3; i += 1) await page.getByRole('button', { name: /^continue$/i }).click();
+  await expect(page.getByRole('button', { name: /confirm setup/i })).toBeDisabled();
+  await expect(page.getByRole('list', { name: /still needed to confirm/i })).toContainText(/website address is not a description/i);
+  await scan(page, 'seeded-brain-not-complete');
+});
+
+test('stale version: another tab saved first, so the latest is loaded and nothing is overwritten', async ({ page }) => {
+  const log = await setup(page, { brainDoc: brain('Maison Aurelle'), onboarding: onboardingDoc({ version: 1, status: 'in_progress', completed_at: null, current_step: 2, sector: { key: null, source: null }, channels: { values: [], source: null } }) });
+  await page.goto('/');
+  await page.getByLabel(/describe what the business does/i).fill('Small-batch perfume house.');
+  log.doc = { ...log.doc, version: 2, sector: { key: 'charity', source: 'customer' } }; // saved elsewhere meanwhile
+  await page.getByRole('button', { name: /^save progress$/i }).click();
+  await expect(page.getByRole('alert')).toContainText(/changed somewhere else/i);
+  await expect(page.getByLabel(/describe what the business does/i)).toHaveValue('Small-batch perfume house.');
+  await scan(page, 'version-conflict');
+  await page.getByRole('button', { name: /^save progress$/i }).click();
+  await expect(page.getByTestId('ps-save-state')).toContainText('version 3');
+  expect(log.puts.map((b) => b.expected_version)).toEqual([1, 2]);
+});
+
+test('keyboard: Save progress and Save and exit are reachable and announce their result', async ({ page }) => {
+  await setup(page, { brainDoc: brain('Maison Aurelle'), onboarding: onboardingDoc({ version: 1, status: 'in_progress', completed_at: null, current_step: 4, channels: { values: [], source: null } }) });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Email/ }).focus();
+  await page.keyboard.press('Space');
+  await page.getByRole('button', { name: /^save progress$/i }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('status').filter({ hasText: /setup progress saved\. you can leave/i })).toBeVisible();
 });

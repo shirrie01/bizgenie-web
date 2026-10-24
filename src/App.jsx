@@ -10,6 +10,7 @@ import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import { operationKey } from "./operationKey";
 import PremiumStudio from "./premium/PremiumStudio";
 import { isPremiumStudioEnabled } from "./premium/flag";
+import { createSaveKeeper, fetchOnboarding, putOnboarding } from "./premium/onboardingClient";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -358,6 +359,10 @@ export default function App() {
   const premiumEnabled = isPremiumStudioEnabled();
   const [campaignList, setCampaignList] = useState({ status: "idle", campaigns: [], error: "" });
   const [premiumEpoch, setPremiumEpoch] = useState(0);
+  // Persistent onboarding (BG-STUDIO-010-FE): the saved record for the selected workspace, as the API returned it.
+  const [onboardingState, setOnboardingState] = useState({ status: "idle", onboarding: null, brandNamePlaceholder: null, error: "" });
+  const saveKeeperRef = useRef(null);
+  if (saveKeeperRef.current === null) saveKeeperRef.current = createSaveKeeper();
   const hadSessionRef = useRef(false);
   const lastScopeRef = useRef("");
   // Bumped whenever the account or workspace changes. Responses that started under an earlier value are ignored.
@@ -375,6 +380,8 @@ export default function App() {
     setResultsState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
     setBrandBrainState({ status: "idle", brain: null, draft: "", error: "" });
     setCampaignList({ status: "idle", campaigns: [], error: "" });
+    setOnboardingState({ status: "idle", onboarding: null, brandNamePlaceholder: null, error: "" });
+    saveKeeperRef.current.clear();
     setPendingSubmit(false);
   }
 
@@ -845,6 +852,48 @@ export default function App() {
     }
   }, [session.status, session.accessToken, session.tenantId, session.projectId]);
 
+  const premiumLoadOnboarding = useCallback(async () => {
+    if (session.status !== "ready") return;
+    const scopeToken = scopeTokenRef.current;
+    setOnboardingState((current) => (current.status === "loading" ? current : { ...current, status: "loading", error: "" }));
+    try {
+      const result = await withTimeout(fetchOnboarding({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken }), "Your saved setup is taking longer than expected to load.");
+      if (scopeToken !== scopeTokenRef.current) return;
+      setOnboardingState({ status: "ready", onboarding: result.onboarding, brandNamePlaceholder: result.brandNamePlaceholder, error: "" });
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
+      // Never keep an earlier record on screen as if it were current once a reload has failed.
+      setOnboardingState({ status: error.code === "ONBOARDING_UNAVAILABLE" ? "unavailable" : "error", onboarding: null, brandNamePlaceholder: null, error: error.message });
+    }
+  }, [session.status, session.accessToken]);
+
+  // Save setup progress through PUT /customer/workspace/onboarding. Resolves { ok, message?, conflict? }; ok only
+  // when the server confirmed the write. A retry of an identical request reuses its idempotency key.
+  async function premiumSaveOnboarding(body) {
+    if (session.status !== "ready") return { ok: false, message: "Sign in to save your setup. Nothing was saved." };
+    const scopeToken = scopeTokenRef.current;
+    const changed = { ok: false, message: "Your account or workspace changed while saving, so this screen was reset. Nothing is shown as saved here." };
+    const key = saveKeeperRef.current.keyFor(body);
+    try {
+      const result = await withTimeout(putOnboarding({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, body: { ...body, idempotency_key: key } }), "Saving is taking longer than expected. It may or may not have been saved. Press save again: sending it again is safe and will not duplicate anything.");
+      if (scopeToken !== scopeTokenRef.current) return changed;
+      saveKeeperRef.current.clear();
+      setOnboardingState({ status: "ready", onboarding: result.onboarding, brandNamePlaceholder: result.brandNamePlaceholder, error: "" });
+      return { ok: true, replayed: result.replayed };
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return changed;
+      if (error.code === "VERSION_CONFLICT" || error.code === "IDEMPOTENCY_KEY_CONFLICT") {
+        saveKeeperRef.current.clear();
+        try {
+          const latest = await withTimeout(fetchOnboarding({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken }), "Loading the latest saved setup is taking longer than expected.");
+          if (scopeToken === scopeTokenRef.current) setOnboardingState({ status: "ready", onboarding: latest.onboarding, brandNamePlaceholder: latest.brandNamePlaceholder, error: "" });
+        } catch { /* the conflict message stands; the next save re-reads */ }
+        return { ok: false, conflict: error.code === "VERSION_CONFLICT", message: error.message };
+      }
+      return { ok: false, message: error.message };
+    }
+  }
+
   async function premiumSaveBrain(fields) {
     if (session.status !== "ready") return { ok: false, message: "Sign in to save changes." };
     const brain = brandBrainState.brain;
@@ -904,6 +953,9 @@ export default function App() {
         onLoadBrain={premiumLoadBrain}
         onSaveBrain={premiumSaveBrain}
         onBootstrap={premiumBootstrap}
+        onboardingState={onboardingState}
+        onLoadOnboarding={premiumLoadOnboarding}
+        onSaveOnboarding={premiumSaveOnboarding}
         recommendationState={state}
         onRecommend={premiumRecommend}
         campaign={campaignState.campaign}
