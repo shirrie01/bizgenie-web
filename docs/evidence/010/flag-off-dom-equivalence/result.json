@@ -1,0 +1,34 @@
+{
+ "base": "bg-studio-008-fe-production-integration @ 412ede3388c405ac013b44cf9b514ec6a97b5415",
+ "this": "bg-studio-010-fe-persistent-onboarding (code, flag OFF)",
+ "states": {
+  "signed-out:initial": {
+   "identical": true,
+   "sha256": "80c591d1f9d2be01e502850e9ec65c37353d9622fd2a8e3d8f81dfaab4450834"
+  },
+  "unconfigured:initial": {
+   "identical": true,
+   "sha256": "80c591d1f9d2be01e502850e9ec65c37353d9622fd2a8e3d8f81dfaab4450834"
+  },
+  "scope-missing:initial": {
+   "identical": true,
+   "sha256": "2f7d89b06047de5d3bf687e95583bee89379ac29e516aa97a19c35bdbb7c832f"
+  },
+  "ready:initial": {
+   "identical": true,
+   "sha256": "8ee6b21405b44a8393242be70b126469018ba4fd955322dff0af5ff158c48aa0"
+  },
+  "ready:brain": {
+   "identical": true,
+   "sha256": "18e04aaee89ace86c5a4c4cf4612bb39571d52e7b94337df21b4786cf3deab26"
+  },
+  "ready:recommendation": {
+   "identical": true,
+   "sha256": "f2c30b208ad223663361cdf593a6e1a849e07ab35da78d3a425ad1d81e724ed0"
+  },
+  "ready:campaign": {
+   "identical": true,
+   "sha256": "ab96f17e3e7c2557c54f8eb6f6c951b3163e7587837e57ade29593bc8f5eedd0"
+  }
+ }
+}

@@ -45,6 +45,16 @@ const campaignDoc = (version, items, workflow = "draft", content) => ({
     variants: [{ variant_id: `44444444-4444-4444-8444-44444444444${i}`, destination_label: item.destination_label, workflow, ...(workflow !== "draft" ? { current_revision_id: "revision-1", current_content: content || "Server persisted review copy" } : {}) }] })),
 });
 
+// BG-STUDIO-010-FE: the saved onboarding record, as the API (workspace-onboarding.v1) returns it. MOCKED, not staging.
+const onboardingDoc = (over = {}) => ({
+  contract_version: "workspace-onboarding.v1", tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a",
+  version: 3, status: "completed", sector: { key: "leasing", source: "customer" }, industry_text: "vehicle leasing",
+  channels: { values: ["email"], source: "customer" }, current_step: 6, draft: {},
+  completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] }, completed_at: "2026-10-23T10:00:00.000Z", updated_at: "2026-10-23T10:00:00.000Z", ...over,
+});
+const NOT_STARTED = onboardingDoc({ version: 0, status: "not_started", sector: { key: null, source: null }, industry_text: null, channels: { values: [], source: null }, current_step: null, completeness: { sector: false, channels: false, ready_to_complete: false, missing: ["sector_key", "channels"] }, completed_at: null, updated_at: null });
+const onboardingResponse = (doc, extra = {}) => ok({ status: "ready", onboarding: doc, brand_name_placeholder: false, ...extra });
+
 let handlers;
 let calls;
 beforeEach(() => {
@@ -57,6 +67,7 @@ beforeEach(() => {
   let itemCount = 0;
   handlers = {
     "GET /customer/workspace/brand-brain": () => ok({ status: "ready", brand_brain: NORTHGATE }),
+    "GET /customer/workspace/onboarding": () => onboardingResponse(onboardingDoc()),
     "PUT /customer/workspace/brand-brain": (_u, o) => ok({ status: "ready", brand_brain: { ...JSON.parse(o.body), brand_id: "brand-a", project_id: "project-a", metadata: { version: 2, status: "draft" } } }),
     "GET /customer/workspace": () => ok({ status: "missing_workspace", workspace: null }),
     "GET /customer/campaigns": () => ok({ campaigns: [] }),
@@ -135,11 +146,12 @@ describe("authenticated entry", () => {
 });
 
 describe("workspace content is real and labelled", () => {
-  it("shows the customer's own brand, an inferred sector, and saved facts with their source", async () => {
+  it("shows the customer's own brand, their saved sector, and saved facts with their source", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
     expect(screen.getByText("Vehicle leasing", { selector: ".ps-chip" })).toBeInTheDocument();
-    expect(screen.getByText(/inferred from what you typed/i)).toBeInTheDocument();
+    expect(screen.getByText(/saved · you chose this/i, { selector: ".ps-chip-note" })).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/inferred from what you typed/i);
     const facts = screen.getByRole("heading", { name: /what bizgenie knows/i }).closest("section");
     expect(within(facts).getByText("We lease cars and vans to small businesses.")).toBeInTheDocument();
     expect(within(facts).getAllByText("Saved").length).toBeGreaterThanOrEqual(4);
@@ -156,6 +168,8 @@ describe("workspace content is real and labelled", () => {
 
   it("uses neutral wording when the Brand Brain has no real name", async () => {
     handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Customer Campaign Workspace", "A description.") });
+    // The BACKEND says this name is a placeholder; the browser holds no list of placeholder names.
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(onboardingDoc(), { brand_name_placeholder: true });
     render(<App />);
     // A placeholder name is not a real business name, so the profile is incomplete and onboarding opens, empty.
     await screen.findByRole("heading", { name: /tell us about your business/i });
@@ -166,13 +180,15 @@ describe("workspace content is real and labelled", () => {
   });
 
   it.each([
-    ["Maison Aurelle", "A fragrance house.", "Fragrance & perfume", ["lease", "clinic", "flavour"]],
-    ["Clearskin Studio", "An aesthetics clinic in Leeds.", "Aesthetics clinic", ["lease", "fragrance", "flavour"]],
-    ["Fonzo", "Soft drinks for everyone.", "Soft drinks & beverages", ["lease", "fragrance", "clinic"]],
-    ["WOW Charity", "We support local families.", "Charity & community", ["lease", "fragrance", "flavour"]],
-    ["Harbour Partners", "Business consulting.", "Not specified", ["lease", "fragrance", "flavour", "clinic", "donate"]],
-  ])("%s gets its own sector and no other industry's wording", async (name, description, label, forbidden) => {
+    ["Maison Aurelle", "A fragrance house.", "Fragrance & perfume", ["lease", "clinic", "flavour"], "perfume"],
+    ["Clearskin Studio", "An aesthetics clinic in Leeds.", "Aesthetics clinic", ["lease", "fragrance", "flavour"], "aesthetics"],
+    ["Fonzo", "Soft drinks for everyone.", "Soft drinks & beverages", ["lease", "fragrance", "clinic"], "beverage"],
+    ["WOW Charity", "We support local families.", "Charity & community", ["lease", "fragrance", "flavour"], "charity"],
+    ["Harbour Partners", "Business consulting.", "Not specified", ["lease", "fragrance", "flavour", "clinic", "donate"], null],
+  ])("%s gets its own sector and no other industry's wording", async (name, description, label, forbidden, savedKey) => {
     handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor(name, description) });
+    // Saved as inferred (never as a customer choice), so a saved leasing choice cannot leak into other brands.
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(onboardingDoc({ sector: savedKey ? { key: savedKey, source: "inferred" } : { key: null, source: null }, industry_text: null }));
     render(<App />);
     await screen.findByRole("heading", { name: `Welcome back, ${name}.` });
     expect(screen.getByText(label, { selector: ".ps-chip" })).toBeInTheDocument();
@@ -294,6 +310,7 @@ describe("workspace creation (existing bootstrap contract)", () => {
 describe("what is saved, and what is not", () => {
   const toBrainStep = async () => {
     handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Northgate Vehicle Leasing") });
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(NOT_STARTED);
     render(<App />);
     await screen.findByRole("heading", { name: /what does your business do/i });
     fireEvent.change(screen.getByLabelText(/what kind of business/i), { target: { value: "vehicle leasing" } });
@@ -325,30 +342,26 @@ describe("what is saved, and what is not", () => {
 
   it("never claims a save that failed", async () => {
     await toBrainStep();
-    handlers["PUT /customer/workspace/brand-brain"] = () => fail(500);
+    handlers["PUT /customer/workspace/brand-brain"] = () => fail(400);
     fireEvent.click(button(/save to brand brain/i));
     expect(await screen.findByRole("alert")).toHaveTextContent(/could not be saved yet/i);
     expect(screen.queryByText(/saved to your brand brain/i)).toBeNull();
   });
 
-  it("sends sector and channels nowhere: they stay in this session and are labelled that way", async () => {
+  it("Brand Brain saves still carry nothing about sector or channels", async () => {
     await toBrainStep();
-    fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i));
-    expect(screen.getByText(/Inferred from what you typed/i)).toBeInTheDocument();
-    for (const c of calls) expect(String(c.options.body || "")).not.toMatch(/Instagram|vehicle leasing/i);
+    fireEvent.click(button(/save to brand brain/i));
+    await screen.findByText(/saved to your brand brain/i);
+    const [req] = called("PUT", "/brand-brain");
+    expect(JSON.stringify(JSON.parse(req.options.body))).not.toMatch(/instagram|sector|channel/i);
+    expect(called("PUT", "/workspace/onboarding")).toHaveLength(0); // saving the Brand Brain is not saving setup progress
   });
 
-  it("shows session-only values as such in the workspace", async () => {
+  it("labels an unsaved sector and unsaved channels as such, and a saved one as saved", async () => {
     await toBrainStep();
-    fireEvent.click(button(/save to brand brain/i)); await screen.findByText(/saved to your brand brain/i);
-    fireEvent.click(button(/^continue$/i));
-    await screen.findByRole("heading", { name: /your first recommendation/i });
-    fireEvent.click(button(/go to my workspace/i));
-    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
-    const facts = screen.getByRole("heading", { name: /what bizgenie knows/i }).closest("section");
-    expect(within(facts).getByText("Instagram")).toBeInTheDocument();
-    expect(within(facts).getByText(/no account is connected and nothing is saved/i)).toBeInTheDocument();
-    expect(within(facts).getAllByText("This session").length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i));
+    expect(screen.getByText(/Inferred from what you typed · not saved yet/i)).toBeInTheDocument();
+    for (const c of calls) expect(String(c.options.body || "")).not.toMatch(/instagram|vehicle leasing/i);
   });
 });
 
@@ -553,4 +566,990 @@ describe("refresh and navigation", () => {
     fireEvent.click(within(nav).getByRole("button", { name: "Brand" }));
     expect(await screen.findByRole("region", { name: /brand brain/i })).toBeInTheDocument();
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// BG-STUDIO-010-FE: persistent onboarding. The API is MOCKED here with the workspace-onboarding.v1 shapes from API
+// draft PR #213 (head d0e1142). This is NOT connected-staging evidence: no real API, database, token or migration.
+// ---------------------------------------------------------------------------------------------------------------
+const draftBrain = (name, over = {}) => ({ ...brainFor(name), ...over });
+const IN_PROGRESS = (over = {}) => onboardingDoc({ version: 2, status: "in_progress", completed_at: null, current_step: 4, completeness: { sector: true, channels: false, ready_to_complete: false, missing: ["channels"] }, channels: { values: [], source: null }, ...over });
+
+// A small stand-in for the API's merge/compare-and-set behaviour, enough to exercise the client truthfully.
+function fakeServer(initial) {
+  const state = { doc: initial, puts: [], lastKey: null, lastHash: null };
+  const handler = (_u, options) => {
+    const body = JSON.parse(options.body);
+    state.puts.push(body);
+    if (state.lastKey === body.idempotency_key && state.lastHash === JSON.stringify({ ...body, idempotency_key: undefined })) return ok({ status: "saved", replayed: true, onboarding: state.doc, brand_name_placeholder: false });
+    if (body.expected_version !== state.doc.version) return fail(409, { status: "failed", error: { code: "VERSION_CONFLICT", message: "changed", details: { current_version: state.doc.version } } });
+    const d = { ...state.doc, sector: { ...state.doc.sector }, channels: { ...state.doc.channels }, draft: { ...state.doc.draft } };
+    if (body.sector_key !== undefined) d.sector = body.sector_key === null ? { key: null, source: null } : { key: body.sector_key, source: body.sector_source || "customer" };
+    if (body.industry_text !== undefined) d.industry_text = body.industry_text;
+    if (body.channels !== undefined) d.channels = body.channels.length ? { values: body.channels, source: body.channels_source || "customer" } : { values: [], source: null };
+    if (body.current_step !== undefined) d.current_step = body.current_step;
+    for (const [k, v] of Object.entries(body.draft || {})) { if (v === null) delete d.draft[k]; else d.draft[k] = v; }
+    if (body.complete === true) { d.status = "completed"; d.completed_at = "2026-10-23T11:00:00.000Z"; } else d.status = body.complete === false ? "in_progress" : (d.status === "not_started" ? "in_progress" : d.status);
+    d.version = state.doc.version + 1; d.updated_at = "2026-10-23T11:00:00.000Z";
+    d.completeness = { sector: Boolean(d.sector.key), channels: d.channels.values.length > 0, ready_to_complete: Boolean(d.sector.key) && d.channels.values.length > 0, missing: [] };
+    state.doc = d; state.lastKey = body.idempotency_key; state.lastHash = JSON.stringify({ ...body, idempotency_key: undefined });
+    return ok({ status: "saved", replayed: false, onboarding: d, brand_name_placeholder: false });
+  };
+  return { state, get: () => onboardingResponse(state.doc), put: handler };
+}
+const use = (server) => { handlers["GET /customer/workspace/onboarding"] = server.get; handlers["PUT /customer/workspace/onboarding"] = server.put; };
+const onboardingPuts = () => called("PUT", "/workspace/onboarding");
+const heading = (re) => screen.findByRole("heading", { name: re });
+const stageHeadings = { 2: /what does your business do/i, 3: /who do you serve/i, 4: /where would you like to reach customers/i, 5: /your brand brain/i };
+
+describe("persistent onboarding: returning customers and resume", () => {
+  it("a customer who confirmed setup lands on the workspace; the API is read with the bearer token only and writes nothing", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    const [get] = called("GET", "/workspace/onboarding");
+    expect(get.options.headers.authorization).toBe("Bearer token-a");
+    expect(get.url).not.toMatch(/tenant|project|brand|token/i); // scope is never sent; the token carries it
+    expect(onboardingPuts()).toHaveLength(0);
+  });
+
+  it("resumes an unfinished setup at the saved step with the saved sector, channels and unsaved answers", async () => {
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, industry_text: "niche fragrance", channels: { values: ["instagram", "email"], source: "customer" }, draft: { goal: "Sell more discovery sets", description: "Typed but never saved to the Brand Brain" } }));
+    use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle") });
+    render(<App />);
+    await heading(stageHeadings[4]);
+    expect(screen.getByRole("button", { name: /^Instagram/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Email/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^TikTok/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/saved \(version 2\)/i);
+    fireEvent.click(button(/^back$/i)); // customers and goal
+    expect(await screen.findByLabelText(/what do you want a campaign to achieve/i)).toHaveValue("Sell more discovery sets");
+    fireEvent.click(button(/^back$/i)); // what you do
+    expect(await screen.findByLabelText(/what kind of business/i)).toHaveValue("niche fragrance");
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("Typed but never saved to the Brand Brain");
+    expect(screen.getByLabelText(/sector used for guidance/i)).toHaveValue("perfume");
+    expect(screen.getByText(/saved · you chose this/i, { selector: ".ps-sector-status *, .ps-sector-status" })).toBeInTheDocument();
+    expect(onboardingPuts()).toHaveLength(0); // resuming writes nothing
+  });
+
+  it("resuming after sign-in restores the same place (a new render with the same saved record)", async () => {
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "charity", source: "customer" } }));
+    use(server);
+    const first = render(<App />);
+    await heading(stageHeadings[4]);
+    first.unmount();
+    render(<App />);
+    await heading(stageHeadings[4]);
+  });
+
+  it("does not call a bootstrap-populated Brand Brain complete: setup resumes and the seeded address is not shown as a description", async () => {
+    use(fakeServer(NOT_STARTED));
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: draftBrain("Halal Motor Leasing Ltd", { identity: { description: "Customer-provided website or profile: https://leaseexpert.example" }, commercial: { primary_cta: "Get more Audi A3 leasing enquiries" } }) });
+    render(<App />);
+    await heading(/what does your business do/i); // not the workspace overview
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("");
+    expect(document.body.textContent).not.toMatch(/welcome back/i);
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i));
+    await heading(stageHeadings[5]);
+    expect(screen.getByText(/only a web address is stored here/i)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("leaseexpert.example");
+    expect(button(/confirm setup/i)).toBeDisabled();
+    expect(screen.getByRole("list", { name: /still needed to confirm/i })).toHaveTextContent(/save your sector/i);
+    expect(screen.getByRole("list", { name: /still needed to confirm/i })).toHaveTextContent(/website address is not a description/i);
+  });
+
+  it("a returning customer whose Brand Brain has a real name and description but never confirmed setup is not marked complete", async () => {
+    use(fakeServer(NOT_STARTED));
+    render(<App />); // NORTHGATE has a name and description
+    await heading(/what does your business do|tell us about your business/i);
+    expect(document.body.textContent).not.toMatch(/welcome back/i);
+  });
+});
+
+describe("persistent onboarding: Save progress, Save and exit, and confirmation", () => {
+  const fillAbout = () => {
+    fireEvent.change(screen.getByLabelText(/what kind of business/i), { target: { value: "niche fragrance" } });
+    fireEvent.change(screen.getByLabelText(/sector used for guidance/i), { target: { value: "perfume" } });
+    fireEvent.change(screen.getByLabelText(/describe what the business does/i), { target: { value: "Small-batch perfume house." } });
+  };
+
+  it("Save and exit sends exactly the verified PUT contract, then opens the workspace and says what is saved", async () => {
+    const server = fakeServer(NOT_STARTED); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle") });
+    render(<App />);
+    await heading(stageHeadings[2]);
+    fillAbout();
+    expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/changes that are not saved yet/i);
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i));
+    fireEvent.click(await screen.findByRole("button", { name: /^Instagram/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Email/ }));
+    expect(onboardingPuts()).toHaveLength(0); // clicking saves nothing
+    fireEvent.click(button(/save and exit/i));
+    await screen.findByRole("navigation", { name: /workspace sections/i });
+    await screen.findByRole("heading", { name: /^Welcome/ });
+    const [put] = onboardingPuts();
+    const body = JSON.parse(put.options.body);
+    expect(Object.keys(body).sort()).toEqual(["channels", "channels_source", "current_step", "draft", "expected_version", "idempotency_key", "industry_text", "sector_key", "sector_source"]);
+    expect(body).toMatchObject({ expected_version: 0, sector_key: "perfume", sector_source: "customer", channels: ["instagram", "email"], channels_source: "customer", industry_text: "niche fragrance", current_step: 4, draft: { description: "Small-batch perfume house." } });
+    expect(body.idempotency_key).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+    expect(JSON.stringify(body)).not.toMatch(/tenant|project|brand_id|token/i);
+    expect(put.options.headers.authorization).toBe("Bearer token-a");
+    // Brand Brain is untouched by saving setup progress.
+    expect(called("PUT", "/brand-brain")).toHaveLength(0);
+    // The overview shows what is saved, with provenance, and offers to continue.
+    const facts = screen.getByRole("heading", { name: /what bizgenie knows/i }).closest("section");
+    expect(within(facts).getByText("Instagram, Email")).toBeInTheDocument();
+    expect(within(facts).getAllByText(/Saved · you chose/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("button", { name: /continue your setup/i })).toBeInTheDocument();
+  });
+
+  it("an inferred sector is saved as inferred, never as a customer choice", async () => {
+    const server = fakeServer(NOT_STARTED); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Northgate Vehicle Leasing") });
+    render(<App />);
+    await heading(stageHeadings[2]);
+    expect(screen.getByText(/Inferred from what you typed · not saved yet/i)).toBeInTheDocument();
+    fireEvent.click(button(/^save progress$/i));
+    await screen.findByText(/setup progress saved\. you can leave/i);
+    expect(JSON.parse(onboardingPuts()[0].options.body)).toMatchObject({ sector_key: "leasing", sector_source: "inferred" });
+    expect(screen.getByText(/saved · inferred from what you typed, not confirmed/i)).toBeInTheDocument();
+  });
+
+  it("an inferred sector is never sent over a saved customer choice", async () => {
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" } })); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Northgate Vehicle Leasing") });
+    render(<App />);
+    await heading(stageHeadings[4]);
+    fireEvent.click(await screen.findByRole("button", { name: /^Email/ }));
+    fireEvent.click(button(/^save progress$/i));
+    await screen.findByText(/setup progress saved\. you can leave/i);
+    const body = JSON.parse(onboardingPuts()[0].options.body);
+    expect(body).not.toHaveProperty("sector_key");
+    expect(body).not.toHaveProperty("sector_source");
+    expect(server.state.doc.sector).toEqual({ key: "perfume", source: "customer" });
+  });
+
+  it("saves nothing, and says so, when there is nothing new", async () => {
+    use(fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 4 })));
+    render(<App />);
+    await heading(stageHeadings[4]);
+    fireEvent.click(button(/^save progress$/i));
+    expect(await screen.findByText(/already saved/i)).toBeInTheDocument();
+    expect(onboardingPuts()).toHaveLength(0);
+  });
+
+  it("presses twice, sends once", async () => {
+    let release; const server = fakeServer(NOT_STARTED); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle") });
+    render(<App />);
+    await heading(stageHeadings[2]);
+    fireEvent.change(screen.getByLabelText(/describe what the business does/i), { target: { value: "Typed" } });
+    handlers["PUT /customer/workspace/onboarding"] = (u, o) => new Promise((resolve) => { release = () => resolve(server.put(u, o)); });
+    const save = button(/^save progress$/i);
+    fireEvent.click(save); fireEvent.click(save);
+    await waitFor(() => expect(typeof release).toBe("function"));
+    expect(onboardingPuts()).toHaveLength(1);
+    await act(async () => { release(); });
+    await screen.findByText(/setup progress saved\. you can leave/i);
+    expect(onboardingPuts()).toHaveLength(1);
+  });
+
+  it("Confirm setup is enabled only from saved, customer-supplied facts, and sends only the completion", async () => {
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 5, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] } })); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle", "A small-batch perfume house.") });
+    render(<App />);
+    await heading(stageHeadings[5]);
+    fireEvent.click(button(/confirm setup/i));
+    await screen.findByText(/setup confirmed and saved/i);
+    const body = JSON.parse(onboardingPuts()[0].options.body);
+    expect(body).toMatchObject({ expected_version: 2, complete: true });
+    expect(Object.keys(body).sort()).toEqual(["complete", "expected_version", "idempotency_key"]);
+    fireEvent.click(await screen.findByRole("button", { name: "Overview" }));
+    expect(await screen.findByRole("heading", { name: "Welcome back, Maison Aurelle." })).toBeInTheDocument();
+    expect(screen.getByText("Confirmed by you and saved")).toBeInTheDocument();
+  });
+
+  it("Confirm setup is blocked when the backend flags the name as a placeholder, or typing is unsaved", async () => {
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 5 })); use(server);
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(server.state.doc, { brand_name_placeholder: true });
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("BizGenie Workspace", "A small-batch perfume house.") });
+    render(<App />);
+    await heading(stageHeadings[5]);
+    expect(button(/confirm setup/i)).toBeDisabled();
+    expect(screen.getByRole("list", { name: /still needed to confirm/i })).toHaveTextContent(/real business name/i);
+  });
+});
+
+describe("persistent onboarding: interrupted saves, conflicts and unavailable storage", () => {
+  const toAbout = async (server, brainName = "Maison Aurelle") => {
+    use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor(brainName) });
+    render(<App />);
+    await heading(stageHeadings[2]);
+    fireEvent.change(screen.getByLabelText(/describe what the business does/i), { target: { value: "Small-batch perfume house." } });
+  };
+
+  it("503 on a save: 'save not confirmed', never 'NOT saved'; keeps the typed answers and never claims success", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    handlers["PUT /customer/workspace/onboarding"] = () => fail(503, { status: "failed", error: { code: "ONBOARDING_UNAVAILABLE", message: "Onboarding is temporarily unavailable" } });
+    fireEvent.click(button(/save and exit/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Save not confirmed — your changes may already have been saved.");
+    expect(alert.textContent).not.toMatch(/NOT saved/);
+    expect(within(alert).getByRole("button", { name: /check what was saved/i })).toBeInTheDocument();
+    expect(screen.queryByText(/progress saved|already saved/i)).toBeNull();
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("Small-batch perfume house.");
+    expect(screen.getByRole("heading", { name: stageHeadings[2] })).toBeInTheDocument(); // did not navigate away
+    expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/not saved yet/i);
+  });
+
+  it("an interrupted save is retried with the SAME idempotency key, and a replay is accepted", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    let attempts = 0;
+    handlers["PUT /customer/workspace/onboarding"] = (u, o) => { attempts += 1; if (attempts === 1) { server.put(u, o); throw new TypeError("network lost"); } return server.put(u, o); };
+    fireEvent.click(button(/^save progress$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Save not confirmed — your changes may already have been saved.");
+    fireEvent.click(button(/^save progress$/i));
+    await screen.findByText(/setup progress saved\. you can leave/i);
+    const [first, second] = onboardingPuts().map((c) => JSON.parse(c.options.body));
+    expect(second.idempotency_key).toBe(first.idempotency_key);
+    expect(second).toEqual(first);
+    expect(server.state.doc.version).toBe(1); // written once, not twice
+  });
+
+  it("a changed answer after a failed save gets a new idempotency key", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    handlers["PUT /customer/workspace/onboarding"] = () => fail(503, { status: "failed", error: { code: "ONBOARDING_UNAVAILABLE", message: "x" } });
+    fireEvent.click(button(/^save progress$/i)); await screen.findByRole("alert");
+    fireEvent.change(screen.getByLabelText(/describe what the business does/i), { target: { value: "Changed wording." } });
+    fireEvent.click(button(/^save progress$/i)); await waitFor(() => expect(onboardingPuts()).toHaveLength(2));
+    const [a, b] = onboardingPuts().map((c) => JSON.parse(c.options.body));
+    expect(b.idempotency_key).not.toBe(a.idempotency_key);
+  });
+
+  it("a stale version reloads the latest saved record, keeps what was typed, and retries with the new version", async () => {
+    const server = fakeServer(IN_PROGRESS({ version: 4, current_step: 2 })); await toAbout(server);
+    // Another tab saved version 5 after this one loaded version 4.
+    server.state.doc = { ...server.state.doc, version: 5, sector: { key: "beverage", source: "customer" } };
+    fireEvent.click(button(/^save progress$/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/changed somewhere else/i);
+    expect(alert).toHaveTextContent(/typed answers are still here/i);
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("Small-batch perfume house.");
+    expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/not saved yet/i);
+    fireEvent.click(button(/^save progress$/i));
+    await screen.findByText(/setup progress saved \(version 6\)/i);
+    const bodies = onboardingPuts().map((c) => JSON.parse(c.options.body));
+    expect(bodies[0].expected_version).toBe(4);
+    expect(bodies[1].expected_version).toBe(5);
+    expect(bodies[1].idempotency_key).not.toBe(bodies[0].idempotency_key);
+  });
+
+  it("validation, authorisation and unexpected failures say nothing was saved", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    for (const [response, pattern] of [
+      [fail(400, { error: { code: "ONBOARDING_VALIDATION_ERROR", details: [{ path: "channels", message: "bad" }] } }), /some answers could not be saved.*nothing was saved/i],
+      [fail(401, { error: { code: "AUTHENTICATION_REQUIRED" } }), /session has ended.*nothing was saved/i],
+      [fail(403, { error: { code: "WORKSPACE_NOT_AUTHORIZED" } }), /only the workspace owner can save or confirm setup.*nothing was saved/i],
+      [fail(500, {}), /could not be saved.*nothing was saved/i],
+    ]) {
+      handlers["PUT /customer/workspace/onboarding"] = () => response;
+      fireEvent.click(button(/^save progress$/i));
+      expect(await screen.findByRole("alert")).toHaveTextContent(pattern);
+      expect(screen.queryByText(/progress saved/i)).toBeNull();
+    }
+  });
+
+  it("an unexpected response shape is not trusted", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    handlers["PUT /customer/workspace/onboarding"] = () => ok({ status: "saved", onboarding: { version: "7" } });
+    fireEvent.click(button(/^save progress$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/unexpected answer/i);
+    expect(screen.queryByText(/progress saved/i)).toBeNull();
+  });
+
+  it("when saved setup cannot be loaded (503) the workspace says so instead of calling setup complete or incomplete, then recovers", async () => {
+    let up = false;
+    handlers["GET /customer/workspace/onboarding"] = () => (up ? onboardingResponse(onboardingDoc()) : fail(503, { status: "failed", error: { code: "ONBOARDING_UNAVAILABLE", message: "x" } }));
+    render(<App />);
+    await screen.findByRole("heading", { name: /^Welcome/ });
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/saved setup could not be loaded/i);
+    expect(alert).toHaveTextContent(/could not be loaded right now.*nothing has been changed/i);
+    expect(screen.getByText("Unavailable", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.queryByText("Needs your input")).toBeNull();
+    expect(screen.queryByText("Complete")).toBeNull();
+    up = true;
+    fireEvent.click(within(alert).getByRole("button", { name: /try again/i }));
+    expect(await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("an API without the onboarding routes (404) is treated as unavailable, never as an empty record", async () => {
+    handlers["GET /customer/workspace/onboarding"] = () => fail(404);
+    render(<App />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/saved setup could not be loaded/i);
+    expect(screen.queryByText("Needs your input")).toBeNull();
+  });
+
+  it("unavailable storage during setup lets the customer keep working but warns that progress is not remembered", async () => {
+    handlers["GET /customer/workspace/onboarding"] = () => fail(503, { error: { code: "ONBOARDING_UNAVAILABLE" } });
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle") });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Set up" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/will not be remembered/i);
+    expect(screen.queryByRole("button", { name: /save and exit/i })).toBeNull();
+    expect(onboardingPuts()).toHaveLength(0);
+  });
+});
+
+describe("persistent onboarding: backend placeholder flag, accounts and workspaces", () => {
+  it("uses the backend flag, not a built-in list: the same string is a real name when the backend says so", async () => {
+    use(fakeServer(onboardingDoc()));
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Customer Campaign Workspace", "A bespoke tailoring shop.") });
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(onboardingDoc(), { brand_name_placeholder: false });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Welcome back, Customer Campaign Workspace." })).toBeInTheDocument();
+  });
+
+  it("never prefills a backend-flagged placeholder as the customer's business name", async () => {
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(NOT_STARTED, { brand_name_placeholder: true });
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("BizGenie Workspace") });
+    render(<App />);
+    await heading(/tell us about your business/i);
+    expect(screen.getByLabelText(/business name/i)).toHaveValue("");
+  });
+
+  it("switching account loads that account's setup and shows nothing of the previous one", async () => {
+    const a = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, draft: { goal: "Account A secret goal" } }));
+    use(a);
+    render(<App />);
+    await heading(stageHeadings[4]);
+    const b = fakeServer(onboardingDoc({ version: 9, sector: { key: "charity", source: "customer" } }));
+    handlers["GET /customer/workspace/onboarding"] = b.get;
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Brookside Aesthetics", "An aesthetics clinic.") });
+    getCustomerSessionMock.mockResolvedValue(SESSION_B);
+    await act(async () => { await authListener(); });
+    expect(await screen.findByRole("heading", { name: "Welcome back, Brookside Aesthetics." })).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Account A secret goal/);
+    const gets = called("GET", "/workspace/onboarding");
+    expect(gets[0].options.headers.authorization).toBe("Bearer token-a");
+    expect(gets[gets.length - 1].options.headers.authorization).toBe("Bearer token-b");
+  });
+
+  it("ignores a slow onboarding response and a slow save that belong to the previous workspace", async () => {
+    const a = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" } })); use(a);
+    let releasePut;
+    handlers["PUT /customer/workspace/onboarding"] = (u, o) => new Promise((resolve) => { releasePut = () => resolve(a.put(u, o)); });
+    render(<App />);
+    await heading(stageHeadings[4]);
+    fireEvent.click(await screen.findByRole("button", { name: /^Email/ }));
+    fireEvent.click(button(/^save progress$/i));
+    await waitFor(() => expect(typeof releasePut).toBe("function"));
+    const b = fakeServer(onboardingDoc({ version: 9, sector: { key: "charity", source: "customer" } }));
+    handlers["GET /customer/workspace/onboarding"] = b.get;
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Brookside Aesthetics", "An aesthetics clinic.") });
+    getCustomerSessionMock.mockResolvedValue(SESSION_B);
+    await act(async () => { await authListener(); });
+    await screen.findByRole("heading", { name: "Welcome back, Brookside Aesthetics." });
+    await act(async () => { releasePut(); });
+    // B's record is what is shown; A's late save is not applied to B.
+    expect(screen.getByRole("heading", { name: "Welcome back, Brookside Aesthetics." })).toBeInTheDocument();
+    expect(screen.getByText("Charity & community", { selector: ".ps-chip" })).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Fragrance/);
+    // B's saved record is still what the workspace reflects: A's late save did not replace it.
+    const facts = screen.getByRole("heading", { name: /what bizgenie knows/i }).closest("section");
+    expect(within(facts).queryByText(/not saved yet/i)).toBeNull();
+    expect(within(facts).getAllByText(/Saved · you chose/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("changing to another workspace of the same account re-reads that workspace's own setup", async () => {
+    use(fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" } })));
+    render(<App />);
+    await heading(stageHeadings[4]);
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(onboardingDoc({ sector: { key: "takeaway", source: "customer" } }));
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Second Brand", "A takeaway on the high street.") });
+    getCustomerSessionMock.mockResolvedValue({ ...SESSION_A, brandId: "brand-a2", projectId: "project-a2" });
+    await act(async () => { await authListener(); });
+    expect(await screen.findByRole("heading", { name: "Welcome back, Second Brand." })).toBeInTheDocument();
+    expect(screen.getByText("Independent takeaway", { selector: ".ps-chip" })).toBeInTheDocument();
+  });
+
+  it("a customer with no workspace yet makes no onboarding request and is not offered Save and exit", async () => {
+    getCustomerSessionMock.mockResolvedValue(SCOPE_MISSING);
+    render(<App />);
+    await screen.findByRole("heading", { name: /set up your workspace/i });
+    fireEvent.click(button(/^continue$/i));
+    await screen.findByRole("heading", { name: /tell us about your business/i });
+    expect(screen.queryByRole("button", { name: /save and exit/i })).toBeNull();
+    expect(screen.getByText(/save and exit becomes available after your workspace is created/i)).toBeInTheDocument();
+    expect(calls.filter((c) => c.path.endsWith("/onboarding"))).toHaveLength(0);
+  });
+
+  it("warns before leaving with unsaved answers, and not when everything is saved", async () => {
+    const server = fakeServer(NOT_STARTED); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle") });
+    render(<App />);
+    await heading(stageHeadings[2]);
+    const probe = () => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; };
+    expect(probe()).toBe(false);
+    fireEvent.change(screen.getByLabelText(/describe what the business does/i), { target: { value: "Typed" } });
+    expect(probe()).toBe(true);
+    fireEvent.click(button(/^save progress$/i));
+    await screen.findByText(/setup progress saved\. you can leave/i);
+    expect(probe()).toBe(false);
+  });
+
+  it("with the flag off the onboarding API is never called", async () => {
+    vi.stubEnv("VITE_PREMIUM_STUDIO_ENABLED", "false");
+    render(<App />);
+    await screen.findByLabelText(/your goal/i);
+    await act(async () => {});
+    expect(calls.filter((c) => c.path.includes("/onboarding"))).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// BG-STUDIO-011-FE contract alignment with the HARDENED API (bizgenie-api PR #213 at 120a874):
+//  - a 503 on a write may follow a commit whose acknowledgement was lost;
+//  - 422 ONBOARDING_INCOMPLETE can now list business_name and description as well as sector_key and channels;
+//  - only the workspace OWNER may write; a refused write is a plain 403 WORKSPACE_NOT_AUTHORIZED.
+// The API is MOCKED here with those documented shapes. This is NOT staging evidence.
+// ---------------------------------------------------------------------------------------------------------------
+const WORKSPACE_ROW = (role) => ({ tenant_id: "tenant-a", tenant_name: "Northgate Group", project_id: "project-a", project_name: "Northgate campaigns", brand_id: "brand-a", brand_name: "Maison Aurelle", brand_status: "approved", membership_role: role });
+const withRole = (role) => { handlers["GET /customer/workspace"] = () => ok({ status: "ready", workspace: WORKSPACE_ROW(role) }); };
+const SAVE_NOT_CONFIRMED_TEXT = "Save not confirmed — your changes may already have been saved.";
+const incomplete = (...paths) => fail(422, { status: "failed", error: { code: "ONBOARDING_INCOMPLETE", message: "Onboarding cannot be completed until required answers are saved", details: paths.map((path) => ({ path, code: "required", message: "Required to complete onboarding" })) } });
+
+describe("hardened API: lost acknowledgements (503 after a commit)", () => {
+  const toAbout = async (server) => {
+    use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle") });
+    render(<App />);
+    await heading(stageHeadings[2]);
+    fireEvent.change(screen.getByLabelText(/describe what the business does/i), { target: { value: "Small-batch perfume house." } });
+  };
+
+  it("the save COMMITTED but its acknowledgement was lost: says 'not confirmed', keeps the answers, and the retry replays the same request", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    let attempts = 0;
+    handlers["PUT /customer/workspace/onboarding"] = (u, o) => { attempts += 1; const r = server.put(u, o); return attempts === 1 ? fail(503, { status: "failed", error: { code: "ONBOARDING_UNAVAILABLE", message: "Onboarding is temporarily unavailable" } }) : r; };
+    fireEvent.click(button(/^save progress$/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(SAVE_NOT_CONFIRMED_TEXT);
+    expect(alert.textContent).not.toMatch(/NOT saved/i);
+    expect(screen.queryByText(/setup progress saved\. you can leave/i)).toBeNull(); // success is never claimed
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("Small-batch perfume house.");
+    expect(server.state.doc.version).toBe(1); // the server DID store it
+    fireEvent.click(button(/^save progress$/i));
+    await screen.findByText(/setup progress saved\. you can leave/i);
+    const [first, second] = onboardingPuts().map((c) => JSON.parse(c.options.body));
+    expect(second).toEqual(first); // same key AND same body, byte for byte
+    expect(second.idempotency_key).toBe(first.idempotency_key);
+    expect(server.state.doc.version).toBe(1); // never saved twice
+  });
+
+  it("'Check what was saved' re-reads the record and shows it as saved without re-sending anything", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    handlers["PUT /customer/workspace/onboarding"] = (u, o) => { server.put(u, o); return fail(503, { error: { code: "ONBOARDING_UNAVAILABLE" } }); };
+    fireEvent.click(button(/^save progress$/i));
+    const alert = await screen.findByRole("alert");
+    fireEvent.click(within(alert).getByRole("button", { name: /check what was saved/i }));
+    await waitFor(() => expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/saved \(version 1\)/i));
+    expect(onboardingPuts()).toHaveLength(1);
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("Small-batch perfume house.");
+  });
+
+  it("a lost acknowledgement on a dropped connection or a timeout says the same thing", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    handlers["PUT /customer/workspace/onboarding"] = () => { throw new TypeError("network lost"); };
+    fireEvent.click(button(/^save and exit$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(SAVE_NOT_CONFIRMED_TEXT);
+    expect(screen.getByRole("heading", { name: stageHeadings[2] })).toBeInTheDocument(); // did not leave
+  });
+
+  it("a read failure (503 on GET) changed nothing and does not use the save-uncertainty wording", async () => {
+    handlers["GET /customer/workspace/onboarding"] = () => fail(503, { error: { code: "ONBOARDING_UNAVAILABLE" } });
+    render(<App />);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toContain(SAVE_NOT_CONFIRMED_TEXT);
+    expect(alert).toHaveTextContent(/nothing has been changed/i);
+  });
+});
+
+describe("hardened API: 422 incomplete business setup", () => {
+  const atBrain = async (overrides = {}) => {
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 5, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] }, ...overrides })); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle", "A small-batch perfume house.") });
+    render(<App />);
+    await heading(stageHeadings[5]);
+    return server;
+  };
+
+  it("lists exactly what the API says is missing, field by field, and confirms nothing", async () => {
+    const server = await atBrain();
+    handlers["PUT /customer/workspace/onboarding"] = () => incomplete("business_name", "description");
+    fireEvent.click(button(/confirm setup/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/setup cannot be confirmed yet/i);
+    expect(alert).toHaveTextContent(/nothing on this screen has been marked as confirmed/i);
+    const list = within(alert).getByRole("list", { name: /what is still needed/i });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    expect(list).toHaveTextContent(/Business name\..*no real business name yet.*placeholder/i);
+    expect(list).toHaveTextContent(/What the business does\..*a website address alone is not a description/i);
+    expect(server.state.doc.status).toBe("in_progress"); // nothing was marked complete
+    expect(screen.queryByText(/setup confirmed and saved/i)).toBeNull();
+    expect(screen.queryByText(/you confirmed your setup/i)).toBeNull();
+  });
+
+  it("each item can take the customer to the step that fixes it", async () => {
+    await atBrain();
+    handlers["PUT /customer/workspace/onboarding"] = () => incomplete("business_name", "description", "channels");
+    fireEvent.click(button(/confirm setup/i));
+    const list = await screen.findByRole("list", { name: /what is still needed/i });
+    const items = within(list).getAllByRole("listitem");
+    fireEvent.click(within(items[0]).getByRole("button", { name: /go to the step for: business name/i }));
+    expect(await screen.findByRole("heading", { name: /tell us about your business/i })).toBeInTheDocument();
+  });
+
+  it("a stale 'ready' completeness from the server keeps Confirm closed even when this screen thinks the facts are saved", async () => {
+    await atBrain({ completeness: { sector: true, channels: true, ready_to_complete: false, missing: ["business_name"] } });
+    expect(button(/confirm setup/i)).toBeDisabled();
+    expect(screen.getByRole("list", { name: /still needed to confirm/i })).toHaveTextContent(/real business name/i);
+  });
+
+  it("an inferred sector stays inferred after a refused confirmation", async () => {
+    const server = await atBrain({ sector: { key: "perfume", source: "inferred" }, industry_text: null });
+    handlers["PUT /customer/workspace/onboarding"] = () => incomplete("description");
+    fireEvent.click(button(/confirm setup/i));
+    await screen.findByRole("alert");
+    fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i));
+    expect(await screen.findByText(/saved · inferred from what you typed, not confirmed/i)).toBeInTheDocument();
+    expect(server.state.doc.sector.source).toBe("inferred");
+  });
+});
+
+describe("hardened API: only the workspace owner can write", () => {
+  const atChannels = async (role) => {
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 4 })); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle", "A small-batch perfume house.") });
+    if (role) withRole(role);
+    render(<App />);
+    await heading(stageHeadings[4]);
+    return server;
+  };
+
+  it("a read-only member can read everything but Save, Save and exit and Confirm are turned off, with an accurate reason", async () => {
+    const server = await atChannels("member");
+    const note = await screen.findByText(/view only\. your role in this workspace is member/i);
+    expect(note).toHaveTextContent(/only the workspace owner can save or confirm setup/i);
+    expect(button(/^save progress$/i)).toBeDisabled();
+    expect(button(/^save and exit$/i)).toBeDisabled();
+    fireEvent.click(button(/^continue$/i)); // reading and navigating still work
+    await heading(stageHeadings[5]);
+    expect(button(/confirm setup/i)).toBeDisabled();
+    // The saved setup is shown: authorised read access is preserved.
+    fireEvent.click(button(/^back$/i));
+    expect(screen.getByRole("button", { name: /^Email/ })).toHaveAttribute("aria-pressed", "true");
+    expect(onboardingPuts()).toHaveLength(0);
+    expect(server.state.doc.version).toBe(2);
+  });
+
+  it("typing as a read-only member is not 'unsaved work': no leave-page warning and no unsaved-changes notice", async () => {
+    await atChannels("member");
+    await screen.findByText(/view only/i);
+    fireEvent.click(await screen.findByRole("button", { name: /^TikTok/ }));
+    const probe = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(probe);
+    expect(probe.defaultPrevented).toBe(false);
+    expect(screen.queryByTestId("ps-save-state")).toBeNull();
+  });
+
+  it("the owner keeps every save control, and no view-only notice appears", async () => {
+    await atChannels("owner");
+    await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(0));
+    expect(screen.queryByText(/view only/i)).toBeNull();
+    expect(button(/^save progress$/i)).toBeEnabled();
+    expect(button(/^save and exit$/i)).toBeEnabled();
+  });
+
+  it("when the role is not known the server decides: a refused write explains itself and the role is re-read", async () => {
+    await atChannels(null); // GET /customer/workspace says missing_workspace here, so no role is known
+    fireEvent.click(await screen.findByRole("button", { name: /^TikTok/ }));
+    handlers["PUT /customer/workspace/onboarding"] = () => fail(403, { status: "failed", error: { code: "WORKSPACE_NOT_AUTHORIZED", message: "Workspace selection is not authorized" } });
+    withRole("member"); // the re-read now says member
+    const before = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/^save progress$/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/only the workspace owner can save or confirm setup, or your access to this workspace has ended/i);
+    expect(alert).toHaveTextContent(/nothing was saved/i);
+    await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(before));
+    expect(await screen.findByText(/view only\. your role in this workspace is member/i)).toBeInTheDocument();
+    expect(button(/^save progress$/i)).toBeDisabled();
+    expect(onboardingPuts()).toHaveLength(1); // one refused request, no loop
+  });
+
+  it("a read-only member also cannot send a save through the keyboard shortcut path: the handler refuses without a request", async () => {
+    await atChannels("member");
+    await screen.findByText(/view only/i);
+    fireEvent.click(button(/^save progress$/i)); // disabled: nothing happens
+    await act(async () => {});
+    expect(onboardingPuts()).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Brand Brain identity ownership: founder decisions DEC-021 / LOCK-019 and DEC-022 / LOCK-020, backend draft PR
+// bizgenie-api #214 at 2319e5e8. Only the workspace OWNER may change the business name and description; members keep every
+// other Brand Brain edit. Response shapes below are the ones in #214's code and report (403 BRAND_BRAIN_WRITE_FORBIDDEN,
+// 409 BRAND_BRAIN_VERSION_CONFLICT, 503). The API is MOCKED. Open contract questions are in the acceptance pack, section 12.3.
+// ---------------------------------------------------------------------------------------------------------------
+describe("Brand Brain identity ownership (DEC-021 / DEC-022)", () => {
+  const DESCRIPTION = "A small-batch perfume house."; // the backend trims what it receives, then compares exactly with the stored text (#214, Q1)
+  const STORED = brainFor("Maison Aurelle", DESCRIPTION, { audience: { summary: "Gift buyers." }, commercial: { primary_cta: "Shop the new scent" } });
+  const forbidden = () => fail(403, { status: "failed", error: { code: "BRAND_BRAIN_WRITE_FORBIDDEN", message: "Current workspace-owner authority is required for business identity changes" } });
+  const conflict = () => fail(409, { status: "failed", error: { code: "BRAND_BRAIN_VERSION_CONFLICT", message: "Brand Brain changed; reload before saving" } });
+  let stored;
+  const atBrain = async (role) => {
+    stored = STORED;
+    use(fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 5 })));
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: stored });
+    if (role) withRole(role);
+    render(<App />);
+    await heading(stageHeadings[5]);
+    if (role) await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(0));
+  };
+  const brainPuts = () => called("PUT", "/brand-brain");
+  const goBack = (n) => { for (let i = 0; i < n; i++) fireEvent.click(button(/^back$/i)); };
+  const typeAudience = async (text) => {
+    goBack(2); await heading(stageHeadings[3]);
+    fireEvent.change(await screen.findByLabelText(/who are your customers/i), { target: { value: text } });
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]);
+  };
+
+  it("a member sees the name and description as owner-only, and can still save who it serves and the customer action", async () => {
+    await atBrain("member");
+    await screen.findByText(/only the workspace owner can change the business name and description/i);
+    expect(screen.getByRole("button", { name: /save who it serves and customer action/i })).toBeDisabled(); // nothing edited yet
+    goBack(3); await heading(stageHeadings[2]);
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveAttribute("readonly");
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue(DESCRIPTION);
+    expect(screen.getByText(/only the workspace owner can change the description of the business/i)).toBeInTheDocument();
+    goBack(1);
+    await heading(/tell us about your business/i);
+    expect(screen.getByLabelText(/business name/i)).toHaveAttribute("readonly");
+    expect(screen.getByLabelText(/business name/i)).toHaveValue("Maison Aurelle");
+  });
+
+  it("a member's save repeats the stored name and description exactly, changes only the other fields, and says so", async () => {
+    await atBrain("member");
+    await typeAudience("Collectors and gift buyers");
+    fireEvent.click(button(/save who it serves and customer action/i));
+    expect(await screen.findByText(/business name and description are unchanged/i)).toBeInTheDocument();
+    expect(brainPuts()).toHaveLength(1);
+    const body = JSON.parse(brainPuts()[0].options.body);
+    expect(body.name).toBe("Maison Aurelle");
+    expect(body.identity.description).toBe(DESCRIPTION);
+    expect(body.audience.summary).toBe("Collectors and gift buyers");
+    expect(body.commercial.primary_cta).toBe("Shop the new scent");
+    for (const key of ["brand_id", "project_id", "metadata"]) expect(body).not.toHaveProperty(key);
+  });
+
+  it("the owner keeps full control: name and description are editable and are sent when changed", async () => {
+    await atBrain("owner");
+    expect(screen.queryByText(/only the workspace owner can change the business name and description/i)).toBeNull();
+    expect(button(/^save to brand brain$/i)).toBeDisabled(); // nothing edited yet
+    goBack(3); await heading(stageHeadings[2]);
+    const box = screen.getByLabelText(/describe what the business does/i);
+    expect(box).not.toHaveAttribute("readonly");
+    fireEvent.change(box, { target: { value: "An independent perfume house in Paris." } });
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]);
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(await screen.findByText(/saved to your brand brain\. it is a draft/i)).toBeInTheDocument();
+    expect(JSON.parse(brainPuts()[0].options.body).identity.description).toBe("An independent perfume house in Paris.");
+  });
+
+  it("a refused save (403) says who may change the name and description, keeps the typed answers, and asks who this customer is again", async () => {
+    await atBrain("member");
+    await typeAudience("Collectors");
+    handlers["PUT /customer/workspace/brand-brain"] = forbidden;
+    const roleReads = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/save who it serves and customer action/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/only the workspace owner can change the business name and description/i);
+    expect(alert).toHaveTextContent(/nothing was saved/i);
+    expect(screen.queryByText(/saved to your brand brain/i)).toBeNull();
+    await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(roleReads)); // the role is re-read
+    goBack(2); await heading(stageHeadings[3]);
+    expect(screen.getByLabelText(/who are your customers/i)).toHaveValue("Collectors"); // typed answer still there
+  });
+
+  it("when the owner changed the name or description after the screen loaded, the member is told so and the latest is loaded (no false 'only owners' blame)", async () => {
+    await atBrain("member");
+    await typeAudience("Collectors");
+    handlers["PUT /customer/workspace/brand-brain"] = () => { stored = brainFor("Maison Aurelle Paris", DESCRIPTION, { audience: { summary: "Gift buyers." }, commercial: { primary_cta: "Shop the new scent" } }); return forbidden(); };
+    fireEvent.click(button(/save who it serves and customer action/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/changed by the workspace owner after this screen loaded/i);
+    expect(alert).toHaveTextContent(/latest version has been loaded/i);
+    expect(await screen.findByText("Maison Aurelle Paris")).toBeInTheDocument();
+  });
+
+  it("a conflict (409) reloads the stored Brand Brain, keeps the typed answers, and does not resend a stale document", async () => {
+    await atBrain("member");
+    await typeAudience("Collectors");
+    handlers["PUT /customer/workspace/brand-brain"] = () => { stored = brainFor("Maison Aurelle", DESCRIPTION, { audience: { summary: "Changed elsewhere." }, commercial: { primary_cta: "Shop the new scent" } }); return conflict(); };
+    const reads = called("GET", "/brand-brain").length;
+    fireEvent.click(button(/save who it serves and customer action/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/changed somewhere else/i);
+    expect(alert).toHaveTextContent(/nothing was overwritten/i);
+    expect(alert).toHaveTextContent(/your typed answers are still here/i);
+    await waitFor(() => expect(called("GET", "/brand-brain").length).toBeGreaterThan(reads));
+    expect(await screen.findByText("Changed elsewhere.")).toBeInTheDocument();
+    expect(brainPuts()).toHaveLength(1); // no automatic retry
+    goBack(2); await heading(stageHeadings[3]);
+    expect(screen.getByLabelText(/who are your customers/i)).toHaveValue("Collectors");
+  });
+
+  it("a 503 or a dropped connection is 'not confirmed', never 'not saved', and 'Check what was saved' re-reads the Brand Brain", async () => {
+    await atBrain("owner");
+    await typeAudience("Collectors");
+    for (const failing of [() => fail(503, { status: "failed", error: { code: "BRAND_BRAIN_PERSISTENCE_UNAVAILABLE" } }), () => { throw new TypeError("offline"); }]) {
+      handlers["PUT /customer/workspace/brand-brain"] = failing;
+      fireEvent.click(button(/^save to brand brain$/i));
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/save not confirmed — your changes may already have been saved/i);
+      expect(alert.textContent).not.toMatch(/not saved/i);
+      const reads = called("GET", "/brand-brain").length;
+      fireEvent.click(within(alert).getByRole("button", { name: /check what was saved/i }));
+      await waitFor(() => expect(called("GET", "/brand-brain").length).toBeGreaterThan(reads));
+    }
+  });
+
+  it("with an unknown role nothing is guessed: the server decides, and a refusal re-reads the role", async () => {
+    await atBrain(null); // the workspace list is not available, so the role is unknown
+    await typeAudience("Collectors");
+    expect(button(/^save to brand brain$/i)).toBeEnabled();
+    handlers["PUT /customer/workspace/brand-brain"] = forbidden;
+    const roleReads = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/only the workspace owner can change the business name and description, and anyone whose access/i);
+    await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(roleReads));
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// BG-STUDIO-015-FE: Brand Brain data integrity under change. The backend has NO compare-and-set for Brand Brain writes
+// (bizgenie-api #214, Q6): a whole-document PUT built from a stale screen silently overwrites other people's later edits.
+// The client therefore reads the latest stored Brand Brain just before each write and sends only the fields the customer
+// edited. These tests use the shapes in #214's code and report. The API is MOCKED: this is not live proof.
+// ---------------------------------------------------------------------------------------------------------------
+describe("Brand Brain integrity under change (BG-STUDIO-015)", () => {
+  const forbidden = () => fail(403, { status: "failed", error: { code: "BRAND_BRAIN_WRITE_FORBIDDEN", message: "Current workspace-owner authority is required for business identity changes" } });
+  const base = (over = {}) => brainFor("Maison Aurelle", "A small-batch perfume house.", { audience: { summary: "Gift buyers." }, commercial: { primary_cta: "Shop the new scent" }, ...over });
+  let stored; let role;
+  const open = async (r = "owner", initial = base()) => {
+    stored = initial; role = r;
+    use(fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 5 })));
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: stored });
+    handlers["GET /customer/workspace"] = () => (role ? ok({ status: "ready", workspace: WORKSPACE_ROW(role) }) : fail(404));
+    handlers["PUT /customer/workspace/brand-brain"] = (_u, o) => { stored = { ...JSON.parse(o.body), brand_id: "brand-a", project_id: "project-a", metadata: { version: stored.metadata.version + 1, status: "draft" } }; return ok({ status: "ready", brand_brain: stored }); };
+    render(<App />);
+    await heading(stageHeadings[5]);
+    if (r) await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(0));
+  };
+  const puts = () => called("PUT", "/brand-brain");
+  const lastBody = () => JSON.parse(puts().pop().options.body);
+  const back = (n) => { for (let i = 0; i < n; i++) fireEvent.click(button(/^back$/i)); };
+  const forward = async (n) => { for (let i = 0; i < n; i++) fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]); };
+  const edit = async (label, value, stepsBack) => { back(stepsBack); await screen.findByLabelText(label); fireEvent.change(screen.getByLabelText(label), { target: { value } }); await forward(stepsBack); };
+  const editCta = (v) => edit(/what should a customer do next/i, v, 3);
+  const editAudience = (v) => edit(/who are your customers/i, v, 2);
+
+  it("D1 lost update: an edit is applied to the LATEST stored Brand Brain, not to the copy loaded when the screen opened", async () => {
+    await open("owner");
+    await editCta("Book a discovery set");
+    stored = base({ audience: { summary: "Changed by a colleague meanwhile." } }); // someone else saved after this screen loaded
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(await screen.findByText(/saved to your brand brain/i)).toBeInTheDocument();
+    const body = lastBody();
+    expect(body.commercial.primary_cta).toBe("Book a discovery set");
+    expect(body.audience.summary).toBe("Changed by a colleague meanwhile."); // NOT the stale "Gift buyers."
+  });
+
+  it("D1b an owner who edits only one field does not overwrite another owner's later name or description change", async () => {
+    await open("owner");
+    await editCta("Book a discovery set");
+    stored = base({ name: "Maison Aurelle Paris" });
+    stored = { ...stored, identity: { description: "Rewritten by the other owner." } };
+    fireEvent.click(button(/^save to brand brain$/i));
+    await screen.findByText(/saved to your brand brain/i);
+    const body = lastBody();
+    expect(body.name).toBe("Maison Aurelle Paris");
+    expect(body.identity.description).toBe("Rewritten by the other owner.");
+  });
+
+  it("nothing is sent when nothing was edited, and an untouched screen never re-sends what it prefilled", async () => {
+    await open("owner");
+    expect(button(/^save to brand brain$/i)).toBeDisabled(); // nothing edited: no button to press, and the reason is written next to it
+    expect(screen.getByText(/nothing new to save here/i)).toBeInTheDocument();
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(puts()).toHaveLength(0);
+  });
+
+  it("if the latest saved Brand Brain cannot be read, nothing is written", async () => {
+    await open("owner");
+    await editCta("Book a discovery set");
+    const real = handlers["GET /customer/workspace/brand-brain"];
+    handlers["GET /customer/workspace/brand-brain"] = () => fail(503);
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be checked, so nothing was saved/i);
+    expect(puts()).toHaveLength(0);
+    handlers["GET /customer/workspace/brand-brain"] = real;
+  });
+
+  it("D2 membership revoked before Save: the workspace is reported unavailable (400 trusted_scope), nothing is written, the role is re-read", async () => {
+    await open("member");
+    await editAudience("Collectors");
+    handlers["GET /customer/workspace/brand-brain"] = () => fail(400, { status: "failed", error: { code: "WORKSPACE_VALIDATION_ERROR", message: "x", details: [{ path: "trusted_scope", code: "unauthorized", message: "Workspace selection is not authorized" }] } });
+    const reads = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/save who it serves and customer action/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/not available to your account right now/i);
+    expect(alert).toHaveTextContent(/nothing was saved/i);
+    expect(puts()).toHaveLength(0);
+    await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(reads));
+  });
+
+  it("D3 owner demoted while editing: the refused save re-reads the role and the screen becomes owner-only without losing the typed answers", async () => {
+    await open("owner");
+    await editCta("Book a discovery set");
+    role = "member"; // demoted after the page loaded
+    handlers["PUT /customer/workspace/brand-brain"] = forbidden;
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/only the workspace owner can change the business name and description/i);
+    await screen.findByText(/only the workspace owner can change the business name and description/i, { selector: ".ps-readonly" });
+    expect(await screen.findByRole("button", { name: /save who it serves and customer action/i })).toBeEnabled();
+    back(3);
+    expect(await screen.findByLabelText(/what should a customer do next/i)).toHaveValue("Book a discovery set");
+  });
+
+  it("D4 an untouched field follows a newer stored value after a re-read, while a field the customer typed stays as typed", async () => {
+    await open("owner");
+    await editCta("Book a discovery set");
+    handlers["PUT /customer/workspace/brand-brain"] = () => { stored = base({ audience: { summary: "Newer audience." } }); return fail(409, { status: "failed", error: { code: "BRAND_BRAIN_VERSION_CONFLICT", message: "Brand Brain changed; reload before saving" } }); };
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/nothing was overwritten/i);
+    back(2);
+    await waitFor(() => expect(screen.getByLabelText(/who are your customers/i)).toHaveValue("Newer audience.")); // untouched: follows the stored value
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^back$/i));
+    back(1);
+    expect(await screen.findByLabelText(/what should a customer do next/i)).toHaveValue("Book a discovery set"); // typed: kept
+  });
+
+  it("D5 a legacy stored name or description with spaces at its edges can never be repeated by a member (#214 Q1), so the member is told and nothing is sent", async () => {
+    await open("member", base({ identity: { description: "A small-batch perfume house.  " } }));
+    await editAudience("Collectors");
+    fireEvent.click(button(/save who it serves and customer action/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/extra spaces/i);
+    expect(alert).toHaveTextContent(/only the workspace owner can correct it/i);
+    expect(puts()).toHaveLength(0);
+  });
+
+  it("D6 two overlapping Save presses send exactly one write", async () => {
+    await open("owner");
+    await editCta("Book a discovery set");
+    let release; handlers["PUT /customer/workspace/brand-brain"] = (_u, o) => new Promise((resolve) => { release = () => resolve(ok({ status: "ready", brand_brain: { ...JSON.parse(o.body), brand_id: "brand-a", project_id: "project-a", metadata: { version: 2, status: "draft" } } })); });
+    const save = button(/^save to brand brain$/i);
+    fireEvent.click(save); fireEvent.click(save);
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    await act(async () => { release(); });
+    expect(await screen.findByText(/saved to your brand brain/i)).toBeInTheDocument();
+    expect(puts()).toHaveLength(1);
+  });
+
+  it("D7 the account changes while a save is in flight: the late answer is ignored and the new account shows only its own Brand Brain", async () => {
+    await open("owner");
+    await editCta("Book a discovery set");
+    let release; handlers["PUT /customer/workspace/brand-brain"] = (_u, o) => new Promise((resolve) => { release = () => resolve(ok({ status: "ready", brand_brain: { ...JSON.parse(o.body), brand_id: "brand-a", project_id: "project-a", metadata: { version: 2, status: "draft" } } })); });
+    fireEvent.click(button(/^save to brand brain$/i));
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    getCustomerSessionMock.mockResolvedValue(SESSION_B);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Brookside Aesthetics", "An aesthetics clinic.") });
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(onboardingDoc());
+    await act(async () => { await authListener(); });
+    await screen.findByRole("heading", { name: "Welcome back, Brookside Aesthetics." });
+    await act(async () => { release(); });
+    expect(document.body.textContent).not.toMatch(/Maison Aurelle|discovery set|Saved to your Brand Brain/);
+  });
+
+  it("D8 a 200 answer that carries no Brand Brain, or is not JSON, is 'not confirmed' and never a success", async () => {
+    await open("owner");
+    await editCta("Book a discovery set");
+    for (const answer of [() => ok({ status: "ready" }), () => ({ ok: true, status: 200, headers: new Headers(), json: async () => { throw new SyntaxError("Unexpected token"); } })]) {
+      handlers["PUT /customer/workspace/brand-brain"] = answer;
+      fireEvent.click(button(/^save to brand brain$/i));
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/save not confirmed/i);
+      expect(screen.queryByText(/^saved to your brand brain/i)).toBeNull();
+      fireEvent.click(within(alert).getByRole("button", { name: /check what was saved/i }));
+    }
+  });
+
+  it("D9 an unexpected 403 after an earlier successful read is a refusal, never a load failure: the Brand Brain stays on screen", async () => {
+    await open("owner");
+    fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));
+    const name = await screen.findByLabelText(/^business name$/i);
+    fireEvent.change(await screen.findByLabelText(/who it serves/i), { target: { value: "Collectors" } });
+    handlers["PUT /customer/workspace/brand-brain"] = forbidden;
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/saving was refused/i);
+    expect(name).toBeInTheDocument();
+    expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+    expect(screen.getByLabelText(/who it serves/i)).toHaveValue("Collectors");
+  });
+
+  it("the Brand tab is owner-only for the name and description, and a member can still change the rest", async () => {
+    await open("member");
+    fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));
+    expect(await screen.findByLabelText(/^business name$/i)).toHaveAttribute("readonly");
+    expect(screen.getByLabelText(/what the business does/i)).toHaveAttribute("readonly");
+    fireEvent.change(screen.getByLabelText(/what a customer should do next|what should a customer do next/i), { target: { value: "Request a sample" } });
+    fireEvent.click(screen.getByRole("button", { name: /save who it serves and customer action/i }));
+    expect(await screen.findByText(/business name and description are unchanged/i)).toBeInTheDocument();
+    const body = lastBody();
+    expect(body.name).toBe("Maison Aurelle");
+    expect(body.commercial.primary_cta).toBe("Request a sample");
+  });
+
+  it("D10 refreshing the page with unsaved Brand Brain edits warns first", async () => {
+    await open("owner");
+    fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));
+    fireEvent.change(await screen.findByLabelText(/who it serves/i), { target: { value: "Collectors" } });
+    const probe = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(probe);
+    expect(probe.defaultPrevented).toBe(true);
+  });
+});
+
+describe("unexpected but valid JSON from the API (BG-STUDIO-015)", () => {
+  const shapes = {
+    "a name that is a number": { name: 12345, metadata: { version: 1, status: "approved" } },
+    "an identity that is a string": { name: "N", identity: "text", metadata: { version: 1, status: "approved" } },
+    "sections that are arrays or strings": { name: "N", audience: ["a"], commercial: "x", metadata: { version: 1, status: "approved" } },
+    "no metadata at all": { name: "N" },
+    "a description that is an object": { name: "N", identity: { description: { a: 1 } }, metadata: {} },
+  };
+  for (const [label, shape] of Object.entries(shapes)) {
+    it(`${label} never blanks the Studio or the Brand tab, and offers no save that would send a made-up change`, async () => {
+      handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: { brand_id: "brand-a", project_id: "project-a", ...shape } });
+      render(<App />);
+      await screen.findByRole("navigation", { name: /workspace sections/i });
+      fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));
+      expect(await screen.findByRole("heading", { name: /^brand brain$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /save to brand brain/i })).toBeDisabled(); // nothing edited, so nothing to send
+      expect(called("PUT", "/brand-brain")).toHaveLength(0);
+    });
+  }
 });

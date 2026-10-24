@@ -54,7 +54,13 @@ jobs:
         with: { node-version: '22' }
       - run: npm ci
       - run: npm install --no-save --package-lock=false @playwright/test@1.56.1
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
+        timeout-minutes: 12
+        run: |
+          # apt fetches from azure.archive.ubuntu.com stalled for minutes per package in runs 21 and 22 (no retries and a
+          # long default timeout). Fail a stalled fetch fast and retry it; the same packages are still installed.
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          npx playwright install --with-deps chromium
       - name: Serve isolated preview
         run: python3 -m http.server 4178 --bind 127.0.0.1 &
       - name: Run preview browser checks (v1 + v3)
@@ -89,7 +95,13 @@ jobs:
       - if: steps.has.outputs.run == 'true'
         run: npm install --no-save --package-lock=false @playwright/test@1.56.1
       - if: steps.has.outputs.run == 'true'
-        run: npx playwright install --with-deps chromium
+        name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
+        timeout-minutes: 12
+        run: |
+          # apt fetches from azure.archive.ubuntu.com stalled for minutes per package in runs 21 and 22 (no retries and a
+          # long default timeout). Fail a stalled fetch fast and retry it; the same packages are still installed.
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          npx playwright install --with-deps chromium
       - if: steps.has.outputs.run == 'true'
         name: Build with placeholder public values (API is mocked in the browser)
         env:
@@ -129,7 +141,13 @@ jobs:
       - if: steps.has.outputs.run == 'true'
         run: npm install --no-save --package-lock=false @playwright/test@1.56.1 axe-core@4.10.2
       - if: steps.has.outputs.run == 'true'
-        run: npx playwright install --with-deps chromium
+        name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
+        timeout-minutes: 12
+        run: |
+          # apt fetches from azure.archive.ubuntu.com stalled for minutes per package in runs 21 and 22 (no retries and a
+          # long default timeout). Fail a stalled fetch fast and retry it; the same packages are still installed.
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          npx playwright install --with-deps chromium
       - if: steps.has.outputs.run == 'true'
         name: Build with the flag ON and placeholder public values (API and session are mocked in the browser)
         env:

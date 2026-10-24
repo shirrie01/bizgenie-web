@@ -7,32 +7,38 @@
 //    (worked out from the customer's own text, changeable) or "missing".
 //  - A generic placeholder brand name is treated as missing. A demonstration brand can never appear because
 //    no demonstration content exists in this module.
-import { SECTORS, guidanceFor, resolveSector } from "./sectors";
+import { SECTORS, guidanceFor } from "./sectors";
+import { SAVED_LABEL, channelState, effectiveSector, isSeededDescription } from "./onboardingModel";
 
-// Names the backend or older flows used as placeholders, not as a customer's business name.
-export const GENERIC_BRAND_NAMES = ["Customer Campaign Workspace"];
+// BG-STUDIO-010-FE: whether the Brand Brain name is a generated placeholder is decided by the backend
+// (`brand_name_placeholder` on GET /customer/workspace/onboarding), not by a list of strings in the browser.
+// While that answer is unknown (not loaded, or unavailable) the name is shown but the profile is never "complete".
 
 const clean = (value) => String(value == null ? "" : value).replace(/\s+/g, " ").trim();
-const isGeneric = (name) => GENERIC_BRAND_NAMES.includes(clean(name));
 
 export const SOURCE_LABEL = {
   backend: "Saved in your Brand Brain",
   customer: "You entered this · not saved yet",
   inferred: "Inferred from what you typed · you can change it",
   missing: "Not provided yet",
+  seeded: "Only a web address was given at setup",
+  ...SAVED_LABEL,
 };
 
 const fact = (key, label, value, source, note = "") => ({ key, label, value: source === "missing" ? "" : value, source, sourceLabel: SOURCE_LABEL[source], note });
 
-export function brainFacts(brain, draft = {}) {
+export function brainFacts(brain, draft = {}, { placeholder = null } = {}) {
   const pick = (saved, typed) => {
     const s = clean(saved);
     if (s) return { value: s, source: "backend" };
     const t = clean(typed);
     return t ? { value: t, source: "customer" } : { value: "", source: "missing" };
   };
-  const name = pick(isGeneric(brain?.name) ? "" : brain?.name, isGeneric(draft.businessName) ? "" : draft.businessName);
-  const description = pick(brain?.identity?.description, draft.description);
+  const name = pick(placeholder === true ? "" : brain?.name, draft.businessName);
+  // A description that bootstrap seeded from a web address is not something the customer wrote about the business.
+  const seeded = isSeededDescription(brain?.identity?.description);
+  const description = pick(seeded ? "" : brain?.identity?.description, draft.description);
+  description.seeded = seeded;
   const audience = pick(brain?.audience?.summary, draft.audience);
   const cta = pick(brain?.commercial?.primary_cta, draft.cta);
   const tone = pick(brain?.voice?.tone, "");
@@ -62,36 +68,45 @@ export function summariseCampaigns(list) {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export function buildWorkspaceModel({ workspace = null, brain = null, draft = {}, goal = "", channels = [], sectorChoice = "", campaign = null, campaigns = [], hasRecommendation = false } = {}) {
-  const facts = brainFacts(brain, draft);
-  const workspaceName = isGeneric(workspace?.brand_name) ? "" : clean(workspace?.brand_name);
+export function buildWorkspaceModel({ workspace = null, brain = null, draft = {}, goal = "", channels = [], sectorChoice = "", campaign = null, campaigns = [], hasRecommendation = false, onboarding = null, onboardingStatus = "idle", brandNamePlaceholder = null } = {}) {
+  const facts = brainFacts(brain, draft, { placeholder: brandNamePlaceholder });
+  const workspaceName = brandNamePlaceholder === true ? "" : clean(workspace?.brand_name);
   const name = facts.name.value || workspaceName;
   const nameSource = facts.name.value ? facts.name.source : workspaceName ? "backend" : "missing";
   const hasName = Boolean(name);
 
-  const sector = resolveSector({ choice: sectorChoice, texts: [draft.industryText, name, facts.description.value] });
+  const sector = effectiveSector({ sectorChoice, texts: [draft.industryText, name, facts.description.value], onboarding });
   const sectorEntry = SECTORS[sector.key];
-  const sectorSource = sector.source === "chosen" ? "customer" : sector.source === "inferred" ? "inferred" : "missing";
+  const sectorSource = sector.source === "none" ? "missing" : sector.source;
 
   const goalText = clean(goal);
   const channelList = [...new Set((channels || []).map(clean).filter(Boolean))];
   const camp = campaignSummary(campaign);
-  // Complete means the backend holds both a real business name and a description. Typed-but-unsaved values do not count.
-  const profileComplete = nameSource === "backend" && facts.description.source === "backend";
+  // Complete means the customer explicitly confirmed setup (saved onboarding status "completed", which the server only
+  // allows with a saved sector and channel) AND the Brand Brain holds a real, backend-confirmed name and a description
+  // the customer wrote. A bootstrap-seeded web address or challenge never makes a profile complete, and neither does
+  // typed-but-unsaved text.
+  const onboardingCompleted = Boolean(onboarding && onboarding.status === "completed");
+  const profileComplete = onboardingCompleted && brandNamePlaceholder === false && nameSource === "backend" && facts.description.source === "backend";
+  const profileUnknown = onboardingStatus === "error" || onboardingStatus === "unavailable" || onboardingStatus === "loading" || onboardingStatus === "idle";
+  const channelInfo = channelState({ channels: channelList, onboarding });
 
   const rows = [
     fact("name", "Business name", name, nameSource),
-    fact("description", "What the business does", facts.description.value, facts.description.source),
+    fact("description", "What the business does", facts.description.value, facts.description.source, facts.description.seeded ? "Your Brand Brain only holds the web address given at setup. That is not a description of what the business does." : ""),
     fact("audience", "Who it serves", facts.audience.value, facts.audience.source),
     fact("cta", "What a customer should do next", facts.cta.value, facts.cta.source),
     fact("tone", "Brand tone", facts.tone.value, facts.tone.source),
-    fact("sector", "Sector", sectorEntry.label, sectorSource, sector.source === "none" ? "Neutral layout. Choose a sector to see sector-specific guidance." : ""),
+    fact("sector", "Sector", sectorEntry.label, sectorSource, sector.source === "none" ? "Neutral layout: general guidance that suits any business. Choose a sector if one of them fits." : ""),
     fact("goal", "Goal", goalText, goalText ? "customer" : "missing", "Used for your recommendation. Saved only when you create a campaign."),
-    fact("channels", "Channels you are planning for", channelList.join(", "), channelList.length ? "customer" : "missing", "Planning only. No account is connected and nothing is saved."),
+    fact("channels", "Channels you are planning for", channelList.join(", "), channelInfo.source, "Planning only. No account is connected and nothing is published."),
   ];
 
   const actions = [];
-  if (!profileComplete) actions.push({ id: "profile", title: "Complete your business profile", detail: "Add what the business does and who it serves so BizGenie works from your own words.", target: { view: "onboarding", stage: 2 } });
+  if (!profileComplete && !profileUnknown) {
+    const resume = onboarding && onboarding.status === "in_progress" && Number.isInteger(onboarding.current_step) ? onboarding.current_step : null;
+    actions.push({ id: "profile", title: resume !== null ? "Continue your setup" : "Complete your business profile", detail: resume !== null ? "Pick up where you left off. Your saved answers are waiting." : "Tell us what the business does, choose your sector and channels, then confirm your setup.", target: { view: "onboarding", stage: resume !== null ? resume : 2 } });
+  }
   if (!goalText && !camp) actions.push({ id: "goal", title: "Tell us your goal", detail: "One clear outcome gives your first recommendation a focus.", target: { view: "onboarding", stage: 3 } });
   if (goalText && !hasRecommendation && !camp) actions.push({ id: "recommend", title: "Get your first recommendation", detail: "Review a suggested campaign shape before anything is created.", target: { view: "onboarding", stage: 6 } });
   if (hasRecommendation && !camp) actions.push({ id: "create", title: "Create your first campaign", detail: "Save the recommended campaign. Nothing is scheduled or published.", target: { view: "studio" } });
@@ -104,10 +119,10 @@ export function buildWorkspaceModel({ workspace = null, brain = null, draft = {}
 
   const model = {
     brand: { name, hasName, source: nameSource, sourceLabel: SOURCE_LABEL[nameSource], initial: hasName ? name.slice(0, 1).toUpperCase() : "?" },
-    sector: { key: sector.key, label: sectorEntry.label, source: sectorSource, sourceLabel: SOURCE_LABEL[sectorSource], accent: sectorEntry.accent },
+    sector: { key: sector.key, label: sectorEntry.label, source: sectorSource, sourceLabel: SOURCE_LABEL[sectorSource] || SOURCE_LABEL.missing, accent: sectorEntry.accent },
     goal: { value: goalText, source: goalText ? "customer" : "missing" },
     plannedChannels: channelList,
-    profile: { complete: profileComplete, rows },
+    profile: { complete: profileComplete, unknown: profileUnknown, confirmed: onboardingCompleted, rows },
     campaign: camp,
     campaigns: summariseCampaigns(campaigns),
     nextActions: actions,

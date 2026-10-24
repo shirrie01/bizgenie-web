@@ -4,7 +4,7 @@ import React from "react";
 // the business and profile come from the Brand Brain, the campaign from the real campaign, and anything the
 // customer typed this session says so. There are no invented metrics, posts, results or creative.
 
-const PILL = { backend: "Saved", customer: "This session", inferred: "Inferred", missing: "Missing" };
+const PILL = { backend: "Saved", customer: "This session", inferred: "Inferred", missing: "Missing", seeded: "Web address only", saved_customer: "Saved · you chose", saved_inferred: "Saved · inferred" };
 // Say a failure once: a thrown message that already states it is not appended to the headline.
 const extra = (message, headline) => (message && !message.toLowerCase().includes(headline.toLowerCase().replace(/\.$/, "").slice(-22)) ? message : "");
 
@@ -12,11 +12,12 @@ function Tile({ label, value, detail, tone }) {
   return (<div className={`ps-tile${tone ? ` ${tone}` : ""}`}><small>{label}</small><strong>{value}</strong>{detail && <span>{detail}</span>}</div>);
 }
 
-export default function PremiumWorkspace({ model, brainState, campaignList, onGo, onRetryBrain, onRetryCampaigns, calendarState }) {
+export default function PremiumWorkspace({ model, brainState, campaignList, onGo, onRetryBrain, onRetryCampaigns, calendarState, onboardingState, onRetryOnboarding }) {
   const { campaign } = model;
   const brainFailed = brainState.status === "error";
   const brainLoading = brainState.status === "loading" || brainState.status === "idle";
   const reviewCount = campaign ? campaign.counts.review : 0;
+  const onboardingFailed = onboardingState && (onboardingState.status === "error" || onboardingState.status === "unavailable");
 
   return (
     <div className="ps-workspace" style={{ "--ps-accent": model.sector.accent }}>
@@ -28,7 +29,7 @@ export default function PremiumWorkspace({ model, brainState, campaignList, onGo
           {!brainFailed && (
             <p className="ps-sub">
               <span className="ps-chip">{model.sector.label}</span>
-              <span className="ps-chip-note">{model.sector.source === "missing" ? "Neutral layout. Choose a sector in Set up." : model.sector.sourceLabel}</span>
+              <span className="ps-chip-note">{model.sector.source === "missing" ? "Neutral layout. Choose a sector in Set up if one fits." : model.sector.sourceLabel}</span>
             </p>
           )}
           {model.goal.value && <p className="ps-goal"><strong>Goal:</strong> {model.goal.value} <span className="ps-chip-note">(entered this session)</span></p>}
@@ -41,10 +42,16 @@ export default function PremiumWorkspace({ model, brainState, campaignList, onGo
           <button type="button" className="secondary" onClick={onRetryBrain}>Try again</button>
         </div>
       )}
+      {onboardingFailed && (
+        <div className="ps-banner" role="alert">
+          <p><strong>Your saved setup could not be loaded.</strong> {onboardingState.error} Setup is not shown as complete or incomplete until it loads.</p>
+          <button type="button" className="secondary" onClick={onRetryOnboarding}>Try again</button>
+        </div>
+      )}
       {brainLoading && <p className="ps-loading" role="status">Loading your workspace…</p>}
 
       <section className="ps-tiles" aria-label="Status">
-        <Tile label="Business profile" value={model.profile.complete ? "Complete" : brainFailed ? "Unavailable" : "Needs your input"} detail={model.profile.complete ? "Saved in your Brand Brain" : brainFailed ? "Shown once your Brand Brain loads" : "Add what you do and who you serve"} tone={model.profile.complete ? "ok" : "todo"} />
+        <Tile label="Business profile" value={model.profile.complete ? "Complete" : brainFailed || model.profile.unknown ? "Unavailable" : "Needs your input"} detail={model.profile.complete ? "Confirmed by you and saved" : brainFailed ? "Shown once your Brand Brain loads" : model.profile.unknown ? "Shown once your saved setup loads" : "Finish setup and confirm it"} tone={model.profile.complete ? "ok" : "todo"} />
         <Tile label="Campaign" value={campaign ? campaign.name || "Saved" : "None yet"} detail={campaign ? `${campaign.total} item${campaign.total === 1 ? "" : "s"} saved` : "Nothing created or published"} />
         <Tile label="Creative review" value={campaign ? (reviewCount ? `${reviewCount} waiting` : "Nothing waiting") : "—"} detail="Approval never publishes" />
         <Tile label="Publishing" value="Manual only" detail="BizGenie records what you confirm" />

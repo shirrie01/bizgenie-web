@@ -9,7 +9,11 @@ import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import { operationKey } from "./operationKey";
 import PremiumStudio from "./premium/PremiumStudio";
+import PremiumErrorBoundary from "./premium/PremiumErrorBoundary";
 import { isPremiumStudioEnabled } from "./premium/flag";
+import { SAVE_NOT_CONFIRMED_RETRY, createSaveKeeper, fetchOnboarding, putOnboarding } from "./premium/onboardingClient";
+import { fetchMembershipRole, isReadOnlyRole } from "./premium/membershipClient";
+import { BRAIN_SAVE_UNCONFIRMED, fetchBrandBrain, hasUntrimmedIdentity, identityChanged, mergeBrainFields, putBrandBrain } from "./premium/brainClient";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -87,9 +91,9 @@ async function bootstrapCustomerWorkspace({ accessToken, goal }) {
 // Premium Studio only (BG-STUDIO-008-FE). A request that never answers must not leave a spinner forever. The
 // request itself is not cancelled, so callers say plainly when a write may still have completed.
 const PREMIUM_TIMEOUT_MS = 20000;
-function withTimeout(promise, message = "This is taking longer than expected. Please try again.", ms = PREMIUM_TIMEOUT_MS) {
+function withTimeout(promise, message = "This is taking longer than expected. Please try again.", ms = PREMIUM_TIMEOUT_MS, props = null) {
   let timer;
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); });
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(props ? Object.assign(new Error(message), props) : new Error(message)), ms); });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
@@ -115,10 +119,6 @@ async function getCampaignList({ accessToken, session }) {
   if (!response.ok) throw new Error("Your campaigns could not be loaded yet.");
   const result = await response.json();
   return Array.isArray(result?.campaigns) ? result.campaigns : [];
-}
-
-function mergeSection(section, key, value) {
-  return value ? { ...(section || {}), [key]: value } : section;
 }
 
 async function createCampaignFromRecommendation({ accessToken, session, recommendation }) {
@@ -358,6 +358,12 @@ export default function App() {
   const premiumEnabled = isPremiumStudioEnabled();
   const [campaignList, setCampaignList] = useState({ status: "idle", campaigns: [], error: "" });
   const [premiumEpoch, setPremiumEpoch] = useState(0);
+  // Persistent onboarding (BG-STUDIO-010-FE): the saved record for the selected workspace, as the API returned it.
+  const [onboardingState, setOnboardingState] = useState({ status: "idle", onboarding: null, brandNamePlaceholder: null, error: "" });
+  // The customer's role in this workspace (from the existing workspace list). Unknown until read; the server decides writes.
+  const [roleState, setRoleState] = useState({ status: "idle", role: null });
+  const saveKeeperRef = useRef(null);
+  if (saveKeeperRef.current === null) saveKeeperRef.current = createSaveKeeper();
   const hadSessionRef = useRef(false);
   const lastScopeRef = useRef("");
   // Bumped whenever the account or workspace changes. Responses that started under an earlier value are ignored.
@@ -375,6 +381,9 @@ export default function App() {
     setResultsState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
     setBrandBrainState({ status: "idle", brain: null, draft: "", error: "" });
     setCampaignList({ status: "idle", campaigns: [], error: "" });
+    setOnboardingState({ status: "idle", onboarding: null, brandNamePlaceholder: null, error: "" });
+    setRoleState({ status: "idle", role: null });
+    saveKeeperRef.current.clear();
     setPendingSubmit(false);
   }
 
@@ -813,14 +822,15 @@ export default function App() {
   const premiumLoadBrain = useCallback(async () => {
     if (session.status !== "ready") return;
     const scopeToken = scopeTokenRef.current;
-    setBrandBrainState((current) => (current.status === "loading" ? current : { ...current, status: "loading", error: "" }));
+    setBrandBrainState((current) => (current.status === "loading" ? current : { ...current, status: "loading", error: "", errorCode: "" }));
     try {
-      const result = await withTimeout(getSelectedBrandBrain(session.accessToken), "Your Brand Brain is taking longer than expected to load.");
+      const result = await withTimeout(fetchBrandBrain({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken }), "Your Brand Brain is taking longer than expected to load.");
       if (scopeToken !== scopeTokenRef.current) return;
-      setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "" });
+      setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "", errorCode: "" });
     } catch (error) {
       if (scopeToken !== scopeTokenRef.current) return;
-      setBrandBrainState({ status: "error", brain: null, draft: "", error: error.message });
+      // A workspace the customer can no longer use is not an outage: say so, and let the screen offer the chooser.
+      setBrandBrainState({ status: "error", brain: null, draft: "", error: error.message, errorCode: error.code === "WORKSPACE_NOT_AUTHORIZED" ? "WORKSPACE_NOT_AUTHORIZED" : "" });
     }
   }, [session.status, session.accessToken]);
 
@@ -845,25 +855,120 @@ export default function App() {
     }
   }, [session.status, session.accessToken, session.tenantId, session.projectId]);
 
+  const premiumLoadOnboarding = useCallback(async () => {
+    if (session.status !== "ready") return;
+    const scopeToken = scopeTokenRef.current;
+    setOnboardingState((current) => (current.status === "loading" ? current : { ...current, status: "loading", error: "" }));
+    try {
+      const result = await withTimeout(fetchOnboarding({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken }), "Your saved setup is taking longer than expected to load.");
+      if (scopeToken !== scopeTokenRef.current) return;
+      setOnboardingState({ status: "ready", onboarding: result.onboarding, brandNamePlaceholder: result.brandNamePlaceholder, error: "" });
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
+      // Never keep an earlier record on screen as if it were current once a reload has failed.
+      setOnboardingState({ status: error.code === "ONBOARDING_UNAVAILABLE" ? "unavailable" : "error", onboarding: null, brandNamePlaceholder: null, error: error.message });
+    }
+  }, [session.status, session.accessToken]);
+
+  const premiumLoadRole = useCallback(async () => {
+    if (session.status !== "ready") return;
+    const scopeToken = scopeTokenRef.current;
+    const result = await fetchMembershipRole({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId } });
+    if (scopeToken !== scopeTokenRef.current) return;
+    setRoleState({ status: "ready", role: result.role });
+  }, [session.status, session.accessToken, session.tenantId, session.projectId, session.brandId]);
+
+  useEffect(() => { if (premiumEnabled && session.status === "ready" && roleState.status === "idle") premiumLoadRole(); }, [premiumEnabled, session.status, roleState.status, premiumLoadRole]);
+
+  // Save setup progress through PUT /customer/workspace/onboarding. Resolves { ok, message?, conflict? }; ok only
+  // when the server confirmed the write. A retry of an identical request reuses its idempotency key.
+  async function premiumSaveOnboarding(body) {
+    if (session.status !== "ready") return { ok: false, message: "Sign in to save your setup. Nothing was saved." };
+    const scopeToken = scopeTokenRef.current;
+    const changed = { ok: false, message: "Your account or workspace changed while saving, so this screen was reset. Nothing is shown as saved here." };
+    const key = saveKeeperRef.current.keyFor(body);
+    try {
+      const result = await withTimeout(putOnboarding({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, body: { ...body, idempotency_key: key } }), SAVE_NOT_CONFIRMED_RETRY, PREMIUM_TIMEOUT_MS, { outcome: "unknown" });
+      if (scopeToken !== scopeTokenRef.current) return changed;
+      saveKeeperRef.current.clear();
+      setOnboardingState({ status: "ready", onboarding: result.onboarding, brandNamePlaceholder: result.brandNamePlaceholder, error: "" });
+      return { ok: true, replayed: result.replayed };
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return changed;
+      if (error.code === "VERSION_CONFLICT" || error.code === "IDEMPOTENCY_KEY_CONFLICT") {
+        saveKeeperRef.current.clear();
+        try {
+          const latest = await withTimeout(fetchOnboarding({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken }), "Loading the latest saved setup is taking longer than expected.");
+          if (scopeToken === scopeTokenRef.current) setOnboardingState({ status: "ready", onboarding: latest.onboarding, brandNamePlaceholder: latest.brandNamePlaceholder, error: "" });
+        } catch { /* the conflict message stands; the next save re-reads */ }
+        return { ok: false, conflict: error.code === "VERSION_CONFLICT", message: error.message };
+      }
+      // The API's 403 does not say why; re-read the role so the screen can tell a read-only member from lost access.
+      if (error.forbiddenWrite) { premiumLoadRole(); return { ok: false, forbidden: true, message: error.message }; }
+      // 503, a dropped connection and a timeout can all follow a commit whose acknowledgement was lost: never "not saved".
+      if (error.outcome === "unknown" || error.code === "NETWORK") return { ok: false, unconfirmed: true, message: error.message };
+      if (error.code === "ONBOARDING_INCOMPLETE") return { ok: false, missing: error.missing || [], message: error.message };
+      return { ok: false, message: error.message };
+    }
+  }
+
+  // Brand Brain save for the Premium Studio. Only the workspace owner may change the business name and description
+  // (DEC-021 / DEC-022; bizgenie-api #214): a known non-owner's save repeats the stored values exactly and changes only the
+  // other fields. A refusal, a conflict and an unconfirmed outcome are told apart and never shown as a plain failure.
+  //
+  // `fields` holds ONLY what the customer edited. The backend has no compare-and-set for Brand Brain writes (#214, Q6), so
+  // the edits are applied to the LATEST stored Brand Brain (read just before the write), never to the copy loaded when
+  // the screen opened: a stale whole-document write would silently overwrite anyone else's later edits.
   async function premiumSaveBrain(fields) {
     if (session.status !== "ready") return { ok: false, message: "Sign in to save changes." };
-    const brain = brandBrainState.brain;
-    if (!brain) return { ok: false, message: "Your Brand Brain has not loaded, so nothing can be saved yet." };
+    if (!brandBrainState.brain) return { ok: false, message: "Your Brand Brain has not loaded, so nothing can be saved yet." };
+    if (!fields || !Object.keys(fields).length) return { ok: true, noop: true };
     const scopeToken = scopeTokenRef.current;
-    const merged = { ...brain };
-    if (fields.name) merged.name = fields.name;
-    const identity = mergeSection(brain.identity, "description", fields.description);
-    const audience = mergeSection(brain.audience, "summary", fields.audience);
-    const commercial = mergeSection(brain.commercial, "primary_cta", fields.cta);
-    if (identity) merged.identity = identity;
-    if (audience) merged.audience = audience;
-    if (commercial) merged.commercial = commercial;
+    const token = session.accessToken;
+    const gone = { ok: false, message: "Your account changed while saving. Nothing was shown as saved." };
+    const memberOnly = isReadOnlyRole(roleState.role);
+    // Re-read what is stored, so the screen shows the truth after a refusal or a conflict. Typed answers are not touched.
+    const reread = async () => {
+      try {
+        const latest = await withTimeout(fetchBrandBrain({ apiBaseUrl: API_BASE_URL, accessToken: token }), "Your Brand Brain is taking longer than expected to load.");
+        if (scopeToken !== scopeTokenRef.current) return null;
+        setBrandBrainState({ status: "ready", brain: latest.brand_brain, draft: JSON.stringify(latest.brand_brain, null, 2), error: "", errorCode: "" });
+        return latest.brand_brain;
+      } catch { return null; }
+    };
+    // 1. The latest stored version. If it cannot be read, nothing is written.
+    let stored;
     try {
-      const result = await withTimeout(correctSelectedBrandBrain({ accessToken: session.accessToken, brandBrain: merged }), "Saving is taking longer than expected. It may or may not have been saved: reload your Brand Brain to check before trying again.");
-      if (scopeToken !== scopeTokenRef.current) return { ok: false, message: "Your account changed while saving. Nothing was shown as saved." };
-      setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "" });
+      stored = (await withTimeout(fetchBrandBrain({ apiBaseUrl: API_BASE_URL, accessToken: token }), "Checking your latest saved Brand Brain is taking longer than expected. Nothing was saved.")).brand_brain;
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return gone;
+      if (error.code === "WORKSPACE_NOT_AUTHORIZED") { premiumLoadRole(); return { ok: false, workspaceUnavailable: true, message: `${error.message} Nothing was saved.` }; }
+      return { ok: false, message: error.kind === "auth" ? "Your session has ended. Sign in again to continue. Nothing was saved." : "Your latest saved Brand Brain could not be checked, so nothing was saved. Your answers are still on this screen. Try again." };
+    }
+    if (scopeToken !== scopeTokenRef.current) return gone;
+    // 2. The backend trims what it receives and then compares exactly (Q1): an untrimmed stored name or description can never be repeated by a member.
+    if (memberOnly && hasUntrimmedIdentity(stored)) return { ok: false, ownerMustFix: true, message: "The saved business name or description has extra spaces at its start or end, and only the workspace owner can correct it. Until then your other changes cannot be saved. Nothing was saved." };
+    // 3. Apply only the edited fields to that version and write.
+    const merged = mergeBrainFields(stored, fields, { canChangeIdentity: !memberOnly });
+    try {
+      const result = await withTimeout(putBrandBrain({ apiBaseUrl: API_BASE_URL, accessToken: token, brandBrain: merged }), BRAIN_SAVE_UNCONFIRMED, PREMIUM_TIMEOUT_MS, { outcome: "unknown", kind: "unconfirmed" });
+      if (scopeToken !== scopeTokenRef.current) return gone;
+      setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "", errorCode: "" });
       return { ok: true };
     } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return gone;
+      if (error.kind === "unconfirmed" || error.outcome === "unknown") return { ok: false, unconfirmed: true, message: error.message };
+      if (error.kind === "forbidden") {
+        // One 403 covers "only the owner may change the name or description" and "not a member (any more)". Ask again who
+        // this customer is, and whether the owner changed the name or description after the read above.
+        premiumLoadRole();
+        const latest = await reread();
+        return { ok: false, forbidden: true, identityChanged: latest ? identityChanged(stored, latest) : false, reloaded: Boolean(latest), message: error.message };
+      }
+      if (error.kind === "conflict") {
+        const latest = await reread();
+        return { ok: false, conflict: true, reloaded: Boolean(latest), message: error.message };
+      }
       return { ok: false, message: error.message };
     }
   }
@@ -897,6 +1002,7 @@ export default function App() {
   const premiumView = premiumEnabled ? (
     <main className="shell premium">
       {topbar}
+      <PremiumErrorBoundary key={premiumEpoch}>
       <PremiumStudio
         key={premiumEpoch}
         session={session}
@@ -904,6 +1010,11 @@ export default function App() {
         onLoadBrain={premiumLoadBrain}
         onSaveBrain={premiumSaveBrain}
         onBootstrap={premiumBootstrap}
+        membershipRole={roleState.role}
+        readOnly={isReadOnlyRole(roleState.role)}
+        onboardingState={onboardingState}
+        onLoadOnboarding={premiumLoadOnboarding}
+        onSaveOnboarding={premiumSaveOnboarding}
         recommendationState={state}
         onRecommend={premiumRecommend}
         campaign={campaignState.campaign}
@@ -928,6 +1039,7 @@ export default function App() {
           account: <BillingPanel session={session} />,
         }}
       />
+      </PremiumErrorBoundary>
     </main>
   ) : null;
 
