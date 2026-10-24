@@ -12,6 +12,7 @@ import PremiumStudio from "./premium/PremiumStudio";
 import { isPremiumStudioEnabled } from "./premium/flag";
 import { SAVE_NOT_CONFIRMED_RETRY, createSaveKeeper, fetchOnboarding, putOnboarding } from "./premium/onboardingClient";
 import { fetchMembershipRole, isReadOnlyRole } from "./premium/membershipClient";
+import { BRAIN_SAVE_UNCONFIRMED, identityChanged, mergeBrainFields, putBrandBrain } from "./premium/brainClient";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -117,10 +118,6 @@ async function getCampaignList({ accessToken, session }) {
   if (!response.ok) throw new Error("Your campaigns could not be loaded yet.");
   const result = await response.json();
   return Array.isArray(result?.campaigns) ? result.campaigns : [];
-}
-
-function mergeSection(section, key, value) {
-  return value ? { ...(section || {}), [key]: value } : section;
 }
 
 async function createCampaignFromRecommendation({ accessToken, session, recommendation }) {
@@ -913,25 +910,44 @@ export default function App() {
     }
   }
 
+  // Brand Brain save for the Premium Studio. Only the workspace owner may change the business name and description
+  // (DEC-021 / DEC-022; bizgenie-api #214): a known non-owner's save repeats the stored values exactly and changes only the
+  // other fields. A refusal, a conflict and an unconfirmed outcome are told apart and never shown as a plain failure.
   async function premiumSaveBrain(fields) {
     if (session.status !== "ready") return { ok: false, message: "Sign in to save changes." };
     const brain = brandBrainState.brain;
     if (!brain) return { ok: false, message: "Your Brand Brain has not loaded, so nothing can be saved yet." };
     const scopeToken = scopeTokenRef.current;
-    const merged = { ...brain };
-    if (fields.name) merged.name = fields.name;
-    const identity = mergeSection(brain.identity, "description", fields.description);
-    const audience = mergeSection(brain.audience, "summary", fields.audience);
-    const commercial = mergeSection(brain.commercial, "primary_cta", fields.cta);
-    if (identity) merged.identity = identity;
-    if (audience) merged.audience = audience;
-    if (commercial) merged.commercial = commercial;
+    const token = session.accessToken;
+    const merged = mergeBrainFields(brain, fields, { canChangeIdentity: !isReadOnlyRole(roleState.role) });
+    // Re-read what is stored, so the screen shows the truth after a refusal or a conflict. Typed answers are not touched.
+    const reread = async () => {
+      try {
+        const latest = await withTimeout(getSelectedBrandBrain(token), "Your Brand Brain is taking longer than expected to load.");
+        if (scopeToken !== scopeTokenRef.current) return null;
+        setBrandBrainState({ status: "ready", brain: latest.brand_brain, draft: JSON.stringify(latest.brand_brain, null, 2), error: "" });
+        return latest.brand_brain;
+      } catch { return null; }
+    };
     try {
-      const result = await withTimeout(correctSelectedBrandBrain({ accessToken: session.accessToken, brandBrain: merged }), "Saving is taking longer than expected. It may or may not have been saved: reload your Brand Brain to check before trying again.");
+      const result = await withTimeout(putBrandBrain({ apiBaseUrl: API_BASE_URL, accessToken: token, brandBrain: merged }), BRAIN_SAVE_UNCONFIRMED, PREMIUM_TIMEOUT_MS, { outcome: "unknown", kind: "unconfirmed" });
       if (scopeToken !== scopeTokenRef.current) return { ok: false, message: "Your account changed while saving. Nothing was shown as saved." };
       setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "" });
       return { ok: true };
     } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return { ok: false, message: "Your account changed while saving. Nothing was shown as saved." };
+      if (error.kind === "unconfirmed" || error.outcome === "unknown") return { ok: false, unconfirmed: true, message: error.message };
+      if (error.kind === "forbidden") {
+        // One 403 covers "only the owner may change the name or description" and "not a member (any more)". Ask again who
+        // this customer is, and whether the owner changed the name or description after this screen loaded.
+        premiumLoadRole();
+        const latest = await reread();
+        return { ok: false, forbidden: true, identityChanged: latest ? identityChanged(brain, latest) : false, reloaded: Boolean(latest), message: error.message };
+      }
+      if (error.kind === "conflict") {
+        const latest = await reread();
+        return { ok: false, conflict: true, reloaded: Boolean(latest), message: error.message };
+      }
       return { ok: false, message: error.message };
     }
   }

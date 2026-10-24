@@ -22,8 +22,8 @@ const onboardingDoc = (over = {}) => ({ contract_version: 'workspace-onboarding.
 const NOT_STARTED = onboardingDoc({ version: 0, status: 'not_started', sector: { key: null, source: null }, industry_text: null, channels: { values: [], source: null }, current_step: null, completed_at: null, updated_at: null });
 const camp = (version, items, workflow = 'draft') => ({ campaign_id: CID, tenant_id: 't', project_id: 'p', brand_id: 'b', name: 'Lease Enquiry Campaign', version, items: items ? [{ content_item_id: 'c1', name: 'Offer announcement', format: 'text', variants: [{ variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow, ...(workflow !== 'draft' ? { current_revision_id: 'rev-1', current_content: 'Server persisted review copy' } : {}) }] }] : [] });
 
-async function setup(page, { scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false, role = null, lostAck = false, putIncomplete = null, putForbidden = false } = {}) {
-  const log = { calls: [], errors: [], puts: [], doc: onboarding };
+async function setup(page, { scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false, role = null, brainPut = 'ok', lostAck = false, putIncomplete = null, putForbidden = false } = {}) {
+  const log = { calls: [], errors: [], puts: [], brainPuts: [], doc: onboarding };
   page.on('pageerror', (e) => log.errors.push(e.message));
   if (!signedOut) await page.addInitScript(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(scoped)]);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
@@ -58,7 +58,7 @@ async function setup(page, { scoped = true, signedOut = false, brainDoc = brain(
       }
     }
     if (u.pathname.endsWith('/brand-brain') && m === 'GET') return brainStatus === 200 ? json({ status: 'ready', brand_brain: brainDoc }) : json({}, brainStatus);
-    if (u.pathname.endsWith('/brand-brain') && m === 'PUT') { const b = JSON.parse(req.postData()); brainDoc = { ...b, brand_id: 'b', project_id: 'p', metadata: { version: 2, status: 'draft' } }; return json({ status: 'ready', brand_brain: brainDoc }); }
+    if (u.pathname.endsWith('/brand-brain') && m === 'PUT') { const b = JSON.parse(req.postData()); log.brainPuts.push(b); if (brainPut === 'forbidden') return json({ status: 'failed', error: { code: 'BRAND_BRAIN_WRITE_FORBIDDEN', message: 'Current workspace-owner authority is required for business identity changes' } }, 403); if (brainPut === 'conflict') return json({ status: 'failed', error: { code: 'BRAND_BRAIN_VERSION_CONFLICT', message: 'Brand Brain changed; reload before saving' } }, 409); if (brainPut === 'unavailable') return json({ status: 'failed', error: { code: 'BRAND_BRAIN_PERSISTENCE_UNAVAILABLE', message: 'x' } }, 503); brainDoc = { ...b, brand_id: 'b', project_id: 'p', metadata: { version: 2, status: 'draft' } }; return json({ status: 'ready', brand_brain: brainDoc }); }
     if (u.pathname === '/customer/campaigns' && m === 'GET') return json({ campaigns: [] });
     if (u.pathname === '/customer/workspace') return role ? json({ status: 'ready', workspace: { tenant_id: 't', tenant_name: 'T', project_id: 'p', project_name: 'P', brand_id: 'b', brand_name: 'B', brand_status: 'approved', membership_role: role } }) : json({ status: 'missing_workspace', workspace: null });
     if (u.pathname.endsWith('/workspace/bootstrap')) { brainDoc = brain(JSON.parse(req.postData()).business_name); await page.evaluate(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(true)]); return json({ status: 'ready', workspace: { tenant_id: 't' }, requires_session_refresh: false }, 201); }
@@ -370,4 +370,52 @@ test('a refused write (403) on an unknown role explains itself and switches to v
   await expect(page.getByRole('alert')).toContainText(/only the workspace owner can save or confirm setup, or your access to this workspace has ended/i);
   expect(log.puts).toHaveLength(1);
   await scan(page, 'write-refused');
+});
+
+// Brand Brain identity ownership (DEC-021 / DEC-022; backend draft PR #214 at 2319e5e8). MOCKED API: not staging evidence.
+async function toBrainStep(page) {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /your brand brain/i })).toBeVisible();
+}
+const BRAIN_STEP = onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 5, channels: { values: ['email'], source: 'customer' } });
+const FULL_BRAIN = { ...brain('Maison Aurelle', 'A small-batch perfume house.  '), audience: { summary: 'Gift buyers.' }, commercial: { primary_cta: 'Shop the new scent' } };
+
+test('member at the Brand Brain step: name and description are owner-only, the rest can still be saved, and the stored identity is repeated exactly', async ({ page }) => {
+  const log = await setup(page, { brainDoc: FULL_BRAIN, role: 'member', onboarding: BRAIN_STEP });
+  await toBrainStep(page);
+  await expect(page.getByText(/only the workspace owner can change the business name and description/i)).toBeVisible();
+  const save = page.getByRole('button', { name: /save who it serves and customer action/i });
+  await expect(save).toBeEnabled();
+  await scan(page, 'member-brain-step');
+  await save.click();
+  await expect(page.getByText(/business name and description are unchanged/i)).toBeVisible();
+  expect(log.brainPuts).toHaveLength(1);
+  expect(log.brainPuts[0].name).toBe('Maison Aurelle');
+  expect(log.brainPuts[0].identity.description).toBe('A small-batch perfume house.  ');
+  await scan(page, 'member-brain-saved');
+});
+
+test('refused (403) and conflicting (409) Brand Brain saves are explained, keep the answers and never show a save', async ({ page }) => {
+  for (const [mode, text, label] of [['forbidden', /only the workspace owner can change the business name and description, and anyone whose access|changed by the workspace owner/i, 'brain-write-refused'], ['conflict', /changed somewhere else[\s\S]*nothing was overwritten/i, 'brain-write-conflict']]) {
+    const log = await setup(page, { brainDoc: FULL_BRAIN, brainPut: mode, onboarding: BRAIN_STEP });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: /your brand brain/i })).toBeVisible();
+    await page.getByRole('button', { name: /^save to brand brain$/i }).click();
+    await expect(page.getByRole('alert')).toContainText(text);
+    await expect(page.getByText(/saved to your brand brain/i)).toHaveCount(0);
+    expect(log.brainPuts).toHaveLength(1);
+    await scan(page, label);
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+  }
+});
+
+test('an unavailable Brand Brain save says "not confirmed" and offers to check what was saved', async ({ page }) => {
+  const log = await setup(page, { brainDoc: FULL_BRAIN, brainPut: 'unavailable', onboarding: BRAIN_STEP });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^save to brand brain$/i }).click();
+  await expect(page.getByRole('alert')).toContainText(/save not confirmed — your changes may already have been saved/i);
+  await expect(page.getByRole('button', { name: /check what was saved/i })).toBeVisible();
+  expect(await page.getByRole('alert').innerText()).not.toMatch(/not saved/i);
+  await scan(page, 'brain-save-not-confirmed');
+  expect(log.brainPuts).toHaveLength(1);
 });

@@ -55,6 +55,10 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   const canSaveProgress = !scopeMissing && storage === "ready";
   const readiness = confirmationReadiness({ onboarding, brain: brainState.brain, brandNamePlaceholder: onboardingState ? onboardingState.brandNamePlaceholder : null });
   const brainReady = brainState.status === "ready" && brainState.brain;
+  // A known non-owner cannot change the business name or description (DEC-021 / DEC-022); everything else stays editable.
+  const identityLocked = readOnly && !scopeMissing;
+  const storedName = brainReady ? brainState.brain.name || "" : "";
+  const storedDescription = brainReady && brainState.brain.identity && !isNotADescription(brainState.brain.identity.description) ? brainState.brain.identity.description : "";
 
   async function guarded(task) {
     if (inFlight.current) return;
@@ -82,17 +86,30 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   }
 
   async function saveBrain() {
-    if (!validate([["businessName", "Business name"], ["description", "Description"], ["audience", "Who it serves"], ["cta", "Customer action"]])) return;
+    const keys = identityLocked ? [["audience", "Who it serves"], ["cta", "Customer action"]] : [["businessName", "Business name"], ["description", "Description"], ["audience", "Who it serves"], ["cta", "Customer action"]];
+    if (!validate(keys)) return;
     const fields = {};
-    if (draft.businessName.trim()) fields.name = draft.businessName.trim();
-    if (draft.description.trim()) fields.description = draft.description.trim();
+    if (!identityLocked && draft.businessName.trim()) fields.name = draft.businessName.trim();
+    if (!identityLocked && draft.description.trim()) fields.description = draft.description.trim();
     if (draft.audience.trim()) fields.audience = draft.audience.trim();
     if (draft.cta.trim()) fields.cta = draft.cta.trim();
-    if (!Object.keys(fields).length) { setMessage({ kind: "error", text: "There is nothing to save yet. Add a description, who it serves or a customer action first." }); return; }
+    if (!Object.keys(fields).length) { setMessage({ kind: "error", text: identityLocked ? "There is nothing to save yet. Add who it serves or a customer action first." : "There is nothing to save yet. Add a description, who it serves or a customer action first." }); return; }
     await guarded(async () => {
       const result = await onSave(fields);
-      setMessage(result.ok ? { kind: "ok", text: "Saved to your Brand Brain. It is a draft until it is approved." } : { kind: "error", text: result.message });
+      if (result.ok) { setMessage({ kind: "ok", text: identityLocked ? "Saved to your Brand Brain. Your business name and description are unchanged: only the workspace owner can change them." : "Saved to your Brand Brain. It is a draft until it is approved." }); return; }
+      setMessage(brainFailure(result));
     });
+  }
+
+  // How a refused, conflicting or unconfirmed Brand Brain save is told. Typed answers always stay on screen.
+  function brainFailure(result) {
+    if (result.unconfirmed) return { kind: "unconfirmed", recheck: "brain", text: result.message };
+    if (result.conflict) return { kind: "error", text: `${result.message} ${result.reloaded ? "The latest saved version has been loaded and your typed answers are still here. Review them, then save again." : "Reload your Brand Brain to see what is saved, then save again."}` };
+    if (result.forbidden) {
+      if (result.identityChanged) return { kind: "error", text: "Saving was refused because the business name or description was changed by the workspace owner after this screen loaded. The latest version has been loaded, and your other answers are still here. Review them, then save again. Nothing was saved." };
+      return { kind: "error", text: "Saving was refused. Only the workspace owner can change the business name and description, and anyone whose access to this workspace has ended cannot save. Your other answers are still here. Nothing was saved." };
+    }
+    return { kind: "error", text: result.message };
   }
 
   // How a failed save is shown. "unconfirmed" is NOT "not saved": the request may have been stored.
@@ -141,8 +158,8 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   } else if (current.id === "identity") {
     body = (<>
       {heading("Tell us about your business")}
-      <Field id="ps-name" label="Business name" hint={scopeMissing ? "Required. This creates your workspace." : "Shown across your workspace. Saved with your Brand Brain on the Brand Brain step."}>
-        <input id="ps-name" value={draft.businessName} maxLength={LIMITS.businessName + 20} onChange={(e) => setField("businessName", e.target.value)} aria-invalid={errors.businessName ? "true" : undefined} aria-describedby={errors.businessName ? "ps-name-error" : "ps-name-hint"} autoComplete="organization" />
+      <Field id="ps-name" label="Business name" hint={scopeMissing ? "Required. This creates your workspace." : identityLocked ? "Only the workspace owner can change the business name." : "Shown across your workspace. Saved with your Brand Brain on the Brand Brain step."}>
+        <input id="ps-name" value={identityLocked ? storedName : draft.businessName} readOnly={identityLocked} maxLength={LIMITS.businessName + 20} onChange={(e) => setField("businessName", e.target.value)} aria-invalid={errors.businessName ? "true" : undefined} aria-describedby={errors.businessName ? "ps-name-error" : "ps-name-hint"} autoComplete="organization" />
         {errors.businessName && <p className="error" id="ps-name-error" role="alert">{errors.businessName}</p>}
       </Field>
       {scopeMissing && (<>
@@ -170,8 +187,8 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         </select>
       </Field>
       <p className="ps-sector-status" role="status">Sector: <strong>{SECTORS[sector.key].label}</strong> · {sectorLabel}</p>
-      <Field id="ps-description" label="Describe what the business does" hint="Saved to your Brand Brain when you press Save. A website address alone is not a description.">
-        <textarea id="ps-description" rows={4} value={draft.description} onChange={(e) => setField("description", e.target.value)} aria-invalid={errors.description ? "true" : undefined} />
+      <Field id="ps-description" label="Describe what the business does" hint={identityLocked ? "Only the workspace owner can change the description of the business." : "Saved to your Brand Brain when you press Save. A website address alone is not a description."}>
+        <textarea id="ps-description" rows={4} value={identityLocked ? storedDescription : draft.description} readOnly={identityLocked} onChange={(e) => setField("description", e.target.value)} aria-invalid={errors.description ? "true" : undefined} />
         {errors.description && <p className="error" role="alert">{errors.description}</p>}
       </Field>
       <Field id="ps-cta" label="What should a customer do next?" hint="For example: request a quote or book a consultation.">
@@ -218,8 +235,9 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         <div><dt>Status</dt><dd>{brainState.brain.metadata?.status || "Unknown"}</dd></div>
       </dl>)}
       {scopeMissing && <p className="ps-truth">Your Brand Brain is available once your workspace has been created on the Your business step.</p>}
+      {identityLocked && <p className="ps-hint ps-readonly" role="status">Only the workspace owner can change the business name and description. You can still save who it serves and the customer action.</p>}
       <p className="ps-hint">What you typed on the earlier steps is not saved until you press Save below.</p>
-      <button type="button" className="ps-primary" onClick={saveBrain} disabled={busy || !brainReady}>{busy ? "Saving…" : "Save to Brand Brain"}</button>
+      <button type="button" className="ps-primary" onClick={saveBrain} disabled={busy || !brainReady}>{busy ? "Saving…" : identityLocked ? "Save who it serves and customer action" : "Save to Brand Brain"}</button>
       {brainState.status === "error" && <button type="button" className="secondary" onClick={onLoadBrain}>Try loading again</button>}
       <section className="ps-confirm" aria-labelledby="ps-confirm-h">
         <h3 id="ps-confirm-h">Confirm your setup</h3>
@@ -264,7 +282,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         {message.text && (
           <div className={message.kind === "ok" ? "ps-ok" : message.kind === "unconfirmed" ? "ps-warn" : "error"} role={message.kind === "ok" ? "status" : "alert"} data-kind={message.kind}>
             <p>{message.text}</p>
-            {message.kind === "unconfirmed" && <button type="button" className="secondary" onClick={onLoadOnboarding} disabled={busy}>Check what was saved</button>}
+            {message.kind === "unconfirmed" && <button type="button" className="secondary" onClick={message.recheck === "brain" ? onLoadBrain : onLoadOnboarding} disabled={busy}>Check what was saved</button>}
             {message.kind === "incomplete" && (
               <ul className="ps-missing" aria-label="What is still needed">
                 {message.missing.filter((path) => MISSING_GUIDANCE[path]).map((path) => (

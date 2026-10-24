@@ -342,7 +342,7 @@ describe("what is saved, and what is not", () => {
 
   it("never claims a save that failed", async () => {
     await toBrainStep();
-    handlers["PUT /customer/workspace/brand-brain"] = () => fail(500);
+    handlers["PUT /customer/workspace/brand-brain"] = () => fail(400);
     fireEvent.click(button(/save to brand brain/i));
     expect(await screen.findByRole("alert")).toHaveTextContent(/could not be saved yet/i);
     expect(screen.queryByText(/saved to your brand brain/i)).toBeNull();
@@ -1195,5 +1195,143 @@ describe("hardened API: only the workspace owner can write", () => {
     fireEvent.click(button(/^save progress$/i)); // disabled: nothing happens
     await act(async () => {});
     expect(onboardingPuts()).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Brand Brain identity ownership: founder decisions DEC-021 / LOCK-019 and DEC-022 / LOCK-020, backend draft PR
+// bizgenie-api #214 at 2319e5e8. Only the workspace OWNER may change the business name and description; members keep every
+// other Brand Brain edit. Response shapes below are the ones in #214's code and report (403 BRAND_BRAIN_WRITE_FORBIDDEN,
+// 409 BRAND_BRAIN_VERSION_CONFLICT, 503). The API is MOCKED. Open contract questions are in the acceptance pack, section 12.3.
+// ---------------------------------------------------------------------------------------------------------------
+describe("Brand Brain identity ownership (DEC-021 / DEC-022)", () => {
+  const DESCRIPTION = "A small-batch perfume house.  "; // trailing spaces: the backend compares the stored text exactly
+  const STORED = brainFor("Maison Aurelle", DESCRIPTION, { audience: { summary: "Gift buyers." }, commercial: { primary_cta: "Shop the new scent" } });
+  const forbidden = () => fail(403, { status: "failed", error: { code: "BRAND_BRAIN_WRITE_FORBIDDEN", message: "Current workspace-owner authority is required for business identity changes" } });
+  const conflict = () => fail(409, { status: "failed", error: { code: "BRAND_BRAIN_VERSION_CONFLICT", message: "Brand Brain changed; reload before saving" } });
+  let stored;
+  const atBrain = async (role) => {
+    stored = STORED;
+    use(fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 5 })));
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: stored });
+    if (role) withRole(role);
+    render(<App />);
+    await heading(stageHeadings[5]);
+    if (role) await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(0));
+  };
+  const brainPuts = () => called("PUT", "/brand-brain");
+  const goBack = (n) => { for (let i = 0; i < n; i++) fireEvent.click(button(/^back$/i)); };
+  const typeAudience = async (text) => {
+    goBack(2); await heading(stageHeadings[3]);
+    fireEvent.change(await screen.findByLabelText(/who are your customers/i), { target: { value: text } });
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]);
+  };
+
+  it("a member sees the name and description as owner-only, and can still save who it serves and the customer action", async () => {
+    await atBrain("member");
+    await screen.findByText(/only the workspace owner can change the business name and description/i);
+    expect(screen.getByRole("button", { name: /save who it serves and customer action/i })).toBeEnabled();
+    goBack(3); await heading(stageHeadings[2]);
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveAttribute("readonly");
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue(DESCRIPTION);
+    expect(screen.getByText(/only the workspace owner can change the description of the business/i)).toBeInTheDocument();
+    goBack(1);
+    await heading(/tell us about your business/i);
+    expect(screen.getByLabelText(/business name/i)).toHaveAttribute("readonly");
+    expect(screen.getByLabelText(/business name/i)).toHaveValue("Maison Aurelle");
+  });
+
+  it("a member's save repeats the stored name and description exactly, changes only the other fields, and says so", async () => {
+    await atBrain("member");
+    await typeAudience("Collectors and gift buyers");
+    fireEvent.click(button(/save who it serves and customer action/i));
+    expect(await screen.findByText(/business name and description are unchanged/i)).toBeInTheDocument();
+    const body = JSON.parse(brainPuts()[0].options.body);
+    expect(body.name).toBe("Maison Aurelle");
+    expect(body.identity.description).toBe(DESCRIPTION);
+    expect(body.audience.summary).toBe("Collectors and gift buyers");
+    expect(body.commercial.primary_cta).toBe("Shop the new scent");
+    for (const key of ["brand_id", "project_id", "metadata"]) expect(body).not.toHaveProperty(key);
+  });
+
+  it("the owner keeps full control: name and description are editable and are sent when changed", async () => {
+    await atBrain("owner");
+    expect(screen.queryByText(/only the workspace owner can change the business name and description/i)).toBeNull();
+    expect(button(/^save to brand brain$/i)).toBeEnabled();
+    goBack(3); await heading(stageHeadings[2]);
+    const box = screen.getByLabelText(/describe what the business does/i);
+    expect(box).not.toHaveAttribute("readonly");
+    fireEvent.change(box, { target: { value: "An independent perfume house in Paris." } });
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]);
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(await screen.findByText(/saved to your brand brain\. it is a draft/i)).toBeInTheDocument();
+    expect(JSON.parse(brainPuts()[0].options.body).identity.description).toBe("An independent perfume house in Paris.");
+  });
+
+  it("a refused save (403) says who may change the name and description, keeps the typed answers, and asks who this customer is again", async () => {
+    await atBrain("member");
+    await typeAudience("Collectors");
+    handlers["PUT /customer/workspace/brand-brain"] = forbidden;
+    const roleReads = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/save who it serves and customer action/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/only the workspace owner can change the business name and description/i);
+    expect(alert).toHaveTextContent(/nothing was saved/i);
+    expect(screen.queryByText(/saved to your brand brain/i)).toBeNull();
+    await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(roleReads)); // the role is re-read
+    goBack(2); await heading(stageHeadings[3]);
+    expect(screen.getByLabelText(/who are your customers/i)).toHaveValue("Collectors"); // typed answer still there
+  });
+
+  it("when the owner changed the name or description after the screen loaded, the member is told so and the latest is loaded (no false 'only owners' blame)", async () => {
+    await atBrain("member");
+    await typeAudience("Collectors");
+    handlers["PUT /customer/workspace/brand-brain"] = () => { stored = brainFor("Maison Aurelle Paris", DESCRIPTION, { audience: { summary: "Gift buyers." }, commercial: { primary_cta: "Shop the new scent" } }); return forbidden(); };
+    fireEvent.click(button(/save who it serves and customer action/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/changed by the workspace owner after this screen loaded/i);
+    expect(alert).toHaveTextContent(/latest version has been loaded/i);
+    expect(await screen.findByText("Maison Aurelle Paris")).toBeInTheDocument();
+  });
+
+  it("a conflict (409) reloads the stored Brand Brain, keeps the typed answers, and does not resend a stale document", async () => {
+    await atBrain("member");
+    await typeAudience("Collectors");
+    handlers["PUT /customer/workspace/brand-brain"] = () => { stored = brainFor("Maison Aurelle", DESCRIPTION, { audience: { summary: "Changed elsewhere." }, commercial: { primary_cta: "Shop the new scent" } }); return conflict(); };
+    const reads = called("GET", "/brand-brain").length;
+    fireEvent.click(button(/save who it serves and customer action/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/changed somewhere else/i);
+    expect(alert).toHaveTextContent(/nothing was overwritten/i);
+    expect(alert).toHaveTextContent(/your typed answers are still here/i);
+    await waitFor(() => expect(called("GET", "/brand-brain").length).toBeGreaterThan(reads));
+    expect(await screen.findByText("Changed elsewhere.")).toBeInTheDocument();
+    expect(brainPuts()).toHaveLength(1); // no automatic retry
+    goBack(2); await heading(stageHeadings[3]);
+    expect(screen.getByLabelText(/who are your customers/i)).toHaveValue("Collectors");
+  });
+
+  it("a 503 or a dropped connection is 'not confirmed', never 'not saved', and 'Check what was saved' re-reads the Brand Brain", async () => {
+    await atBrain("owner");
+    for (const failing of [() => fail(503, { status: "failed", error: { code: "BRAND_BRAIN_PERSISTENCE_UNAVAILABLE" } }), () => { throw new TypeError("offline"); }]) {
+      handlers["PUT /customer/workspace/brand-brain"] = failing;
+      fireEvent.click(button(/^save to brand brain$/i));
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/save not confirmed — your changes may already have been saved/i);
+      expect(alert.textContent).not.toMatch(/not saved/i);
+      const reads = called("GET", "/brand-brain").length;
+      fireEvent.click(within(alert).getByRole("button", { name: /check what was saved/i }));
+      await waitFor(() => expect(called("GET", "/brand-brain").length).toBeGreaterThan(reads));
+    }
+  });
+
+  it("with an unknown role nothing is guessed: the server decides, and a refusal re-reads the role", async () => {
+    await atBrain(null); // the workspace list is not available, so the role is unknown
+    expect(button(/^save to brand brain$/i)).toBeEnabled();
+    handlers["PUT /customer/workspace/brand-brain"] = forbidden;
+    const roleReads = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/^save to brand brain$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/only the workspace owner can change the business name and description, and anyone whose access/i);
+    await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(roleReads));
   });
 });
