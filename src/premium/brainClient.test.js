@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BRAIN_SAVE_UNCONFIRMED, BrainSaveError, CONFLICT_CODE, FORBIDDEN_CODE, editableBrain, identityChanged, mergeBrainFields, putBrandBrain } from "./brainClient";
+import { BRAIN_LOAD_FAILED, BRAIN_SAVE_UNCONFIRMED, BRAIN_WORKSPACE_UNAVAILABLE, BrainLoadError, BrainSaveError, CONFLICT_CODE, FORBIDDEN_CODE, brainFormValues, changedBrainFields, describeBrainFailure, editableBrain, fetchBrandBrain, hasUntrimmedIdentity, identityChanged, mergeBrainFields, putBrandBrain, rebaseDraft } from "./brainClient";
 
 // Shapes follow bizgenie-api PR #214 at 2319e5e8 (read from its code and report). MOCKED: no real API is called here.
 const BRAIN = { brand_id: "b", project_id: "p", name: "Maison Aurelle", identity: { description: "A small-batch perfume house.  ", mission: "Scent" }, audience: { summary: "Gift buyers." }, commercial: { primary_cta: "Shop" }, metadata: { version: 3, status: "approved" } };
@@ -80,5 +80,65 @@ describe("putBrandBrain", () => {
   it("401 asks for sign-in; 400 stays the plain failure sentence", async () => {
     expect(await failure(res(401, {}))).toMatchObject({ kind: "auth" });
     expect((await failure(res(400, { error: { code: "VALIDATION_ERROR" } }))).message).toBe("Brand Brain changes could not be saved yet.");
+  });
+});
+
+describe("fetchBrandBrain (#214 Q3: a revoked workspace is a 400 with a trusted_scope detail on GET)", () => {
+  const get = (response) => fetchBrandBrain({ apiBaseUrl: "http://api.test", accessToken: "t", fetchImpl: async () => (typeof response === "function" ? response() : response) });
+  const fails = async (response) => { try { await get(response); } catch (e) { return e; } throw new Error("expected a failure"); };
+  it("returns the Brand Brain on success", async () => { expect((await get(res(200, { status: "ready", brand_brain: BRAIN }))).brand_brain.name).toBe("Maison Aurelle"); });
+  it("400 trusted_scope and 403 mean the workspace is not available, not an outage", async () => {
+    const scope = { status: "failed", error: { code: "WORKSPACE_VALIDATION_ERROR", details: [{ path: "trusted_scope", code: "unauthorized", message: "x" }] } };
+    for (const r of [res(400, scope), res(403, {})]) expect(await fails(r)).toMatchObject({ kind: "workspace_unavailable", code: "WORKSPACE_NOT_AUTHORIZED", message: BRAIN_WORKSPACE_UNAVAILABLE });
+  });
+  it("any other 400 (validation), 503, a network drop and a malformed answer are plain load failures; 401 asks for sign-in", async () => {
+    expect(await fails(res(400, { error: { code: "VALIDATION_ERROR", details: [{ path: "name" }] } }))).toMatchObject({ kind: "unavailable", message: BRAIN_LOAD_FAILED });
+    expect(await fails(res(503, {}))).toMatchObject({ kind: "unavailable" });
+    expect(await fails(() => { throw new TypeError("net"); })).toMatchObject({ kind: "unavailable", code: "NETWORK" });
+    expect(await fails(res(200, { status: "ready" }))).toMatchObject({ kind: "unavailable", code: "BAD_RESPONSE" });
+    expect(await fails(res(401, {}))).toMatchObject({ kind: "auth" });
+    expect(await fails(res(401, {}))).toBeInstanceOf(BrainLoadError);
+  });
+});
+
+describe("edited fields only, and what follows a newer stored value", () => {
+  const BASE = { businessName: "Maison Aurelle", description: "A perfume house.", audience: "Gift buyers.", cta: "Shop" };
+  it("changedBrainFields sends only what differs from the last known stored value, trimmed, and never an emptied field", () => {
+    expect(changedBrainFields({ ...BASE }, BASE)).toEqual({});
+    expect(changedBrainFields({ ...BASE, cta: "  Book  " }, BASE)).toEqual({ cta: "Book" });
+    expect(changedBrainFields({ ...BASE, businessName: "Maison Aurelle Paris", audience: "" }, BASE)).toEqual({ name: "Maison Aurelle Paris" });
+    expect(changedBrainFields({ businessName: "X", description: "", audience: "", cta: "" }, null)).toEqual({ name: "X" });
+  });
+  it("rebaseDraft moves untouched fields to the newer stored value and keeps what was typed", () => {
+    const draft = { ...BASE, cta: "Typed by me" };
+    const next = { businessName: "Maison Aurelle", description: "Rewritten.", audience: "Newer audience.", cta: "Newer cta" };
+    expect(rebaseDraft(draft, BASE, next)).toEqual({ businessName: "Maison Aurelle", description: "Rewritten.", audience: "Newer audience.", cta: "Typed by me" });
+  });
+  it("brainFormValues never presents a placeholder name or a bootstrap-seeded description as the customer's words", () => {
+    const seeded = (t) => t.startsWith("Customer-provided website");
+    const brain = { name: "BizGenie Workspace", identity: { description: "Customer-provided website or profile: https://x.test" }, audience: { summary: "A" }, commercial: { primary_cta: "C" } };
+    expect(brainFormValues(brain, { isSeededDescription: seeded, placeholderName: true })).toEqual({ businessName: "", description: "", audience: "A", cta: "C" });
+    expect(brainFormValues(null)).toEqual({ businessName: "", description: "", audience: "", cta: "" });
+  });
+  it("hasUntrimmedIdentity sees spaces at the edges of the stored name or description only", () => {
+    expect(hasUntrimmedIdentity(BRAIN)).toBe(true); // BRAIN's description ends with two spaces
+    expect(hasUntrimmedIdentity({ name: "A", identity: { description: "B" } })).toBe(false);
+    expect(hasUntrimmedIdentity({ name: " A", identity: { description: "B" } })).toBe(true);
+    expect(hasUntrimmedIdentity({ name: "A" })).toBe(false);
+    expect(hasUntrimmedIdentity(null)).toBe(false);
+  });
+});
+
+describe("describeBrainFailure", () => {
+  it("tells each outcome apart and never says 'not saved' for an uncertain one", () => {
+    expect(describeBrainFailure({ unconfirmed: true, message: BRAIN_SAVE_UNCONFIRMED })).toMatchObject({ kind: "unconfirmed", recheck: "brain" });
+    expect(describeBrainFailure({ forbidden: true }).text).toMatch(/only the workspace owner/i);
+    expect(describeBrainFailure({ forbidden: true, identityChanged: true }).text).toMatch(/changed by the workspace owner/i);
+    expect(describeBrainFailure({ conflict: true, reloaded: true }).text).toMatch(/latest saved version has been loaded/i);
+    expect(describeBrainFailure({ conflict: true, reloaded: false }).text).toMatch(/reload your brand brain/i);
+    expect(describeBrainFailure({ workspaceUnavailable: true, message: "gone" })).toMatchObject({ chooser: true });
+    expect(describeBrainFailure({ ownerMustFix: true, message: "spaces" })).toMatchObject({ kind: "error", text: "spaces" });
+    expect(describeBrainFailure({ message: "plain" })).toEqual({ kind: "error", text: "plain" });
+    expect(describeBrainFailure({ unconfirmed: true, message: BRAIN_SAVE_UNCONFIRMED }).text).not.toMatch(/not saved/i);
   });
 });

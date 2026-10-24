@@ -19,6 +19,8 @@ export default function PremiumWorkspace({ model, brainState, campaignList, onGo
   const brainLoading = brainState.status === "loading" || brainState.status === "idle";
   const reviewCount = campaign ? campaign.counts.review : 0;
   const onboardingFailed = onboardingState && (onboardingState.status === "error" || onboardingState.status === "unavailable");
+  // The API says this account can no longer use the workspace: one clear message and the chooser, not a stack of "try again" banners.
+  const workspaceGone = brainState.errorCode === "WORKSPACE_NOT_AUTHORIZED" || Boolean(onboardingState && onboardingState.errorCode === "WORKSPACE_NOT_AUTHORIZED");
 
   return (
     <div className="ps-workspace" style={{ "--ps-accent": model.sector.accent }}>
@@ -30,20 +32,28 @@ export default function PremiumWorkspace({ model, brainState, campaignList, onGo
           {!brainFailed && (
             <p className="ps-sub">
               <span className="ps-chip">{model.sector.label}</span>
-              <span className="ps-chip-note">{model.sector.source === "missing" ? "Neutral layout. Choose a sector in Set up." : model.sector.sourceLabel}</span>
+              <span className="ps-chip-note">{model.sector.source === "missing" ? "Neutral layout. Choose a sector in Set up if one fits." : model.sector.sourceLabel}</span>
             </p>
           )}
           {model.goal.value && <p className="ps-goal"><strong>Goal:</strong> {model.goal.value} <span className="ps-chip-note">(entered this session)</span></p>}
         </div>
       </header>
 
-      {brainFailed && (
+      {workspaceGone && (
         <div className="ps-banner" role="alert">
-          <p><strong>Your Brand Brain could not be loaded.</strong> {extra(brainState.error, "could not be loaded")} Nothing is shown as saved until it loads.</p>
-          <button type="button" className="secondary" onClick={onRetryBrain}>Try again</button>
+          <p><strong>This workspace is not available to your account right now.</strong> Nothing from it is shown as saved or missing. Choose a workspace to continue.</p>
+          <button type="button" className="ps-primary" onClick={() => onGo({ view: "workspaces" })}>Choose a workspace</button>
         </div>
       )}
-      {onboardingFailed && (
+      {brainFailed && !workspaceGone && (
+        <div className="ps-banner" role="alert">
+          <p><strong>Your Brand Brain could not be loaded.</strong> {extra(brainState.error, "could not be loaded")} Nothing is shown as saved until it loads.</p>
+          {brainState.errorCode === "WORKSPACE_NOT_AUTHORIZED"
+            ? <button type="button" className="ps-primary" onClick={() => onGo({ view: "workspaces" })}>Choose a workspace</button>
+            : <button type="button" className="secondary" onClick={onRetryBrain}>Try again</button>}
+        </div>
+      )}
+      {onboardingFailed && !workspaceGone && (
         <div className="ps-banner" role="alert">
           <p><strong>Your saved setup could not be loaded.</strong> {onboardingState.error} Setup is not shown as complete or incomplete until it loads.</p>
           {onboardingState.errorCode === "WORKSPACE_NOT_AUTHORIZED"
@@ -60,7 +70,7 @@ export default function PremiumWorkspace({ model, brainState, campaignList, onGo
         <Tile label="Publishing" value="Manual only" detail="BizGenie records what you confirm" />
       </section>
 
-      {campaignList && campaignList.status === "error" && (
+      {campaignList && campaignList.status === "error" && !workspaceGone && (
         <div className="ps-banner" role="alert">
           <p><strong>Your campaigns could not be loaded.</strong> {extra(campaignList.error, "could not be loaded")} Nothing is shown as saved until they load.</p>
           <button type="button" className="secondary" onClick={onRetryCampaigns}>Try again</button>

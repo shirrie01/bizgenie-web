@@ -4,6 +4,7 @@ import { SOURCE_LABEL } from "./workspaceModel";
 import ProvenanceLegend from "./ProvenanceLegend";
 import { CHANNEL_LABELS, MISSING_GUIDANCE, confirmationReadiness, effectiveSector, isNotADescription, isSeededDescription } from "./onboardingModel";
 import { roleLabel } from "./membershipClient";
+import { changedBrainFields, describeBrainFailure } from "./brainClient";
 
 // Production onboarding (BG-STUDIO-008-FE, persistent since BG-STUDIO-010-FE). Each step says exactly what it saves and where:
 //  - Business identity: created through POST /customer/workspace/bootstrap (only when no workspace exists yet).
@@ -37,7 +38,7 @@ function Field({ id, label, hint, children }) {
 
 function Truth({ children }) { return <p className="ps-truth">{children}</p>; }
 
-export default function PremiumOnboarding({ stage, setStage, draft, setField, channels, toggleChannel, session, brainState, onLoadBrain, onSave, onBootstrap, onRecommend, recommendationState, onFinish, onOpenStudio, onboardingState, onLoadOnboarding, onSaveProgress, dirty = false, readOnly = false, membershipRole = null, onGoToStep, onChooseWorkspace }) {
+export default function PremiumOnboarding({ stage, setStage, draft, setField, channels, toggleChannel, session, brainState, onLoadBrain, onSave, onBootstrap, onRecommend, recommendationState, onFinish, onOpenStudio, onboardingState, onLoadOnboarding, onSaveProgress, dirty = false, readOnly = false, membershipRole = null, onGoToStep, getBrainBaseline, onChooseWorkspace = null }) {
   const headingRef = useRef(null);
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -58,6 +59,9 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   const brainReady = brainState.status === "ready" && brainState.brain;
   // A known non-owner cannot change the business name or description (DEC-021 / DEC-022); everything else stays editable.
   const identityLocked = readOnly && !scopeMissing;
+  const brainEdits = brainReady ? changedBrainFields(draft, getBrainBaseline ? getBrainBaseline() : null) : {};
+  if (identityLocked) { delete brainEdits.name; delete brainEdits.description; }
+  const nothingToSaveBrain = Object.keys(brainEdits).length === 0;
   const storedName = brainReady ? brainState.brain.name || "" : "";
   const storedDescription = brainReady && brainState.brain.identity && !isNotADescription(brainState.brain.identity.description) ? brainState.brain.identity.description : "";
 
@@ -89,28 +93,15 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   async function saveBrain() {
     const keys = identityLocked ? [["audience", "Who it serves"], ["cta", "Customer action"]] : [["businessName", "Business name"], ["description", "Description"], ["audience", "Who it serves"], ["cta", "Customer action"]];
     if (!validate(keys)) return;
-    const fields = {};
-    if (!identityLocked && draft.businessName.trim()) fields.name = draft.businessName.trim();
-    if (!identityLocked && draft.description.trim()) fields.description = draft.description.trim();
-    if (draft.audience.trim()) fields.audience = draft.audience.trim();
-    if (draft.cta.trim()) fields.cta = draft.cta.trim();
-    if (!Object.keys(fields).length) { setMessage({ kind: "error", text: identityLocked ? "There is nothing to save yet. Add who it serves or a customer action first." : "There is nothing to save yet. Add a description, who it serves or a customer action first." }); return; }
+    // Only what was edited is sent, and it is applied to the latest stored Brand Brain (see App.premiumSaveBrain).
+    const fields = changedBrainFields(draft, getBrainBaseline ? getBrainBaseline() : null);
+    if (identityLocked) { delete fields.name; delete fields.description; }
+    if (!Object.keys(fields).length) { setMessage({ kind: "error", text: "There is nothing new to save: you have not changed your Brand Brain details on this screen." }); return; }
     await guarded(async () => {
       const result = await onSave(fields);
       if (result.ok) { setMessage({ kind: "ok", text: identityLocked ? "Saved to your Brand Brain. Your business name and description are unchanged: only the workspace owner can change them." : "Saved to your Brand Brain. It is a draft until it is approved." }); return; }
-      setMessage(brainFailure(result));
+      setMessage(describeBrainFailure(result));
     });
-  }
-
-  // How a refused, conflicting or unconfirmed Brand Brain save is told. Typed answers always stay on screen.
-  function brainFailure(result) {
-    if (result.unconfirmed) return { kind: "unconfirmed", recheck: "brain", text: result.message };
-    if (result.conflict) return { kind: "error", text: `${result.message} ${result.reloaded ? "The latest saved version has been loaded and your typed answers are still here. Review them, then save again." : "Reload your Brand Brain to see what is saved, then save again."}` };
-    if (result.forbidden) {
-      if (result.identityChanged) return { kind: "error", text: "Saving was refused because the business name or description was changed by the workspace owner after this screen loaded. The latest version has been loaded, and your other answers are still here. Review them, then save again. Nothing was saved." };
-      return { kind: "error", text: "Saving was refused. Only the workspace owner can change the business name and description, and anyone whose access to this workspace has ended cannot save. Your other answers are still here. Nothing was saved." };
-    }
-    return { kind: "error", text: result.message };
   }
 
   // How a failed save is shown. "unconfirmed" is NOT "not saved": the request may have been stored.
@@ -241,7 +232,8 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
       {scopeMissing && <p className="ps-truth">Your Brand Brain is available once your workspace has been created on the Your business step.</p>}
       {identityLocked && <p className="ps-hint ps-readonly" role="status">Only the workspace owner can change the business name and description. You can still save who it serves and the customer action.</p>}
       <p className="ps-hint">What you typed on the earlier steps is not saved until you press Save below.</p>
-      <button type="button" className="ps-primary" onClick={saveBrain} disabled={busy || !brainReady}>{busy ? "Saving…" : identityLocked ? "Save who it serves and customer action" : "Save to Brand Brain"}</button>
+      <button type="button" className="ps-primary" onClick={saveBrain} disabled={busy || !brainReady || nothingToSaveBrain} aria-describedby={brainReady && nothingToSaveBrain ? "ps-brain-nochange" : undefined}>{busy ? "Saving…" : identityLocked ? "Save who it serves and customer action" : "Save to Brand Brain"}</button>
+      {brainReady && nothingToSaveBrain && !busy && <p className="ps-hint" id="ps-brain-nochange">Nothing new to save here. Change a detail on an earlier step to save it.</p>}
       {brainState.status === "error" && <button type="button" className="secondary" onClick={onLoadBrain}>Try loading again</button>}
       <section className="ps-confirm" aria-labelledby="ps-confirm-h">
         <h3 id="ps-confirm-h">Confirm your setup</h3>
@@ -288,6 +280,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
           <div className={message.kind === "ok" ? "ps-ok" : message.kind === "unconfirmed" ? "ps-warn" : "error"} role={message.kind === "ok" ? "status" : "alert"} data-kind={message.kind}>
             <p>{message.text}</p>
             {message.kind === "unconfirmed" && <button type="button" className="secondary" onClick={message.recheck === "brain" ? onLoadBrain : onLoadOnboarding} disabled={busy}>Check what was saved</button>}
+            {message.chooser && onChooseWorkspace && <button type="button" className="ps-primary" onClick={onChooseWorkspace}>Choose a workspace</button>}
             {message.kind === "incomplete" && (
               <ul className="ps-missing" aria-label="What is still needed">
                 {message.missing.filter((path) => MISSING_GUIDANCE[path]).map((path) => (

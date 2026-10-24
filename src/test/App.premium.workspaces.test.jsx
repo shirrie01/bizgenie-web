@@ -379,3 +379,61 @@ describe("flag off", () => {
     expect(screen.queryByRole("heading", { name: /choose a workspace/i })).toBeNull();
   });
 });
+
+// BG-STUDIO-015-FE: adversarial workspace and session cases around the Brand Brain. MOCKED API; not live proof.
+describe("workspace isolation under pressure (BG-STUDIO-015)", () => {
+  const scopeError = () => fail(400, { status: "failed", error: { code: "WORKSPACE_VALIDATION_ERROR", message: "x", details: [{ path: "trusted_scope", code: "unauthorized", message: "Workspace selection is not authorized" }] } });
+  const openBrand = async () => { fireEvent.click(within(nav()).getByRole("button", { name: /^brand$/i })); return screen.findByRole("heading", { name: /^brand brain$/i }); };
+
+  it("pressing a workspace twice sends one select request", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    await openWorkspaces();
+    const use = screen.getByRole("button", { name: "Use Brookside Aesthetics" });
+    fireEvent.click(use); fireEvent.click(use);
+    await screen.findByRole("heading", { name: "Welcome back, Brookside Aesthetics." });
+    expect(called("POST", "/workspace/select")).toHaveLength(1);
+  });
+
+  it("a Brand Brain save still in flight for workspace A never shows in workspace B, and is never sent with B's token", async () => {
+    let release; const writes = [];
+    handlers["PUT /customer/workspace/brand-brain"] = (_u, o) => { writes.push(o.headers.authorization); return new Promise((resolve) => { release = () => resolve(ok({ status: "ready", brand_brain: { ...JSON.parse(o.body), brand_id: "brand-a", project_id: "project-a", metadata: { version: 2, status: "draft" } } })); }); };
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    await openBrand();
+    fireEvent.change(await screen.findByLabelText(/who it serves/i), { target: { value: "A-only audience text" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save to brand brain$/i }));
+    await waitFor(() => expect(typeof release).toBe("function"));
+    await openWorkspaces();
+    fireEvent.click(screen.getByRole("button", { name: "Use Brookside Aesthetics" }));
+    fireEvent.click(await screen.findByRole("button", { name: /discard and switch/i })); // unsaved/in-flight work needs an explicit decision
+    await screen.findByRole("heading", { name: "Welcome back, Brookside Aesthetics." });
+    await act(async () => { release(); });
+    expect(document.body.textContent).not.toMatch(/Northgate|A-only audience text|Saved to your Brand Brain/);
+    expect(writes).toEqual(["Bearer token-a"]);
+    await openBrand();
+    expect(await screen.findByLabelText(/^business name$/i)).toHaveValue("Brookside Aesthetics");
+    expect(screen.getByLabelText(/who it serves/i)).toHaveValue("Customers");
+  });
+
+  it("a workspace the customer can no longer use is reported as unavailable (not as an outage) and the chooser is offered for the Brand Brain too", async () => {
+    handlers["GET /customer/workspace/brand-brain"] = scopeError;
+    handlers["GET /customer/workspace/onboarding"] = () => fail(403, { status: "failed", error: { code: "WORKSPACE_NOT_AUTHORIZED" } });
+    render(<App />);
+    await waitFor(() => expect(screen.getAllByText(/not available to your account right now/i).length).toBeGreaterThan(0));
+    expect(await screen.findAllByRole("button", { name: /choose a workspace/i })).toHaveLength(1); // one clear message, not a stack of banners
+    expect(screen.queryByRole("button", { name: /^try again$/i })).toBeNull();
+    expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  });
+
+  it("a session that ended before a Brand Brain save says so, writes nothing and shows no success", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    await openBrand();
+    fireEvent.change(await screen.findByLabelText(/who it serves/i), { target: { value: "Collectors" } });
+    handlers["GET /customer/workspace/brand-brain"] = () => fail(401, { status: "failed", error: { code: "AUTHENTICATION_REQUIRED" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save to brand brain$/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/your session has ended\. sign in again.*nothing was saved/i);
+    expect(called("PUT", "/brand-brain")).toHaveLength(0);
+  });
+});
