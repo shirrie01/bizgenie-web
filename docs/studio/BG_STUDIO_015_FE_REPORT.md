@@ -21,12 +21,12 @@
 | 9 | P2 | Keyword inference can misread ("mobile car valeting" to leasing; "hair salon" to aesthetics; "food safety consultancy" to takeaway). | industryFixtures tests. | Wrong sector guidance if the customer does not read the label. | **Safe by design**: always labelled inferred, needs confirmation, explicit choice wins. Recommend tightening keywords. |
 | 10 | P2 | No history routing: browser Back leaves the app; no deep links. | n/a (code search: no `pushState`/router). | Lost place; unsaved work protected only by the leave-page warning. | Open (needs a routing decision). |
 | 11 | P2 | A 401 asks the customer to sign in again without trying a silent session refresh first. | Brain save with a 401 (workspace test). | Avoidable sign-ins after idle. | Open (recommend one refresh retry for reads). |
-| 12 | P2 | Single JS chunk of about 515 kB (about 144 kB gzip) triggers the build warning; Premium code ships to flag-off visitors. | `npm run build`. | Slower first load. | Open (lazy-load the Studio; changes flag-off loading, so needs approval). |
+| 12 | P2 | Single JS chunk of about 529 kB (about 147 kB gzip, #49 tree) triggers the build warning; Premium code ships to flag-off visitors. | `npm run build`. | Slower first load. | Open (lazy-load the Studio; changes flag-off loading, so needs approval). |
 | 14 | P1 | **"Complete" headline beside missing details.** The overview tile said "Business profile: Complete" while the same page listed audience, customer action, tone, sector and goal as missing. | Overview for a confirmed setup whose Brand Brain has only a name and description (rendered at 390 and 1024 wide; vitest tile test). | A customer reads "Complete", then sees a list of gaps: lost confidence. | **Fixed**: the tile says "Confirmed" with "N details are still not provided" unless nothing is missing. |
 | 13 | P2 | PR #48/#49 descriptions were stale after the alignment work. | Read PR bodies. | Reviewer confusion. | Fixed earlier; refreshed again below. |
 
 ## C. Implemented corrections (all on the existing draft stack; flag-on only)
-Branches and SHAs: #48 `bg-studio-010-fe-persistent-onboarding` `7fe2bcc15f489b32fc7e80ffd2e0fc9ab24b7645`; #49 `bg-studio-011-fe-workspace-selection` merge `89eb79f3f9999a3ec6c9cef290d0672fa1d5c002` (final head stated in the PR comment).
+Branches and SHAs: #48 `bg-studio-010-fe-persistent-onboarding` `7fe2bcc15f489b32fc7e80ffd2e0fc9ab24b7645`; #49 `bg-studio-011-fe-workspace-selection` code head `49ddb6f274feec4b8c20b75a1a4782e7b0a6bf65` (a docs-only commit may follow; the final head and its CI run are in the PR comment).
 | Change | Files | Regression tests |
 |---|---|---|
 | Latest-version, edited-fields-only Brand Brain saves; typed read client; unconfirmed outcomes; owner/member merge | `src/premium/brainClient.js`, `src/App.jsx` (`premiumSaveBrain`, `premiumLoadBrain`) | `brainClient.test.js` (unit), `App.premium.test.jsx` D1 to D10 |
@@ -58,10 +58,10 @@ Local, MOCKED, on `89eb79f` unless stated (final head and CI in the PR comment):
 | Check | Result |
 |---|---|
 | Vitest (jsdom), #48 head `7fe2bcc` | 413/413 (25 files) |
-| Vitest, #49 head `89eb79f` | 449/449 (28 files) |
-| Production build | passes; flag-off JS 515 kB (144 kB gzip) |
-| Premium browser suite incl. axe, overflow, 24 px targets, keyboard: 1440x900, 1024x768, 768x1024, 390x844, 320x568 | #48: 28/28 at each of the five widths; #49: see PR comment |
-| Flag-off DOM equivalence, 7 states, against the #47 base dump | 7/7 identical |
+| Vitest, #49 final head (code unchanged by the docs commit) | 451/451 (28 files) |
+| Production build | passes; flag-off JS about 529 kB (147 kB gzip) on the #49 tree (515 kB on the #48 tree) |
+| Premium browser suite incl. axe, overflow, 24 px targets, keyboard: 1440x900, 1024x768, 768x1024, 390x844, 320x568 | #48: 28/28 at each of the five widths; #49 tree: 36/36 at each of the five widths (final head: exact numbers in the PR comment) |
+| Flag-off DOM equivalence, 7 states, against the #47 base dump | 7/7 identical on both the #48 and #49 trees |
 | CI | isolated workflow on the final #49 head: see PR comment (earlier run 27 `40117831802` was 13/13 on `9749254`) |
 Rendered screenshots were inspected by eye (390 and 1024 wide): Brand tab member and refused states, step 6, and the neutral overview. Spacing between the notice and the Save button was tightened. Evidence: `docs/evidence/010/audit/`.
 Port discipline: the browser runner now refuses a busy port, builds the current tree, proves the server serves that exact bundle hash, and stops only its own server. (A leftover server from a previous run, not product code, caused eight false failures earlier.)
