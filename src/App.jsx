@@ -10,7 +10,8 @@ import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import { operationKey } from "./operationKey";
 import PremiumStudio from "./premium/PremiumStudio";
 import { isPremiumStudioEnabled } from "./premium/flag";
-import { createSaveKeeper, fetchOnboarding, putOnboarding } from "./premium/onboardingClient";
+import { SAVE_NOT_CONFIRMED_RETRY, createSaveKeeper, fetchOnboarding, putOnboarding } from "./premium/onboardingClient";
+import { fetchMembershipRole, isReadOnlyRole } from "./premium/membershipClient";
 import { fetchWorkspaces, normaliseWorkspace, sameWorkspace, selectWorkspace } from "./premium/workspaceClient";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
@@ -89,9 +90,9 @@ async function bootstrapCustomerWorkspace({ accessToken, goal }) {
 // Premium Studio only (BG-STUDIO-008-FE). A request that never answers must not leave a spinner forever. The
 // request itself is not cancelled, so callers say plainly when a write may still have completed.
 const PREMIUM_TIMEOUT_MS = 20000;
-function withTimeout(promise, message = "This is taking longer than expected. Please try again.", ms = PREMIUM_TIMEOUT_MS) {
+function withTimeout(promise, message = "This is taking longer than expected. Please try again.", ms = PREMIUM_TIMEOUT_MS, props = null) {
   let timer;
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); });
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(props ? Object.assign(new Error(message), props) : new Error(message)), ms); });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
@@ -365,6 +366,8 @@ export default function App() {
   // Workspace list and selection (BG-STUDIO-011-FE). `selectionRequired` is true only when the API said so; the
   // browser never picks a workspace for the customer.
   const [workspaceState, setWorkspaceState] = useState({ status: "idle", workspaces: [], selectionRequired: false, error: "", errorCode: "", notice: "", target: null });
+  // The customer's role in this workspace (from the existing workspace list). Unknown until read; the server decides writes.
+  const [roleState, setRoleState] = useState({ status: "idle", role: null });
   const saveKeeperRef = useRef(null);
   if (saveKeeperRef.current === null) saveKeeperRef.current = createSaveKeeper();
   const hadSessionRef = useRef(false);
@@ -385,6 +388,7 @@ export default function App() {
     setBrandBrainState({ status: "idle", brain: null, draft: "", error: "" });
     setCampaignList({ status: "idle", campaigns: [], error: "" });
     setOnboardingState({ status: "idle", onboarding: null, brandNamePlaceholder: null, error: "" });
+    setRoleState({ status: "idle", role: null });
     saveKeeperRef.current.clear();
     setPendingSubmit(false);
   }
@@ -872,6 +876,16 @@ export default function App() {
     }
   }, [session.status, session.accessToken]);
 
+  const premiumLoadRole = useCallback(async () => {
+    if (session.status !== "ready") return;
+    const scopeToken = scopeTokenRef.current;
+    const result = await fetchMembershipRole({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId } });
+    if (scopeToken !== scopeTokenRef.current) return;
+    setRoleState({ status: "ready", role: result.role });
+  }, [session.status, session.accessToken, session.tenantId, session.projectId, session.brandId]);
+
+  useEffect(() => { if (premiumEnabled && session.status === "ready" && roleState.status === "idle") premiumLoadRole(); }, [premiumEnabled, session.status, roleState.status, premiumLoadRole]);
+
   // Save setup progress through PUT /customer/workspace/onboarding. Resolves { ok, message?, conflict? }; ok only
   // when the server confirmed the write. A retry of an identical request reuses its idempotency key.
   async function premiumSaveOnboarding(body) {
@@ -880,7 +894,7 @@ export default function App() {
     const changed = { ok: false, message: "Your account or workspace changed while saving, so this screen was reset. Nothing is shown as saved here." };
     const key = saveKeeperRef.current.keyFor(body);
     try {
-      const result = await withTimeout(putOnboarding({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, body: { ...body, idempotency_key: key } }), "Saving is taking longer than expected. It may or may not have been saved. Press save again: sending it again is safe and will not duplicate anything.");
+      const result = await withTimeout(putOnboarding({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, body: { ...body, idempotency_key: key } }), SAVE_NOT_CONFIRMED_RETRY, PREMIUM_TIMEOUT_MS, { outcome: "unknown" });
       if (scopeToken !== scopeTokenRef.current) return changed;
       saveKeeperRef.current.clear();
       setOnboardingState({ status: "ready", onboarding: result.onboarding, brandNamePlaceholder: result.brandNamePlaceholder, error: "" });
@@ -895,6 +909,11 @@ export default function App() {
         } catch { /* the conflict message stands; the next save re-reads */ }
         return { ok: false, conflict: error.code === "VERSION_CONFLICT", message: error.message };
       }
+      // The API's 403 does not say why; re-read the role so the screen can tell a read-only member from lost access.
+      if (error.forbiddenWrite) { premiumLoadRole(); return { ok: false, forbidden: true, message: error.message }; }
+      // 503, a dropped connection and a timeout can all follow a commit whose acknowledgement was lost: never "not saved".
+      if (error.outcome === "unknown" || error.code === "NETWORK") return { ok: false, unconfirmed: true, message: error.message };
+      if (error.code === "ONBOARDING_INCOMPLETE") return { ok: false, missing: error.missing || [], message: error.message };
       return { ok: false, message: error.message };
     }
   }
@@ -1031,6 +1050,8 @@ export default function App() {
         workspaceState={workspaceState}
         onLoadWorkspaces={premiumLoadWorkspaces}
         onSelectWorkspace={premiumSelectWorkspace}
+        membershipRole={roleState.role}
+        readOnly={isReadOnlyRole(roleState.role)}
         onboardingState={onboardingState}
         onLoadOnboarding={premiumLoadOnboarding}
         onSaveOnboarding={premiumSaveOnboarding}

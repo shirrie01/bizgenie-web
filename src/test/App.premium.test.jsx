@@ -651,7 +651,7 @@ describe("persistent onboarding: returning customers and resume", () => {
     expect(document.body.textContent).not.toMatch(/welcome back/i);
     fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i));
     await heading(stageHeadings[5]);
-    expect(screen.getByText(/only the web address given at setup is stored/i)).toBeInTheDocument();
+    expect(screen.getByText(/only a web address is stored here/i)).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("leaseexpert.example");
     expect(button(/confirm setup/i)).toBeDisabled();
     expect(screen.getByRole("list", { name: /still needed to confirm/i })).toHaveTextContent(/save your sector/i);
@@ -755,7 +755,7 @@ describe("persistent onboarding: Save progress, Save and exit, and confirmation"
   });
 
   it("Confirm setup is enabled only from saved, customer-supplied facts, and sends only the completion", async () => {
-    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 5 })); use(server);
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 5, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] } })); use(server);
     handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle", "A small-batch perfume house.") });
     render(<App />);
     await heading(stageHeadings[5]);
@@ -789,13 +789,14 @@ describe("persistent onboarding: interrupted saves, conflicts and unavailable st
     fireEvent.change(screen.getByLabelText(/describe what the business does/i), { target: { value: "Small-batch perfume house." } });
   };
 
-  it("503 from storage: says NOT saved, keeps the typed answers, and never claims success", async () => {
+  it("503 on a save: 'save not confirmed', never 'NOT saved'; keeps the typed answers and never claims success", async () => {
     const server = fakeServer(NOT_STARTED); await toAbout(server);
     handlers["PUT /customer/workspace/onboarding"] = () => fail(503, { status: "failed", error: { code: "ONBOARDING_UNAVAILABLE", message: "Onboarding is temporarily unavailable" } });
     fireEvent.click(button(/save and exit/i));
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/not available right now/i);
-    expect(alert).toHaveTextContent(/NOT saved/);
+    expect(alert).toHaveTextContent("Save not confirmed — your changes may already have been saved.");
+    expect(alert.textContent).not.toMatch(/NOT saved/);
+    expect(within(alert).getByRole("button", { name: /check what was saved/i })).toBeInTheDocument();
     expect(screen.queryByText(/progress saved|already saved/i)).toBeNull();
     expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("Small-batch perfume house.");
     expect(screen.getByRole("heading", { name: stageHeadings[2] })).toBeInTheDocument(); // did not navigate away
@@ -807,7 +808,7 @@ describe("persistent onboarding: interrupted saves, conflicts and unavailable st
     let attempts = 0;
     handlers["PUT /customer/workspace/onboarding"] = (u, o) => { attempts += 1; if (attempts === 1) { server.put(u, o); throw new TypeError("network lost"); } return server.put(u, o); };
     fireEvent.click(button(/^save progress$/i));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/may or may not have been saved/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Save not confirmed — your changes may already have been saved.");
     fireEvent.click(button(/^save progress$/i));
     await screen.findByText(/setup progress saved\. you can leave/i);
     const [first, second] = onboardingPuts().map((c) => JSON.parse(c.options.body));
@@ -849,7 +850,7 @@ describe("persistent onboarding: interrupted saves, conflicts and unavailable st
     for (const [response, pattern] of [
       [fail(400, { error: { code: "ONBOARDING_VALIDATION_ERROR", details: [{ path: "channels", message: "bad" }] } }), /some answers could not be saved.*nothing was saved/i],
       [fail(401, { error: { code: "AUTHENTICATION_REQUIRED" } }), /session has ended.*nothing was saved/i],
-      [fail(403, { error: { code: "WORKSPACE_NOT_AUTHORIZED" } }), /not available to your account.*nothing was saved/i],
+      [fail(403, { error: { code: "WORKSPACE_NOT_AUTHORIZED" } }), /only the workspace owner can save or confirm setup.*nothing was saved/i],
       [fail(500, {}), /could not be saved.*nothing was saved/i],
     ]) {
       handlers["PUT /customer/workspace/onboarding"] = () => response;
@@ -874,7 +875,7 @@ describe("persistent onboarding: interrupted saves, conflicts and unavailable st
     await screen.findByRole("heading", { name: /^Welcome/ });
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/saved setup could not be loaded/i);
-    expect(alert).toHaveTextContent(/not available right now/i);
+    expect(alert).toHaveTextContent(/could not be loaded right now.*nothing has been changed/i);
     expect(screen.getByText("Unavailable", { selector: "strong" })).toBeInTheDocument();
     expect(screen.queryByText("Needs your input")).toBeNull();
     expect(screen.queryByText("Complete")).toBeNull();
@@ -1006,5 +1007,193 @@ describe("persistent onboarding: backend placeholder flag, accounts and workspac
     await screen.findByLabelText(/your goal/i);
     await act(async () => {});
     expect(calls.filter((c) => c.path.includes("/onboarding"))).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// BG-STUDIO-011-FE contract alignment with the HARDENED API (bizgenie-api PR #213 at 120a874):
+//  - a 503 on a write may follow a commit whose acknowledgement was lost;
+//  - 422 ONBOARDING_INCOMPLETE can now list business_name and description as well as sector_key and channels;
+//  - only the workspace OWNER may write; a refused write is a plain 403 WORKSPACE_NOT_AUTHORIZED.
+// The API is MOCKED here with those documented shapes. This is NOT staging evidence.
+// ---------------------------------------------------------------------------------------------------------------
+const WORKSPACE_ROW = (role) => ({ tenant_id: "tenant-a", tenant_name: "Northgate Group", project_id: "project-a", project_name: "Northgate campaigns", brand_id: "brand-a", brand_name: "Maison Aurelle", brand_status: "approved", membership_role: role });
+const withRole = (role) => { handlers["GET /customer/workspace"] = () => ok({ status: "ready", workspace: WORKSPACE_ROW(role) }); };
+const SAVE_NOT_CONFIRMED_TEXT = "Save not confirmed — your changes may already have been saved.";
+const incomplete = (...paths) => fail(422, { status: "failed", error: { code: "ONBOARDING_INCOMPLETE", message: "Onboarding cannot be completed until required answers are saved", details: paths.map((path) => ({ path, code: "required", message: "Required to complete onboarding" })) } });
+
+describe("hardened API: lost acknowledgements (503 after a commit)", () => {
+  const toAbout = async (server) => {
+    use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle") });
+    render(<App />);
+    await heading(stageHeadings[2]);
+    fireEvent.change(screen.getByLabelText(/describe what the business does/i), { target: { value: "Small-batch perfume house." } });
+  };
+
+  it("the save COMMITTED but its acknowledgement was lost: says 'not confirmed', keeps the answers, and the retry replays the same request", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    let attempts = 0;
+    handlers["PUT /customer/workspace/onboarding"] = (u, o) => { attempts += 1; const r = server.put(u, o); return attempts === 1 ? fail(503, { status: "failed", error: { code: "ONBOARDING_UNAVAILABLE", message: "Onboarding is temporarily unavailable" } }) : r; };
+    fireEvent.click(button(/^save progress$/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(SAVE_NOT_CONFIRMED_TEXT);
+    expect(alert.textContent).not.toMatch(/NOT saved/i);
+    expect(screen.queryByText(/setup progress saved\. you can leave/i)).toBeNull(); // success is never claimed
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("Small-batch perfume house.");
+    expect(server.state.doc.version).toBe(1); // the server DID store it
+    fireEvent.click(button(/^save progress$/i));
+    await screen.findByText(/setup progress saved\. you can leave/i);
+    const [first, second] = onboardingPuts().map((c) => JSON.parse(c.options.body));
+    expect(second).toEqual(first); // same key AND same body, byte for byte
+    expect(second.idempotency_key).toBe(first.idempotency_key);
+    expect(server.state.doc.version).toBe(1); // never saved twice
+  });
+
+  it("'Check what was saved' re-reads the record and shows it as saved without re-sending anything", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    handlers["PUT /customer/workspace/onboarding"] = (u, o) => { server.put(u, o); return fail(503, { error: { code: "ONBOARDING_UNAVAILABLE" } }); };
+    fireEvent.click(button(/^save progress$/i));
+    const alert = await screen.findByRole("alert");
+    fireEvent.click(within(alert).getByRole("button", { name: /check what was saved/i }));
+    await waitFor(() => expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/saved \(version 1\)/i));
+    expect(onboardingPuts()).toHaveLength(1);
+    expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("Small-batch perfume house.");
+  });
+
+  it("a lost acknowledgement on a dropped connection or a timeout says the same thing", async () => {
+    const server = fakeServer(NOT_STARTED); await toAbout(server);
+    handlers["PUT /customer/workspace/onboarding"] = () => { throw new TypeError("network lost"); };
+    fireEvent.click(button(/^save and exit$/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(SAVE_NOT_CONFIRMED_TEXT);
+    expect(screen.getByRole("heading", { name: stageHeadings[2] })).toBeInTheDocument(); // did not leave
+  });
+
+  it("a read failure (503 on GET) changed nothing and does not use the save-uncertainty wording", async () => {
+    handlers["GET /customer/workspace/onboarding"] = () => fail(503, { error: { code: "ONBOARDING_UNAVAILABLE" } });
+    render(<App />);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toContain(SAVE_NOT_CONFIRMED_TEXT);
+    expect(alert).toHaveTextContent(/nothing has been changed/i);
+  });
+});
+
+describe("hardened API: 422 incomplete business setup", () => {
+  const atBrain = async (overrides = {}) => {
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 5, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] }, ...overrides })); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle", "A small-batch perfume house.") });
+    render(<App />);
+    await heading(stageHeadings[5]);
+    return server;
+  };
+
+  it("lists exactly what the API says is missing, field by field, and confirms nothing", async () => {
+    const server = await atBrain();
+    handlers["PUT /customer/workspace/onboarding"] = () => incomplete("business_name", "description");
+    fireEvent.click(button(/confirm setup/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/setup cannot be confirmed yet/i);
+    expect(alert).toHaveTextContent(/nothing on this screen has been marked as confirmed/i);
+    const list = within(alert).getByRole("list", { name: /what is still needed/i });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    expect(list).toHaveTextContent(/Business name\..*no real business name yet.*placeholder/i);
+    expect(list).toHaveTextContent(/What the business does\..*a website address alone is not a description/i);
+    expect(server.state.doc.status).toBe("in_progress"); // nothing was marked complete
+    expect(screen.queryByText(/setup confirmed and saved/i)).toBeNull();
+    expect(screen.queryByText(/you confirmed your setup/i)).toBeNull();
+  });
+
+  it("each item can take the customer to the step that fixes it", async () => {
+    await atBrain();
+    handlers["PUT /customer/workspace/onboarding"] = () => incomplete("business_name", "description", "channels");
+    fireEvent.click(button(/confirm setup/i));
+    const list = await screen.findByRole("list", { name: /what is still needed/i });
+    const items = within(list).getAllByRole("listitem");
+    fireEvent.click(within(items[0]).getByRole("button", { name: /go to the step for: business name/i }));
+    expect(await screen.findByRole("heading", { name: /tell us about your business/i })).toBeInTheDocument();
+  });
+
+  it("a stale 'ready' completeness from the server keeps Confirm closed even when this screen thinks the facts are saved", async () => {
+    await atBrain({ completeness: { sector: true, channels: true, ready_to_complete: false, missing: ["business_name"] } });
+    expect(button(/confirm setup/i)).toBeDisabled();
+    expect(screen.getByRole("list", { name: /still needed to confirm/i })).toHaveTextContent(/real business name/i);
+  });
+
+  it("an inferred sector stays inferred after a refused confirmation", async () => {
+    const server = await atBrain({ sector: { key: "perfume", source: "inferred" }, industry_text: null });
+    handlers["PUT /customer/workspace/onboarding"] = () => incomplete("description");
+    fireEvent.click(button(/confirm setup/i));
+    await screen.findByRole("alert");
+    fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i));
+    expect(await screen.findByText(/saved · inferred from what you typed, not confirmed/i)).toBeInTheDocument();
+    expect(server.state.doc.sector.source).toBe("inferred");
+  });
+});
+
+describe("hardened API: only the workspace owner can write", () => {
+  const atChannels = async (role) => {
+    const server = fakeServer(IN_PROGRESS({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" }, current_step: 4 })); use(server);
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("Maison Aurelle", "A small-batch perfume house.") });
+    if (role) withRole(role);
+    render(<App />);
+    await heading(stageHeadings[4]);
+    return server;
+  };
+
+  it("a read-only member can read everything but Save, Save and exit and Confirm are turned off, with an accurate reason", async () => {
+    const server = await atChannels("member");
+    const note = await screen.findByText(/view only\. your role in this workspace is member/i);
+    expect(note).toHaveTextContent(/only the workspace owner can save or confirm setup/i);
+    expect(button(/^save progress$/i)).toBeDisabled();
+    expect(button(/^save and exit$/i)).toBeDisabled();
+    fireEvent.click(button(/^continue$/i)); // reading and navigating still work
+    await heading(stageHeadings[5]);
+    expect(button(/confirm setup/i)).toBeDisabled();
+    // The saved setup is shown: authorised read access is preserved.
+    fireEvent.click(button(/^back$/i));
+    expect(screen.getByRole("button", { name: /^Email/ })).toHaveAttribute("aria-pressed", "true");
+    expect(onboardingPuts()).toHaveLength(0);
+    expect(server.state.doc.version).toBe(2);
+  });
+
+  it("typing as a read-only member is not 'unsaved work': no leave-page warning and no unsaved-changes notice", async () => {
+    await atChannels("member");
+    await screen.findByText(/view only/i);
+    fireEvent.click(await screen.findByRole("button", { name: /^TikTok/ }));
+    const probe = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(probe);
+    expect(probe.defaultPrevented).toBe(false);
+    expect(screen.queryByTestId("ps-save-state")).toBeNull();
+  });
+
+  it("the owner keeps every save control, and no view-only notice appears", async () => {
+    await atChannels("owner");
+    await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(0));
+    expect(screen.queryByText(/view only/i)).toBeNull();
+    expect(button(/^save progress$/i)).toBeEnabled();
+    expect(button(/^save and exit$/i)).toBeEnabled();
+  });
+
+  it("when the role is not known the server decides: a refused write explains itself and the role is re-read", async () => {
+    await atChannels(null); // GET /customer/workspace says missing_workspace here, so no role is known
+    fireEvent.click(await screen.findByRole("button", { name: /^TikTok/ }));
+    handlers["PUT /customer/workspace/onboarding"] = () => fail(403, { status: "failed", error: { code: "WORKSPACE_NOT_AUTHORIZED", message: "Workspace selection is not authorized" } });
+    withRole("member"); // the re-read now says member
+    const before = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/^save progress$/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/only the workspace owner can save or confirm setup, or your access to this workspace has ended/i);
+    expect(alert).toHaveTextContent(/nothing was saved/i);
+    await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(before));
+    expect(await screen.findByText(/view only\. your role in this workspace is member/i)).toBeInTheDocument();
+    expect(button(/^save progress$/i)).toBeDisabled();
+    expect(onboardingPuts()).toHaveLength(1); // one refused request, no loop
+  });
+
+  it("a read-only member also cannot send a save through the keyboard shortcut path: the handler refuses without a request", async () => {
+    await atChannels("member");
+    await screen.findByText(/view only/i);
+    fireEvent.click(button(/^save progress$/i)); // disabled: nothing happens
+    await act(async () => {});
+    expect(onboardingPuts()).toHaveLength(0);
   });
 });

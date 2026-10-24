@@ -27,7 +27,7 @@ const VIEWS = [
 
 const EMPTY_DRAFT = { businessName: "", website: "", challenge: "", industryText: "", sectorChoice: "", description: "", audience: "", cta: "", goal: "" };
 
-export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, workspaceState, onLoadWorkspaces, onSelectWorkspace, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
+export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, membershipRole, readOnly = false, workspaceState, onLoadWorkspaces, onSelectWorkspace, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
   const [view, setView] = useState(null); // null until the starting point has been decided
   const [stage, setStage] = useState(0);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -89,7 +89,8 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
 
   // The form as the contract sees it, and whether it differs from what is saved. Only meaningful once restored.
   const form = useMemo(() => ({ sectorChoice: draft.sectorChoice, industryText: draft.industryText, businessName: draft.businessName, description: draft.description, channels: [...channels], draft }), [draft, channels]);
-  const dirty = prefilled && onboardingState.status === "ready" && hasUnsavedChanges({ onboarding: onboardingState.onboarding, form, brain: brainState.brain });
+  // A read-only member cannot save setup, so unsaved typing is not "unsaved work" for them (no warnings about it).
+  const dirty = prefilled && !readOnly && onboardingState.status === "ready" && hasUnsavedChanges({ onboarding: onboardingState.onboarding, form, brain: brainState.brain });
   // Warn before a refresh or tab close throws away answers that are not saved.
   useEffect(() => {
     if (!dirty) return undefined;
@@ -123,12 +124,13 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
 
   // Save setup progress (and optionally confirm completion). Returns { ok, message, noop }.
   const saveProgress = useCallback(async ({ complete } = {}) => {
+    if (readOnly) return { ok: false, message: "Your role cannot save or confirm setup. Only the workspace owner can. Nothing was saved." };
     if (onboardingState.status !== "ready") return { ok: false, message: "Saving your setup progress is not available right now. Nothing was saved." };
     const { body, errors, hasChanges } = buildSavePayload({ onboarding: onboardingState.onboarding, form, brain: brainState.brain, step: stage, complete });
     if (errors.length) return { ok: false, message: errors.join(" ") };
     if (!hasChanges) return { ok: true, noop: true };
     return onSaveOnboarding(body);
-  }, [onboardingState.status, onboardingState.onboarding, form, brainState.brain, stage, onSaveOnboarding]);
+  }, [readOnly, onboardingState.status, onboardingState.onboarding, form, brainState.brain, stage, onSaveOnboarding]);
 
   const setField = useCallback((key, value) => setDraft((d) => ({ ...d, [key]: value })), []);
   const toggleChannel = useCallback((name) => setChannels((current) => { const next = new Set(current); if (next.has(name)) next.delete(name); else next.add(name); return next; }), []);
@@ -150,7 +152,7 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
       <PremiumOnboarding
         stage={stage} setStage={setStage} draft={draft} setField={setField} channels={channels} toggleChannel={toggleChannel}
         session={session} brainState={brainState} onLoadBrain={onLoadBrain} onSave={onSaveBrain} onBootstrap={onBootstrap}
-        onboardingState={onboardingState} onLoadOnboarding={onLoadOnboarding} onSaveProgress={saveProgress} dirty={dirty} onChooseWorkspace={() => go({ view: "workspaces" })}
+        onboardingState={onboardingState} onLoadOnboarding={onLoadOnboarding} onSaveProgress={saveProgress} dirty={dirty} readOnly={readOnly} membershipRole={membershipRole} onGoToStep={setStage} onChooseWorkspace={() => go({ view: "workspaces" })}
         recommendationState={recommendationState} onRecommend={onRecommend}
         onFinish={() => go({ view: "overview" })} onOpenStudio={() => go({ view: "studio" })}
       />

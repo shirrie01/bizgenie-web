@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { buildSavePayload, channelState, confirmationReadiness, effectiveSector, formFromOnboarding, hasUnsavedChanges, isSeededDescription } from "./onboardingModel";
+import { MISSING_GUIDANCE, buildSavePayload, channelState, confirmationReadiness, effectiveSector, formFromOnboarding, hasUnsavedChanges, isBareUrl, isNotADescription, isSeededDescription } from "./onboardingModel";
 
 const SAVED = (over = {}) => ({ contract_version: "workspace-onboarding.v1", version: 2, status: "in_progress", sector: { key: null, source: null }, industry_text: null, channels: { values: [], source: null }, current_step: null, draft: {}, ...over });
 const FORM = (over = {}) => ({ sectorChoice: "", industryText: "", businessName: "", description: "", channels: [], draft: {}, ...over });
@@ -131,7 +131,7 @@ describe("hasUnsavedChanges", () => {
 describe("confirmation readiness", () => {
   const ok = { onboarding: SAVED({ sector: { key: "perfume", source: "customer" }, channels: { values: ["email"], source: "customer" } }), brain: { name: "Maison", identity: { description: "A perfume house." } }, brandNamePlaceholder: false };
   it("is ready only from saved sector, saved channels, a backend-confirmed name and a written description", () => {
-    expect(confirmationReadiness(ok)).toEqual({ ready: true, missing: [] });
+    expect(confirmationReadiness(ok)).toMatchObject({ ready: true, missing: [], paths: [] });
   });
   it("is not ready when any one of them is missing, unknown or seeded", () => {
     expect(confirmationReadiness({ ...ok, onboarding: SAVED({ channels: ok.onboarding.channels }) }).missing).toEqual(["Save your sector."]);
@@ -141,6 +141,29 @@ describe("confirmation readiness", () => {
     expect(confirmationReadiness({ ...ok, brain: { name: "Maison", identity: { description: "Customer-provided website or profile: https://x.test" } } }).missing[0]).toMatch(/website address is not a description/i);
     expect(confirmationReadiness({ ...ok, brain: null }).ready).toBe(false);
     expect(confirmationReadiness({ onboarding: null, brain: null, brandNamePlaceholder: null }).missing).toHaveLength(4);
+  });
+  it("also refuses a description that is only a web address, as the hardened API does", () => {
+    const brain = { name: "Maison", identity: { description: "https://maison.example/about" } };
+    const r = confirmationReadiness({ ...ok, brain });
+    expect(r.ready).toBe(false);
+    expect(r.paths).toEqual(["description"]);
+    expect(isBareUrl("www.maison.example")).toBe(true);
+    expect(isBareUrl("Visit https://maison.example for more")).toBe(false);
+    expect(isNotADescription("  ")).toBe(true);
+    expect(isNotADescription("We make perfume.")).toBe(false);
+  });
+  it("keeps Confirm closed when the SERVER says something is missing, and never lists a path twice", () => {
+    const onboarding = { ...ok.onboarding, completeness: { sector: true, channels: true, ready_to_complete: false, missing: ["business_name", "description"] } };
+    const r = confirmationReadiness({ ...ok, onboarding });
+    expect(r.ready).toBe(false);
+    expect(r.paths).toEqual(["business_name", "description"]);
+    expect(r.missing).toEqual([MISSING_GUIDANCE.business_name.text, MISSING_GUIDANCE.description.text]);
+    const both = confirmationReadiness({ ...ok, onboarding, brain: { name: "", identity: { description: "" } }, brandNamePlaceholder: true });
+    expect(both.paths).toEqual(["business_name", "description"]);
+    expect(both.missing).toHaveLength(2);
+  });
+  it("has guidance for every path the API can list, each pointing at a real step", () => {
+    for (const path of ["sector_key", "channels", "business_name", "description"]) expect(MISSING_GUIDANCE[path].step).toBeGreaterThanOrEqual(1);
   });
   it("recognises the exact text bootstrap seeds", () => {
     expect(isSeededDescription("Customer-provided website or profile: https://example.test")).toBe(true);

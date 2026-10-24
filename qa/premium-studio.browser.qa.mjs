@@ -22,7 +22,7 @@ const onboardingDoc = (over = {}) => ({ contract_version: 'workspace-onboarding.
 const NOT_STARTED = onboardingDoc({ version: 0, status: 'not_started', sector: { key: null, source: null }, industry_text: null, channels: { values: [], source: null }, current_step: null, completed_at: null, updated_at: null });
 const camp = (version, items, workflow = 'draft') => ({ campaign_id: CID, tenant_id: 't', project_id: 'p', brand_id: 'b', name: 'Lease Enquiry Campaign', version, items: items ? [{ content_item_id: 'c1', name: 'Offer announcement', format: 'text', variants: [{ variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow, ...(workflow !== 'draft' ? { current_revision_id: 'rev-1', current_content: 'Server persisted review copy' } : {}) }] }] : [] });
 
-async function setup(page, { scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false } = {}) {
+async function setup(page, { scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false, role = null, lostAck = false, putIncomplete = null, putForbidden = false } = {}) {
   const log = { calls: [], errors: [], puts: [], doc: onboarding };
   page.on('pageerror', (e) => log.errors.push(e.message));
   if (!signedOut) await page.addInitScript(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(scoped)]);
@@ -37,7 +37,11 @@ async function setup(page, { scoped = true, signedOut = false, brainDoc = brain(
       if (m === 'GET') return onboardingGetStatus === 200 ? json({ status: 'ready', onboarding: log.doc, brand_name_placeholder: placeholder }) : json({ status: 'failed', error: { code: 'ONBOARDING_UNAVAILABLE', message: 'x' } }, onboardingGetStatus);
       if (m === 'PUT') {
         const b = JSON.parse(req.postData()); log.puts.push(b);
+        if (putForbidden) return json({ status: 'failed', error: { code: 'WORKSPACE_NOT_AUTHORIZED', message: 'Workspace selection is not authorized' } }, 403);
+        if (putIncomplete) return json({ status: 'failed', error: { code: 'ONBOARDING_INCOMPLETE', message: 'x', details: putIncomplete.map((path) => ({ path, code: 'required', message: 'Required' })) } }, 422);
         if (onboardingPutStatus !== 200) return json({ status: 'failed', error: { code: 'ONBOARDING_UNAVAILABLE', message: 'x' } }, onboardingPutStatus);
+        const sig = JSON.stringify({ ...b, idempotency_key: undefined });
+        if (log.lastKey === b.idempotency_key && log.lastSig === sig) return json({ status: 'saved', replayed: true, onboarding: log.doc, brand_name_placeholder: placeholder });
         if (b.expected_version !== log.doc.version) return json({ status: 'failed', error: { code: 'VERSION_CONFLICT', message: 'x', details: { current_version: log.doc.version } } }, 409);
         const d = { ...log.doc, sector: { ...log.doc.sector }, channels: { ...log.doc.channels }, draft: { ...log.doc.draft } };
         if (b.sector_key !== undefined) d.sector = b.sector_key === null ? { key: null, source: null } : { key: b.sector_key, source: b.sector_source || 'customer' };
@@ -47,14 +51,16 @@ async function setup(page, { scoped = true, signedOut = false, brainDoc = brain(
         for (const [k, v] of Object.entries(b.draft || {})) { if (v === null) delete d.draft[k]; else d.draft[k] = v; }
         d.status = b.complete === true ? 'completed' : b.complete === false ? 'in_progress' : (d.status === 'not_started' ? 'in_progress' : d.status);
         d.completed_at = d.status === 'completed' ? '2026-10-23T11:00:00.000Z' : null;
-        d.version = log.doc.version + 1; log.doc = d;
+        d.version = log.doc.version + 1; log.doc = d; log.lastKey = b.idempotency_key; log.lastSig = sig;
+        // A lost acknowledgement: the write is stored, but the first response is a 503.
+        if (lostAck && log.puts.length === 1) return json({ status: 'failed', error: { code: 'ONBOARDING_UNAVAILABLE', message: 'x' } }, 503);
         return json({ status: 'saved', replayed: false, onboarding: d, brand_name_placeholder: placeholder });
       }
     }
     if (u.pathname.endsWith('/brand-brain') && m === 'GET') return brainStatus === 200 ? json({ status: 'ready', brand_brain: brainDoc }) : json({}, brainStatus);
     if (u.pathname.endsWith('/brand-brain') && m === 'PUT') { const b = JSON.parse(req.postData()); brainDoc = { ...b, brand_id: 'b', project_id: 'p', metadata: { version: 2, status: 'draft' } }; return json({ status: 'ready', brand_brain: brainDoc }); }
     if (u.pathname === '/customer/campaigns' && m === 'GET') return json({ campaigns: [] });
-    if (u.pathname === '/customer/workspace') return json({ status: 'missing_workspace', workspace: null });
+    if (u.pathname === '/customer/workspace') return role ? json({ status: 'ready', workspace: { tenant_id: 't', tenant_name: 'T', project_id: 'p', project_name: 'P', brand_id: 'b', brand_name: 'B', brand_status: 'approved', membership_role: role } }) : json({ status: 'missing_workspace', workspace: null });
     if (u.pathname.endsWith('/workspace/bootstrap')) { brainDoc = brain(JSON.parse(req.postData()).business_name); await page.evaluate(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(true)]); return json({ status: 'ready', workspace: { tenant_id: 't' }, requires_session_refresh: false }, 201); }
     if (u.pathname.endsWith('/campaign-recommendations')) return json({ recommendation: rec });
     if (u.pathname.endsWith('/campaigns') && m === 'POST') { items = 0; return json({ result: { campaign_id: CID, campaign_version: 1 }, campaign: camp(1, 0) }); }
@@ -254,12 +260,13 @@ test('Save and exit: saves exactly what changed, opens the workspace, and the ne
   await expect(page.getByRole('button', { name: /^Email/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('unavailable storage (503 on save) says NOT saved, keeps the answers and never navigates away', async ({ page }) => {
+test('unavailable storage (503 on save) says "not confirmed" (never "NOT saved"), keeps the answers and never navigates away', async ({ page }) => {
   const log = await setup(page, { brainDoc: brain('Maison Aurelle'), onboarding: onboardingDoc({ version: 1, status: 'in_progress', completed_at: null, current_step: 2, sector: { key: null, source: null }, channels: { values: [], source: null } }), onboardingPutStatus: 503 });
   await page.goto('/');
   await page.getByLabel(/describe what the business does/i).fill('Small-batch perfume house.');
   await page.getByRole('button', { name: /save and exit/i }).click();
-  await expect(page.getByRole('alert')).toContainText(/NOT saved/);
+  await expect(page.getByRole('alert')).toContainText('Save not confirmed — your changes may already have been saved.');
+  await expect(page.getByRole('alert')).not.toContainText(/NOT saved/);
   await expect(page.getByLabel(/describe what the business does/i)).toHaveValue('Small-batch perfume house.');
   await expect(page.getByRole('heading', { name: /what does your business do/i })).toBeVisible();
   await scan(page, 'save-unavailable');
@@ -308,4 +315,59 @@ test('keyboard: Save progress and Save and exit are reachable and announce their
   await page.getByRole('button', { name: /^save progress$/i }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('status').filter({ hasText: /setup progress saved\. you can leave/i })).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// BG-STUDIO-011-FE contract alignment with the hardened API (bizgenie-api PR #213 at 120a874). MOCKED, not staging.
+// ---------------------------------------------------------------------------------------------------------------
+test('lost acknowledgement: the save committed but answered 503, so the page says "not confirmed" and the retry replays the same request', async ({ page }) => {
+  const log = await setup(page, { brainDoc: brain('Maison Aurelle'), lostAck: true, onboarding: onboardingDoc({ version: 1, status: 'in_progress', completed_at: null, current_step: 2, sector: { key: null, source: null }, channels: { values: [], source: null } }) });
+  await page.goto('/');
+  await page.getByLabel(/describe what the business does/i).fill('Small-batch perfume house.');
+  await page.getByRole('button', { name: /^save progress$/i }).click();
+  const alert = page.getByRole('alert').filter({ hasText: 'Save not confirmed — your changes may already have been saved.' });
+  await expect(alert).toBeVisible();
+  await expect(page.getByRole('alert')).not.toContainText(/NOT saved/);
+  await expect(page.getByLabel(/describe what the business does/i)).toHaveValue('Small-batch perfume house.');
+  expect(log.doc.version).toBe(2); // it WAS stored
+  await scan(page, 'save-not-confirmed');
+  await page.getByRole('button', { name: /^save progress$/i }).click();
+  await expect(page.getByText(/setup progress saved\. you can leave/i)).toBeVisible();
+  expect(log.puts).toHaveLength(2);
+  expect(log.puts[1]).toEqual(log.puts[0]); // same key and same body
+  expect(log.doc.version).toBe(2); // stored once
+});
+
+test('incomplete business setup (422): field-specific guidance, nothing marked confirmed', async ({ page }) => {
+  const log = await setup(page, { brainDoc: brain('Maison Aurelle', 'A small-batch perfume house.'), putIncomplete: ['business_name', 'description'], onboarding: onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 5, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] } }) });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /your brand brain/i })).toBeVisible();
+  await page.getByRole('button', { name: /confirm setup/i }).click();
+  const list = page.getByRole('list', { name: /what is still needed/i });
+  await expect(list).toContainText(/business name/i);
+  await expect(list).toContainText(/a website address alone is not a description/i);
+  await expect(page.getByText(/you confirmed your setup/i)).toHaveCount(0);
+  expect(log.doc.status).toBe('in_progress');
+  await scan(page, 'confirm-incomplete');
+});
+
+test('read-only member: can read setup, cannot save or confirm, and is told why', async ({ page }) => {
+  const log = await setup(page, { brainDoc: brain('Maison Aurelle', 'A small-batch perfume house.'), role: 'member', onboarding: onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 4, channels: { values: ['email'], source: 'customer' } }) });
+  await page.goto('/');
+  await expect(page.getByText(/view only\. your role in this workspace is member/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Email/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /^save progress$/i })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^save and exit$/i })).toBeDisabled();
+  await scan(page, 'read-only-member');
+  expect(log.puts).toEqual([]);
+});
+
+test('a refused write (403) on an unknown role explains itself and switches to view only once the role is read', async ({ page }) => {
+  const log = await setup(page, { brainDoc: brain('Maison Aurelle'), putForbidden: true, onboarding: onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 4, channels: { values: [], source: null } }) });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Email/ }).click();
+  await page.getByRole('button', { name: /^save progress$/i }).click();
+  await expect(page.getByRole('alert')).toContainText(/only the workspace owner can save or confirm setup, or your access to this workspace has ended/i);
+  expect(log.puts).toHaveLength(1);
+  await scan(page, 'write-refused');
 });
