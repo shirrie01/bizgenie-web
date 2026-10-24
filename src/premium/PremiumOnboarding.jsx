@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { SECTORS, sectorOptions } from "./sectors";
 import { SOURCE_LABEL } from "./workspaceModel";
+import ProvenanceLegend from "./ProvenanceLegend";
 import { CHANNEL_LABELS, confirmationReadiness, effectiveSector, isSeededDescription } from "./onboardingModel";
 
 // Production onboarding (BG-STUDIO-008-FE, persistent since BG-STUDIO-010-FE). Each step says exactly what it saves and where:
@@ -35,7 +36,7 @@ function Field({ id, label, hint, children }) {
 
 function Truth({ children }) { return <p className="ps-truth">{children}</p>; }
 
-export default function PremiumOnboarding({ stage, setStage, draft, setField, channels, toggleChannel, session, brainState, onLoadBrain, onSave, onBootstrap, onRecommend, recommendationState, onFinish, onOpenStudio, onboardingState, onLoadOnboarding, onSaveProgress, dirty = false }) {
+export default function PremiumOnboarding({ stage, setStage, draft, setField, channels, toggleChannel, session, brainState, onLoadBrain, onSave, onBootstrap, onRecommend, recommendationState, onFinish, onOpenStudio, onboardingState, onLoadOnboarding, onSaveProgress, dirty = false, onChooseWorkspace }) {
   const headingRef = useRef(null);
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -161,6 +162,9 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         </select>
       </Field>
       <p className="ps-sector-status" role="status">Sector: <strong>{SECTORS[sector.key].label}</strong> · {sectorLabel}</p>
+      {(sector.source === "inferred" || sector.source === "saved_inferred") && (
+        <p className="ps-hint">BizGenie worked this out from your words. It needs your confirmation before it counts as your answer. <button type="button" className="secondary" onClick={() => setField("sectorChoice", sector.key)}>Yes, {SECTORS[sector.key].label} is right</button></p>
+      )}
       <Field id="ps-description" label="Describe what the business does" hint="Saved to your Brand Brain when you press Save. A website address alone is not a description.">
         <textarea id="ps-description" rows={4} value={draft.description} onChange={(e) => setField("description", e.target.value)} aria-invalid={errors.description ? "true" : undefined} />
         {errors.description && <p className="error" role="alert">{errors.description}</p>}
@@ -251,12 +255,15 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         {STAGES.map((s, i) => (<li key={s.id} aria-current={i === stage ? "step" : undefined} className={i < stage ? "done" : i === stage ? "current" : ""}><span className="ps-step-n">{i + 1}</span><span className="ps-step-l">{s.label}</span></li>))}
       </ol>
       <div className="ps-stage">
+        <ProvenanceLegend />
         {body}
         {message.text && <p className={message.kind === "ok" ? "ps-ok" : "error"} role={message.kind === "ok" ? "status" : "alert"}>{message.text}</p>}
         {!scopeMissing && (storage === "unavailable" || storage === "error") && (
           <div className="ps-banner" role="alert">
             <p>{onboardingState.error || "Your saved setup could not be loaded."} {storage === "unavailable" ? "You can keep going, but your sector, channels and progress will not be remembered." : ""}</p>
-            <button type="button" className="secondary" onClick={onLoadOnboarding}>Try again</button>
+            {onboardingState.errorCode === "WORKSPACE_NOT_AUTHORIZED" && onChooseWorkspace
+              ? <button type="button" className="ps-primary" onClick={onChooseWorkspace}>Choose a workspace</button>
+              : <button type="button" className="secondary" onClick={onLoadOnboarding}>Try again</button>}
           </div>
         )}
         {canSaveProgress && <p className="ps-hint" role="status" aria-live="polite" data-testid="ps-save-state">{dirty ? "You have changes that are not saved yet." : onboarding && onboarding.version > 0 ? `Setup progress saved (version ${onboarding.version}).` : "Nothing saved yet."}</p>}

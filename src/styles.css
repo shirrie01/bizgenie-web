@@ -209,3 +209,21 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-camp-list { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 10px; }
 .ps-camp-list li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
 .ps-camp-list small { color: #4b564f; }
+.ps-workspaces { max-width: 760px; }
+.ps-ws-list { list-style: none; margin: 16px 0; padding: 0; display: grid; gap: 12px; }
+.ps-ws-list li { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 16px 18px; background: #fff; border: 1px solid #d6dbd3; border-radius: 14px; }
+.ps-ws-list li.current { border-color: var(--ps-accent, #0b4943); box-shadow: inset 4px 0 0 var(--ps-accent, #0b4943); }
+.ps-ws-main { min-width: 0; flex: 1 1 220px; }
+.ps-ws-main h3 { margin: 0 0 4px; overflow-wrap: anywhere; }
+.ps-ws-meta { display: flex; gap: 8px 14px; flex-wrap: wrap; margin: 0; color: #3b463f; font-size: .9rem; }
+.ps-ws-flag { margin: 6px 0 0; font-size: .85rem; font-weight: 600; color: #1f5a38; }
+.ps-ws-flag.warn { color: #7a3a08; }
+.ps-switching { max-width: 640px; }
+.ps-legend { margin: 0 0 16px; font-size: .88rem; color: #3b463f; }
+.ps-legend summary { cursor: pointer; font-weight: 600; padding: 6px 0; min-height: 24px; }
+.ps-legend dl { margin: 8px 0 0; display: grid; gap: 8px; }
+.ps-legend dt { font-weight: 600; color: #17211c; }
+.ps-legend dd { margin: 0; }
+.ps-workspaces h2, .ps-stage h2 { width: fit-content; max-width: 100%; }
+.ps-workspaces h2:focus-visible, .ps-stage h2:focus-visible { outline: 3px solid #0b4943; outline-offset: 4px; border-radius: 4px; }
+@media (max-width: 480px) { .ps-nav button { padding: 8px 11px; font-size: .86rem; } }

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import PremiumOnboarding, { STAGES } from "./PremiumOnboarding";
 import PremiumWorkspace from "./PremiumWorkspace";
+import PremiumWorkspaces from "./PremiumWorkspaces";
 import { buildWorkspaceModel } from "./workspaceModel";
 import { buildSavePayload, formFromOnboarding, hasUnsavedChanges, isSeededDescription } from "./onboardingModel";
 
@@ -21,11 +22,12 @@ const VIEWS = [
   ["calendar", "Calendar"],
   ["brand", "Brand"],
   ["account", "Plan and billing"],
+  ["workspaces", "Workspaces"],
 ];
 
 const EMPTY_DRAFT = { businessName: "", website: "", challenge: "", industryText: "", sectorChoice: "", description: "", audience: "", cta: "", goal: "" };
 
-export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
+export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, workspaceState, onLoadWorkspaces, onSelectWorkspace, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
   const [view, setView] = useState(null); // null until the starting point has been decided
   const [stage, setStage] = useState(0);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -99,7 +101,12 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
   // Decide the starting view exactly once, from saved data only. Resume at the saved step when setup is unfinished.
   useEffect(() => {
     if (view !== null) return;
-    if (scopeMissing) { setView("onboarding"); setStage(0); return; }
+    if (scopeMissing) {
+      // A customer with more than one workspace must choose; wait for the answer before deciding anything.
+      if (workspaceState.status === "idle" || workspaceState.status === "loading") return;
+      if (workspaceState.status === "ready" && (workspaceState.selectionRequired || workspaceState.notice)) { setView("workspaces"); return; }
+      setView("onboarding"); setStage(0); return;
+    }
     if (!ready || !prefilled) return;
     if (brainState.status === "error" || onboardingState.status !== "ready") { setView("overview"); return; }
     if (model.profile.complete) { setView("overview"); return; }
@@ -107,7 +114,12 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
     const resume = saved.status === "in_progress" && Number.isInteger(saved.current_step) && saved.current_step >= 0 && saved.current_step < STAGES.length ? saved.current_step : null;
     setView("onboarding");
     setStage(resume !== null ? resume : model.brand.source === "backend" ? 2 : 1);
-  }, [view, scopeMissing, ready, prefilled, brainState.status, onboardingState.status, onboardingState.onboarding, model.profile.complete, model.brand.source]);
+  }, [view, scopeMissing, workspaceState.status, workspaceState.selectionRequired, workspaceState.notice, ready, prefilled, brainState.status, onboardingState.status, onboardingState.onboarding, model.profile.complete, model.brand.source]);
+
+  // The customer must choose (discovered while creating a workspace): go to the chooser.
+  useEffect(() => {
+    if (scopeMissing && view === "onboarding" && workspaceState.status === "ready" && workspaceState.selectionRequired) setView("workspaces");
+  }, [scopeMissing, view, workspaceState.status, workspaceState.selectionRequired]);
 
   // Save setup progress (and optionally confirm completion). Returns { ok, message, noop }.
   const saveProgress = useCallback(async ({ complete } = {}) => {
@@ -138,7 +150,7 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
       <PremiumOnboarding
         stage={stage} setStage={setStage} draft={draft} setField={setField} channels={channels} toggleChannel={toggleChannel}
         session={session} brainState={brainState} onLoadBrain={onLoadBrain} onSave={onSaveBrain} onBootstrap={onBootstrap}
-        onboardingState={onboardingState} onLoadOnboarding={onLoadOnboarding} onSaveProgress={saveProgress} dirty={dirty}
+        onboardingState={onboardingState} onLoadOnboarding={onLoadOnboarding} onSaveProgress={saveProgress} dirty={dirty} onChooseWorkspace={() => go({ view: "workspaces" })}
         recommendationState={recommendationState} onRecommend={onRecommend}
         onFinish={() => go({ view: "overview" })} onOpenStudio={() => go({ view: "studio" })}
       />
@@ -167,6 +179,8 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
         </>)}
       </section>
     );
+  } else if (view === "workspaces") {
+    content = <PremiumWorkspaces session={session} workspaceState={workspaceState} onLoad={onLoadWorkspaces} onSelect={onSelectWorkspace} unsavedAnswers={dirty} required={scopeMissing} />;
   } else if (view === "brand") {
     content = sections.brand;
   } else if (view === "account") {

@@ -766,7 +766,7 @@ describe("persistent onboarding: Save progress, Save and exit, and confirmation"
     expect(Object.keys(body).sort()).toEqual(["complete", "expected_version", "idempotency_key"]);
     fireEvent.click(await screen.findByRole("button", { name: "Overview" }));
     expect(await screen.findByRole("heading", { name: "Welcome back, Maison Aurelle." })).toBeInTheDocument();
-    expect(screen.getByText("Confirmed by you and saved")).toBeInTheDocument();
+    expect(screen.getByText(/Setup confirmed by you\. 2 details are still not provided\./)).toBeInTheDocument();
   });
 
   it("Confirm setup is blocked when the backend flags the name as a placeholder, or typing is unsaved", async () => {
