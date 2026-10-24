@@ -70,6 +70,20 @@ I read the full pass listing for one viewport of each suite and the step timings
 
 
 
+## 3c. Contract alignment with the hardened API (API PR #213 at `120a874dfa02313a8c28dad82ddb6582f0065469`)
+The corrections live on the #48 onboarding stack (commit `40f41ff3b1ba3622a0f3419aaf769627bb6d325a`; see section 6 of `BG_STUDIO_010_FE_REPORT.md`) and were merged into this branch as `6ee493b1dd68461a48254a245338a0a6186541d5`. No endpoint, envelope, CAS or idempotency change; no backend change; Architecture A is canonical (DEC-020 / LOCK-018).
+
+- **503/network/timeout on a save:** "Save not confirmed — your changes may already have been saved." Answers stay; retry sends the same key and body; "Check what was saved" re-reads the record.
+- **422 incomplete setup:** field-by-field list (business name, description, sector, channels) with a link to the fixing step; nothing marked confirmed.
+- **403 on a write:** owner-only. A known non-owner (role from `GET /customer/workspace`) is view-only with Save progress, Save and exit and Confirm setup disabled; reading still works. A 403 on read still sends the customer to the chooser. The workspace chooser, `ProvenanceLegend` and the `MediaPreview` per-URL fix are unchanged.
+
+**Evidence on `6ee493b` (mocked API; not staging):**
+- Local: Vitest 385/385 (25 files); build passes; premium browser QA 30/30 at each of 1440x900, 768x1024, 390x844 and 320x568.
+- CI: isolated workflow run 26 (`40103742885`), `workflow_dispatch` once on this exact SHA: **13/13 jobs concluded success** (unit-build; premium-browser x4; app-a11y-browser x4; preview-browser x4). The premium-browser jobs ran the Playwright step (read: 30 passed at 390x844). Guard steps named "Skip when this ref has no ... checks" are no-op checks that succeeded; the Playwright steps ran.
+- Not re-run on the merged tree: the flag-off DOM-equivalence script (flag-off behaviour is covered by the unit tests and CI only).
+
+**Limits:** the role comes from a separate list request and can be stale (the server decides); a 403 on write cannot distinguish "member" from "access ended"; the 503 uncertainty cannot be removed, only handled safely; Brand Brain save permissions are a separate, unchanged backend policy, so "Save to Brand Brain" is not disabled for members; the hardened schema migration is not applied anywhere, so nothing here has met a real API.
+
 ## 4. Founder walkthrough (all screens mocked)
 1. **Two workspaces, none chosen** (`chooser-required`): a signed-in customer with two authorised workspaces sees "Choose a workspace… BizGenie will not pick one for you." Nothing is loaded yet.
 2. **Choose** (`workspace-after-select`): pressing "Use Brookside Aesthetics" shows "Switching…" with nothing from any workspace, then that workspace only (its name, sector and data).
