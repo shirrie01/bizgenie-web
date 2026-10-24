@@ -86,6 +86,9 @@ The corrections live on the #48 onboarding stack (commit `40f41ff3b1ba3622a0f341
 
 **Founder acceptance preparation (BG-STUDIO-013-FE):** the walkthrough, the mock-versus-staging split and the unrun evidence checklist are in `docs/studio/BG_STUDIO_013_FE_FOUNDER_ACCEPTANCE.md`. Nothing there is accepted.
 
+## 3d. Brand Brain identity ownership (DEC-021 / DEC-022; API draft PR #214 at `2319e5e8`)
+The #48 stack now keeps the Brand Brain business name and description owner-only in the Premium Studio and tells a refused (403), conflicting (409) and unconfirmed (5xx, dropped connection, timeout) Brand Brain save apart, following #214's code and report (details and limits in `BG_STUDIO_010_FE_REPORT.md` section 7 and `BG_STUDIO_013_FE_FOUNDER_ACCEPTANCE.md` section 13). Merged here without touching the chooser, `ProvenanceLegend` or the `MediaPreview` fix. Mocked evidence on the merged tree: Vitest 403/403, browser QA 33/33 at each of 1440, 768, 390 and 320 (with axe), flag-off DOM identical in 7/7 states. CI for the exact head is recorded in the PR comment.
+
 ## 4. Founder walkthrough (all screens mocked)
 1. **Two workspaces, none chosen** (`chooser-required`): a signed-in customer with two authorised workspaces sees "Choose a workspace… BizGenie will not pick one for you." Nothing is loaded yet.
 2. **Choose** (`workspace-after-select`): pressing "Use Brookside Aesthetics" shows "Switching…" with nothing from any workspace, then that workspace only (its name, sector and data).
