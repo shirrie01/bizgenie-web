@@ -244,14 +244,14 @@ Backend PR #214 (`bg-studio-014-identity-write-policy`, base #213) is at `2319e5
 ### 13.1 What #214 answers (read from its code, tests and report; not assumed)
 | Question | Answer in `2319e5e8` | Status |
 |---|---|---|
-| Q1 unchanged repeat | A member's full-payload PUT that repeats `name` and `identity.description` **exactly** passes (HTTP and PostgreSQL tests). The comparison is strict equality: **no trimming**. Omitting an existing description counts as removal and is refused. | Answered by code; Codex confirmation outstanding. Frontend repeats stored text byte for byte. |
+| Q1 unchanged repeat | A member's full-payload PUT that repeats the stored `name` and `identity.description` passes (HTTP and PostgreSQL tests). **Correction (Codex written answer, #214 `51e8ca4`): the backend trims what it receives and then compares exactly with the stored text, so stored text with spaces at its edges can never be repeated.** Omitting an existing description counts as removal and is refused. | **Answered in writing.** The frontend repeats the latest stored values and, for a member whose stored name or description has edge spaces, says only the owner can correct it and sends nothing. |
 | Q2 denied shape | `403 BRAND_BRAIN_WRITE_FORBIDDEN`, body `{status:"failed", error:{code, message}}`, **atomic** (no silent field dropping), no details path. | Answered by code. |
 | Q3 non-member / revoked | The **same** 403 code (previously a 400 validation error). The code cannot tell "owner-only" from "no longer a member". | Answered by code. The app re-reads role and Brand Brain to say what it can. |
 | Q4 capability hint | None. The role still comes from the workspace list. | Answered: no hint. |
 | Q5 fields in scope | `name` and `identity.description` only; other `identity.*` fields remain member-editable. | Answered by code. |
-| Q6 concurrency | No client version token. `409 BRAND_BRAIN_VERSION_CONFLICT` only for a change between the server's read and its locked commit. A stale full document from an **owner** still overwrites other fields (last write wins), as before. | Answered; accepted limit to be confirmed. |
-| Q7 onboarding interplay | Not addressed in #214. | **Open; no frontend change made.** |
-| Q8 admin / customer contract | Admin route changes are separate from the customer route; owner bootstrap unchanged (`ON CONFLICT DO NOTHING`); the only customer-visible change is 400 to 403 for an unauthorised membership. | Answered by code; written confirmation outstanding. |
+| Q6 concurrency | No client version token. `409 BRAND_BRAIN_VERSION_CONFLICT` (no details) only for a change between the server's read and its locked commit; **sequential stale client payloads are not detected; a lost-response retry is not exactly-once** (Codex written answer). | **Answered in writing.** Frontend mitigation implemented (BG-STUDIO-015): read the latest version and send only edited fields. The backend requirement (expected version or ETag) is open, see the BG-STUDIO-015 report, section H. |
+| Q7 onboarding interplay | Onboarding rechecks remain required and unchanged; completion is not an immutable freeze (Codex written answer). | **Answered in writing.** No frontend change needed; the screen re-reads saved facts. |
+| Q8 admin / customer contract | Admin route separate; bootstrap unchanged; **customer-visible changes also include the 403, 409 and 400-to-403 changes of Q2, Q3 and Q6**, so "only member denial changes" was too narrow (Codex written answer). | **Answered in writing.** The app calls no admin route (source search). |
 
 ### 13.2 What the frontend now does (flag-on Premium Studio only; PRs #48 and #49)
 - A **known non-owner** sees the business name and description **read-only** with the reason, and the button reads "Save who it serves and customer action". Its save sends the stored name and description unchanged (byte for byte) and changes only audience and customer action. Owners and unknown roles are unchanged; an unknown role is never guessed.
@@ -267,8 +267,15 @@ Exact SHAs, test counts and CI are recorded in the PR comment that accompanies t
 F-08d (screens and backend-owned tests) and F-08e are unchanged in meaning and still **NOT RUN**: they need a real target with #214 deployed, which is blocked while staging is RED. New founder-visible checks to add to F-08e on a real target: the member screen shows the name and description read-only; a forced identity change from a test client is refused with the 403 code above; an owner edit in another tab followed by a member save shows the "changed by the workspace owner" message, not a generic refusal.
 
 ### 13.5 Remaining questions and risks
-1. Q7 (onboarding interplay) and written confirmation of the Q1 to Q8 answers above.
+1. Written answers to Q1 to Q8 now exist (Codex, #214 `51e8ca4`, a documentation-only commit with no CI result of its own); open items are the backend requirements R1 to R4 in `BG_STUDIO_015_FE_REPORT.md`, section H.
 2. The same 403 code for "owner-only" and "no longer a member" stays ambiguous; the app says what it can and re-reads the role.
 3. A known member whose role is stale (promoted or demoted since the list was read) is told wrongly until the next role read; the server stays the authority.
 4. An owner's save from a stale screen overwrites other people's edits to unrelated fields (no compare-and-set). Not introduced here; unchanged.
 5. The flag-off production Brand Brain panel (a raw JSON editor) shows only a generic failure for a refused member edit. Not changed, because the flag-off screen must stay identical; explaining it there needs a separate founder approval.
+
+## 14. BG-STUDIO-015-FE update (24 Oct 2026)
+The deep product audit, its findings, corrections, test evidence and the F-01 to F-12 readiness table are in `BG_STUDIO_015_FE_REPORT.md`. Changes to this pack:
+- **Q1 to Q8 are answered in writing** (section 13.1 updated). Material corrections to earlier statements: the backend trims input before an exact comparison (so "byte for byte" held only for already-trimmed data), and the customer-visible effects of the admin restriction are wider than first described.
+- **F-08 now also covers:** the Premium Brand tab (owner-only name and description, member-editable rest), edited-fields-only saves applied to the latest stored version, and the member-with-edge-spaces case. The F-08d and F-08e evidence rows keep their meaning and remain **NOT RUN** on a real target.
+- **New F-row guidance:** F-05 (no leakage) and F-12 (revocation) gain mocked in-flight-save and double-select cases; F-09 (real devices) stays not started.
+- **Unchanged:** staging RED, the prerequisites in section 10, and every prohibition. A tab that behaves correctly against mocks is not evidence about the real API.
