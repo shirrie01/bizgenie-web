@@ -22,19 +22,19 @@ const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers
 
 const BUSINESSES = [
   { id: 'leasing', name: 'Northgate Vehicle Leasing', description: 'We lease cars and vans to small businesses.', sector: 'leasing', label: 'Vehicle leasing' },
-  { id: 'prof', name: 'Ashdown & Pryce Chartered Accountants', description: 'Tax and advisory services for owner-managed businesses.', sector: 'neutral', label: 'Not specified' },
+  { id: 'prof', name: 'Ashdown & Pryce Chartered Accountants', description: 'Tax and advisory services for owner-managed businesses.', sector: 'neutral', shown: 'professional', label: 'Professional services' },
   { id: 'aesthetics', name: 'Clearskin Studio', description: 'A skincare and aesthetics clinic offering facials and consultations.', sector: 'aesthetics', label: 'Aesthetics clinic' },
   { id: 'drinks', name: 'Fonzo', description: 'Soft drinks for everyone.', sector: 'beverage', label: 'Soft drinks' },
 ];
 const SECTOR_TERMS = {
   leasing: [/\blease\b/i, /\bleasing\b/i], aesthetics: [/\bclinic\b/i, /\bfacials?\b/i, /\bskincare\b/i],
-  beverage: [/\bflavours?\b/i, /\bcans\b/i, /\bsoft drinks?\b/i], neutral: [],
+  beverage: [/\bflavours?\b/i, /\bcans\b/i, /\bsoft drinks?\b/i], neutral: [], professional: [/\badvisory\b/i, /\bexpertise\b/i],
 };
 
 const workspace = (b) => ({ tenant_id: `t-${b.id}`, tenant_name: `${b.name} group`, project_id: `p-${b.id}`, project_name: `${b.name} campaigns`, brand_id: `b-${b.id}`, brand_name: b.name, brand_status: 'approved', membership_role: 'owner' });
 const onboardingDoc = (b, w) => ({
   contract_version: 'workspace-onboarding.v1', tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id, version: 3, status: 'completed',
-  sector: { key: b.sector, source: 'customer' }, industry_text: null, channels: { values: ['email'], source: 'customer' }, current_step: 6, draft: {},
+  sector: { key: b.sector, source: b.shown ? 'inferred' : 'customer' }, industry_text: null, channels: { values: ['email'], source: 'customer' }, current_step: 6, draft: {},
   completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] }, completed_at: '2026-10-24T10:00:00.000Z', updated_at: '2026-10-24T10:00:00.000Z',
 });
 const session = (w) => JSON.stringify({ access_token: `tok-${w.brand_id}`, refresh_token: 'refresh-x', token_type: 'bearer', expires_in: 99999, expires_at: 4102444800, user: { id: 'u', app_metadata: { tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id } } });
@@ -72,11 +72,17 @@ for (const b of BUSINESSES) {
       for (const o of others) {
         expect(text, `${b.id}/${view} must not mention ${o.name}`).not.toContain(o.name);
         expect(text, `${b.id}/${view} must not repeat ${o.id}'s description`).not.toContain(o.description);
-        for (const re of SECTOR_TERMS[o.sector]) {
+        for (const re of SECTOR_TERMS[o.shown || o.sector]) {
           // another sector's vocabulary must not appear, unless it is this business's own words
           const own = `${b.name} ${b.description}`;
           if (!re.test(own)) expect(text, `${b.id}/${view} must not use ${o.sector} language ${re}`).not.toMatch(re);
         }
+      }
+      if (view === 'Overview' && b.shown) {
+        // Professional services (DEC-023): own guidance, labelled as worked out from the customer's words and not saved as such.
+        await expect(page.locator('.ps-chip')).toHaveText(b.label);
+        expect(text).toMatch(/show your expertise/i);
+        expect(text).toMatch(/inferred from what you typed/i);
       }
       if (b.name !== 'Fonzo') expect(text, `${b.id}/${view}`).not.toMatch(/fonzo|bubblo/i);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);

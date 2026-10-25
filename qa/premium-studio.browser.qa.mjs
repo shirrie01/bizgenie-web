@@ -107,7 +107,8 @@ for (const [slug, name, description, label, key] of [
   ['aesthetics', 'Clearskin Studio', 'An aesthetics clinic in Leeds.', 'Aesthetics clinic', 'aesthetics'],
   ['soft-drinks', 'Fonzo', 'Soft drinks for everyone.', 'Soft drinks & beverages', 'beverage'],
   ['charity', 'WOW Charity', 'We support local families.', 'Charity & community', 'charity'],
-  ['unknown', 'Harbour Partners', 'Business consulting.', 'Not specified', null],
+  ['professional', 'Harbour Partners', 'Business consulting.', 'Professional services', null],
+  ['unknown', 'Brightside Window Cleaning', 'Window cleaning for homes and shops.', 'Not specified', null],
 ]) {
   test(`workspace for ${name} follows its own sector`, async ({ page }) => {
     await setup(page, { brainDoc: brain(name, description), onboarding: onboardingDoc({ sector: key ? { key, source: 'inferred' } : { key: null, source: null }, industry_text: null }) });

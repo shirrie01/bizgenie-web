@@ -46,10 +46,10 @@ describe("checkout return billing truth", () => {
     render(<BillingPanel session={session} pathname="/" />);
 
     await waitFor(() =>
-      expect(screen.getByText(/Access entitlement found/i)).toBeTruthy()
+      expect(screen.getByText(/Standard plan · Active/)).toBeTruthy()
     );
 
-    expect(screen.getAllByText("60", { exact: true })).toHaveLength(2);
+    expect(screen.getAllByText("60", { selector: "dd" })).toHaveLength(2);
     expect(screen.queryByText("Continue to secure checkout")).toBeNull();
   });
 
@@ -81,21 +81,22 @@ describe("checkout return billing truth", () => {
   });
 
 
-  it("does not claim a payment succeeded when an existing entitlement is unlinked", async () => {
+  it("shows access, never a payment result, when returning from Stripe with an existing entitlement", async () => {
     readCustomerBillingState.mockResolvedValue({
       status: "ready",
       subscription: { plan_code: "standard", entitlement_status: "active", included_monthly_credit_grant: 60 },
       available_credits: 60,
     });
     render(<BillingPanel session={session} pathname="/billing/checkout/success" />);
-    await waitFor(() => expect(screen.getByText(/Access entitlement found — payment not verified/i)).toBeTruthy());
-    expect(screen.getByText(/does not by itself confirm a successful Stripe payment/i)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Standard plan · Active/)).toBeTruthy());
+    expect(screen.getByText(/not a payment receipt/i)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/payment (was )?(confirmed|successful|received)|you have paid/i);
     expect(screen.getAllByText("60", { exact: true })).toBeTruthy();
   });
   it("does not claim payment or grant when no entitlement exists", async () => {
     readCustomerBillingState.mockResolvedValue({ status: "not_subscribed", subscription: null });
     render(<BillingPanel session={session} pathname="/billing/checkout/success" />);
-    await waitFor(() => expect(screen.getByText("Payment is not confirmed yet.")).toBeTruthy());
-    expect(screen.queryByText(/Access entitlement found/i)).toBeNull();
+    await waitFor(() => expect(screen.getByText("Your plan is not active yet.")).toBeTruthy());
+    expect(screen.queryByText(/plan · Active/i)).toBeNull();
   });
 });

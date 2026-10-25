@@ -7,7 +7,10 @@
 //
 // The keyword rules deliberately mirror studio-preview/v3/industry-profiles.js; a parity test keeps them aligned.
 
-export const SECTOR_ORDER = ["leasing", "perfume", "aesthetics", "beverage", "charity", "takeaway"];
+import { isProfessionalSectorPersisted } from "./flag";
+
+// "professional" is last, so a business that matches a more specific sector (for example fleet consultancy) keeps that one.
+export const SECTOR_ORDER = ["leasing", "perfume", "aesthetics", "beverage", "charity", "takeaway", "professional"];
 
 const NEUTRAL_ANGLES = [
   { stage: "Awareness", text: "Introduce the business and who it is for." },
@@ -71,12 +74,24 @@ export const SECTORS = {
       { stage: "Action", text: "Make ordering direct and easy." },
     ],
   },
+  professional: {
+    key: "professional", label: "Professional services", short: "professional services", accent: "#2f4858",
+    keywords: /\b(accountants?|accountancy|chartered|bookkeep(ing|ers?)|tax|solicitors?|law firm|lawyers?|legal|consult(ing|ancy|ants?)|advis(ory|ers?|ors?)|architects?|surveyors?|recruit(ment|ers?)|financial planning|professional services)\b/i,
+    angles: [
+      { stage: "Awareness", text: "Explain who you help and which problems you solve, in plain language." },
+      { stage: "Trust", text: "Show your expertise with useful explanations and answers to common questions, citing only credentials you can evidence." },
+      { stage: "Action", text: "Invite an enquiry or an introductory conversation with a single clear next step." },
+    ],
+  },
 };
 
-export const sectorOptions = () => [
+// Whether the API accepts this sector today. "professional" only after the backend enum and constraint ship (see flag.js).
+export const isSectorPersistable = (key, env) => (key === "professional" ? isProfessionalSectorPersisted(env) : Boolean(SECTORS[key]));
+
+export const sectorOptions = (env) => [
   { value: "", label: "Work it out from what I have typed" },
   { value: "neutral", label: "Not specified" },
-  ...SECTOR_ORDER.map((key) => ({ value: key, label: SECTORS[key].label })),
+  ...SECTOR_ORDER.filter((key) => isSectorPersistable(key, env)).map((key) => ({ value: key, label: SECTORS[key].label })),
 ];
 
 const clean = (value) => String(value == null ? "" : value).replace(/\s+/g, " ").trim();
@@ -102,4 +117,5 @@ export const signatureTerms = (key) => ({
   beverage: ["drink", "drinks", "flavour"],
   charity: ["charity", "donate", "volunteer"],
   takeaway: ["takeaway", "cook", "ordering"],
+  professional: ["advisory", "expertise"],
 }[key] || []);

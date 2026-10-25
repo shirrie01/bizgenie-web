@@ -641,7 +641,7 @@ export default function App() {
       const to = new Date(now);
       to.setUTCDate(to.getUTCDate() + 90);
       const entries = await getCampaignCalendar({ accessToken: session.accessToken, session, campaign: campaignState.campaign, from: from.toISOString(), to: to.toISOString() });
-      setCalendarState({ status: "ready", entries, error: "" });
+      setCalendarState({ status: "ready", entries, error: "", window: { from: from.toISOString(), to: to.toISOString() } });
     } catch (error) {
       setCalendarState({ status: "error", entries: [], error: error.message });
     }

@@ -7,7 +7,7 @@
 //    the customer actually picked, and "inferred" only for a sector worked out from their own words.
 //  - An inferred value is never sent over a saved customer choice (the API would refuse it anyway).
 //  - A Brand Brain description that bootstrap seeded from a web address is NOT a description the customer wrote.
-import { SECTORS, SECTOR_ORDER, resolveSector } from "./sectors";
+import { SECTORS, SECTOR_ORDER, resolveSector, isSectorPersistable } from "./sectors";
 
 export const SEEDED_DESCRIPTION_PREFIX = "Customer-provided website or profile:";
 export const isSeededDescription = (text) => String(text || "").trim().startsWith(SEEDED_DESCRIPTION_PREFIX);
@@ -99,14 +99,19 @@ export function buildSavePayload({ onboarding, form, brain = null, step = null, 
   // sector
   const texts = [form.industryText, form.businessName, form.description];
   const choice = clean(form.sectorChoice);
-  if (choice && SECTORS[choice]) {
+  // A sector the API does not accept yet (BG-STUDIO-017-FE: "professional" until the backend ships it) is never sent: the
+  // API would refuse the whole save. It still guides the workspace when worked out from the customer's words.
+  if (choice && SECTORS[choice] && isSectorPersistable(choice)) {
     if (saved.sector.key !== choice || saved.sector.source !== "customer") { body.sector_key = choice; body.sector_source = "customer"; }
   } else if (saved.sector.source === "customer") {
     body.sector_key = null; // back to "work it out": drop the saved choice; an inference can be saved next time
   } else {
     const inferred = resolveSector({ texts });
-    if (inferred.source === "inferred" && (saved.sector.key !== inferred.key || saved.sector.source !== "inferred")) { body.sector_key = inferred.key; body.sector_source = "inferred"; }
-    else if (inferred.source !== "inferred" && saved.sector.source === "inferred") body.sector_key = null;
+    // Until the API accepts it, a worked-out professional sector is stored as the API's own "neutral" (still marked inferred), so
+    // setup can be completed; the workspace keeps showing the professional guidance, labelled as worked out and not saved.
+    const key = inferred.source !== "inferred" ? null : isSectorPersistable(inferred.key) ? inferred.key : "neutral";
+    if (key && (saved.sector.key !== key || saved.sector.source !== "inferred")) { body.sector_key = key; body.sector_source = "inferred"; }
+    else if (!key && saved.sector.source === "inferred") body.sector_key = null;
   }
 
   // industry text

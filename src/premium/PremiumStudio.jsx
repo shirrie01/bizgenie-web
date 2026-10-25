@@ -27,6 +27,13 @@ const VIEWS = [
   ["workspaces", "Workspaces"],
 ];
 
+// "from 25 September 2026 to 23 January 2027 (the last 30 days and the next 90 days)"
+const windowText = ({ from, to }) => {
+  const f = new Date(from).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const t = new Date(to).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  return `activity from ${f} to ${t} (the last 30 days and the next 90 days)`;
+};
+
 const EMPTY_DRAFT = { businessName: "", website: "", challenge: "", industryText: "", sectorChoice: "", description: "", audience: "", cta: "", goal: "" };
 
 export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, membershipRole, readOnly = false, workspaceState, onLoadWorkspaces, onSelectWorkspace, sessionEnded = false, onSignOut, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
@@ -154,6 +161,11 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
   const toggleChannel = useCallback((name) => setChannels((current) => { const next = new Set(current); if (next.has(name)) next.delete(name); else next.add(name); return next; }), []);
   const go = useCallback((target) => { if (target.view === "onboarding" && typeof target.stage === "number") setStage(target.stage); setView(target.view); if (typeof window !== "undefined") window.scrollTo(0, 0); }, []);
 
+  // BG-STUDIO-017-FE (DEC-023): the calendar loads by itself when it is opened for a campaign. Only from "idle", so a failure is
+  // never retried in a loop; "Refresh" is the customer's choice.
+  const calendarIdle = calendarState.status === "idle";
+  useEffect(() => { if (view === "calendar" && campaign && calendarIdle && onLoadCalendar) onLoadCalendar(); }, [view, campaign, calendarIdle, onLoadCalendar]);
+
   if (session.status === "loading") return <p className="ps-loading" role="status">Checking your account…</p>;
   if (!ready && !scopeMissing) return sections.auth;
   if (view === null) return <p className="ps-loading" role="status">Loading your workspace…</p>;
@@ -190,12 +202,16 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
       <section className="ps-empty" aria-label="Campaign calendar">
         <h2>Calendar</h2>
         {!campaign ? <p>Create a campaign to see its calendar. Only activity recorded for a real campaign appears here.</p> : (<>
-          <p>Scheduled and published activity recorded for <strong>{campaign.name}</strong>.</p>
-          <button type="button" className="secondary" onClick={onLoadCalendar} disabled={calendarState.status === "loading"}>{calendarState.status === "loading" ? "Loading calendar…" : "Load campaign calendar"}</button>
-          {calendarState.status === "ready" && (calendarState.entries.length === 0
-            ? <p>No scheduled or published activity is recorded for this campaign in this window.</p>
-            : <ul>{calendarState.entries.map((e) => <li key={`${e.variant_id}:${e.occurrence_at}`}><strong>{e.workflow === "published" ? "Published" : "Scheduled"}</strong>{" — "}{new Date(e.occurrence_at).toLocaleString()}</li>)}</ul>)}
+          <p>Scheduled and published activity recorded for <strong>{campaign.name}</strong> only. A calendar across all your campaigns is not available yet.</p>
+          {calendarState.status === "loading" && <p role="status">Loading this campaign's calendar…</p>}
+          {calendarState.status === "ready" && (<>
+            {calendarState.window && <p className="ps-hint">Showing {windowText(calendarState.window)}.</p>}
+            {calendarState.entries.length === 0
+              ? <p>No scheduled or published activity is recorded for this campaign in this period.</p>
+              : <ul>{calendarState.entries.map((e) => <li key={`${e.variant_id}:${e.occurrence_at}`}><strong>{e.workflow === "published" ? "Published" : "Scheduled"}</strong>{" — "}{new Date(e.occurrence_at).toLocaleString()}</li>)}</ul>}
+          </>)}
           {calendarState.status === "error" && <p className="error" role="alert">{calendarState.error}</p>}
+          {(calendarState.status === "ready" || calendarState.status === "error") && <button type="button" className="secondary" onClick={onLoadCalendar}>{calendarState.status === "error" ? "Try again" : "Refresh"}</button>}
         </>)}
       </section>
     );
