@@ -1570,3 +1570,38 @@ describe("the business profile tile never says 'Complete' while details are miss
     expect(within(tiles).queryByText("Confirmed")).toBeNull();
   });
 });
+
+describe("an ended session offers 'Sign in again', not retry buttons that cannot work (BG-STUDIO-017-FE)", () => {
+  const authRefused = () => fail(401, { status: "failed", error: { code: "AUTHENTICATION_REQUIRED" } });
+
+  it("shows a session-ended notice with a working 'Sign in again' when the Brand Brain and setup are refused with 401", async () => {
+    handlers["GET /customer/workspace/brand-brain"] = authRefused;
+    handlers["GET /customer/workspace/onboarding"] = authRefused;
+    render(<App />);
+    const alert = await screen.findByText(/your session has ended\.$/i, { selector: "strong" });
+    const banner = alert.closest("[role='status']");
+    expect(banner).toHaveTextContent(/sign in again to continue/i);
+    expect(banner).toHaveTextContent(/typed but not saved .* may be lost/i);
+    const { signOut } = await import("../authClient");
+    fireEvent.click(within(banner).getByRole("button", { name: /^sign in again$/i }));
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+  });
+
+  it("does not claim the session ended for a temporary outage (503)", async () => {
+    handlers["GET /customer/workspace/brand-brain"] = () => fail(503, { status: "failed", error: { code: "BRAND_BRAIN_UNAVAILABLE" } });
+    render(<App />);
+    await screen.findByText(/your brand brain could not be loaded/i);
+    expect(screen.queryByRole("button", { name: /^sign in again$/i })).toBeNull();
+  });
+
+  it("clears the notice once a retry succeeds", async () => {
+    let refused = true;
+    handlers["GET /customer/workspace/brand-brain"] = () => (refused ? authRefused() : ok({ status: "ready", brand_brain: NORTHGATE }));
+    handlers["GET /customer/workspace/onboarding"] = () => (refused ? authRefused() : onboardingResponse(onboardingDoc()));
+    render(<App />);
+    await screen.findByRole("button", { name: /^sign in again$/i });
+    refused = false;
+    for (const retry of screen.getAllByRole("button", { name: /^try again$/i })) fireEvent.click(retry);
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^sign in again$/i })).toBeNull());
+  });
+});

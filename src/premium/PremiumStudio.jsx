@@ -29,7 +29,7 @@ const VIEWS = [
 
 const EMPTY_DRAFT = { businessName: "", website: "", challenge: "", industryText: "", sectorChoice: "", description: "", audience: "", cta: "", goal: "" };
 
-export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, membershipRole, readOnly = false, workspaceState, onLoadWorkspaces, onSelectWorkspace, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
+export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, membershipRole, readOnly = false, workspaceState, onLoadWorkspaces, onSelectWorkspace, sessionEnded = false, onSignOut, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
   const [view, setView] = useState(null); // null until the starting point has been decided
   const [stage, setStage] = useState(0);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -210,6 +210,12 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
   return (
     <div className="ps-shell">
       {nav}
+      {sessionEnded && onSignOut && (
+        <div className="ps-banner" role="status">
+          <p><strong>Your session has ended.</strong> Sign in again to continue. Answers you have typed but not saved on this screen may be lost when you do.</p>
+          <button type="button" className="ps-primary" onClick={onSignOut}>Sign in again</button>
+        </div>
+      )}
       <div className="ps-content">{content}</div>
     </div>
   );
