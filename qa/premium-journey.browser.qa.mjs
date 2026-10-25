@@ -122,3 +122,33 @@ test('Brand tab: voice and strategy sends only what changed, keeps the owner-con
   await expect(page.getByLabel('Tone of voice')).toHaveValue('Warm and plain-spoken');
   expect(log.errors).toEqual([]);
 });
+
+test('calendar: operable with the keyboard alone (view, navigation, filters, refresh), with visible focus and no focus loss', async ({ page }) => {
+  await setup(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Use Northgate Vehicle Leasing' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome back, Northgate Vehicle Leasing.' })).toBeVisible();
+  const calTab = nav(page).getByRole('button', { name: 'Calendar', exact: true });
+  await calTab.focus(); await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: /calendar · all campaigns/i })).toBeVisible();
+  const week = page.getByRole('button', { name: 'Week', exact: true });
+  await week.focus(); await page.keyboard.press('Enter');
+  await expect(week).toHaveAttribute('aria-pressed', 'true');
+  await expect(week).toBeFocused(); // activating a control does not move focus away
+  const title = page.getByRole('heading', { level: 3 }).filter({ hasText: /^Week of/ });
+  const before = await title.textContent();
+  const next = page.getByRole('button', { name: /next week/i });
+  await next.focus(); await page.keyboard.press('Enter');
+  expect(await title.textContent()).not.toBe(before);
+  await expect(next).toBeFocused();
+  await page.getByRole('button', { name: /^day$/i }).focus(); await page.keyboard.press('Space');
+  await expect(page.getByRole('button', { name: /^day$/i })).toHaveAttribute('aria-pressed', 'true');
+  const status = page.getByLabel('Status');
+  await status.focus(); await page.keyboard.press('ArrowDown');
+  await expect(status).toBeFocused();
+  const outline = await week.evaluate((el) => { el.focus(); const s = getComputedStyle(el); return { style: s.outlineStyle, width: parseFloat(s.outlineWidth), shadow: s.boxShadow }; });
+  expect(outline.style !== 'none' && outline.width > 0 || outline.shadow !== 'none').toBe(true); // a visible focus indicator
+  const refresh = page.getByRole('button', { name: /^refresh$/i });
+  await refresh.focus(); await page.keyboard.press('Enter');
+  await expect(page.getByText(/read 1 of 1 campaign for/i)).toBeVisible();
+});
