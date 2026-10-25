@@ -25,8 +25,8 @@ const DATA = {
 const doc = (w) => ({ contract_version: 'workspace-onboarding.v1', tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id, version: 3, status: 'completed', sector: { key: DATA[w.brand_id].sector, source: 'customer' }, industry_text: null, channels: { values: ['email'], source: 'customer' }, current_step: 6, draft: {}, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] }, completed_at: '2026-10-24T10:00:00.000Z', updated_at: '2026-10-24T10:00:00.000Z' });
 const sessionJson = (w) => JSON.stringify({ access_token: w ? `tok-${w.brand_id}` : 'tok-identity', refresh_token: 'refresh-x', token_type: 'bearer', expires_in: 99999, expires_at: 4102444800, user: { id: 'u', app_metadata: w ? { tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id } : {} } });
 
-async function setup(page, { calendarDelayMs = {} } = {}) {
-  const log = { selected: null, errors: [], leakedAfterSwitch: [], puts: [], stored: {} };
+async function setup(page, { calendarDelayMs = {}, approvedFirst = false } = {}) {
+  const log = { selected: null, errors: [], leakedAfterSwitch: [], puts: [], stored: {}, schedulePosts: [], sched: null };
   page.on('pageerror', (e) => log.errors.push(e.message));
   await page.addInitScript(([t]) => { if (!localStorage.getItem('sb-supabase-auth-token')) localStorage.setItem('sb-supabase-auth-token', t); }, [sessionJson(null)]);
   await page.route(/fonts\./, (r) => r.abort());
@@ -44,8 +44,12 @@ async function setup(page, { calendarDelayMs = {} } = {}) {
     if (u.pathname.endsWith('/workspace/brand-brain')) return json(route, { status: 'ready', brand_brain: log.stored[brand] || { brand_id: w.brand_id, project_id: w.project_id, name: w.brand_name, identity: { description: d.desc }, metadata: { version: 1, status: 'approved' } } });
     if (u.pathname.endsWith('/workspace/onboarding')) return json(route, { status: 'ready', onboarding: doc(w), brand_name_placeholder: false });
     if (u.pathname === '/customer/campaigns') return json(route, { campaigns: [{ campaign_id: c.id, name: c.name, status: 'active', archived_at: null, updated_at: '2026-10-20T09:00:00.000Z' }] });
-    if (u.pathname === `/customer/campaigns/${c.id}`) return json(route, { campaign: { campaign_id: c.id, tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id, name: c.name, goal: 'g', display_timezone: 'Europe/London', version: 2, items: [{ content_item_id: 'i1', name: c.content, format: 'text', variants: [{ variant_id: 'v1', platform: c.platform, placement: 'feed', destination_label: c.label, workflow: 'scheduled' }] }] } });
-    if (u.pathname === `/customer/campaigns/${c.id}/calendar`) { if (calendarDelayMs[brand]) await new Promise((r) => setTimeout(r, calendarDelayMs[brand])); return json(route, { entries: [{ campaign_id: c.id, content_item_id: 'i1', variant_id: 'v1', workflow: 'scheduled', occurrence_at: c.at }] }); }
+    const flowNow = () => (approvedFirst && brand === 'ba' ? (log.sched ? 'scheduled' : 'approved') : 'scheduled');
+    const campaignDoc = () => ({ campaign_id: c.id, tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id, name: c.name, goal: 'g', display_timezone: 'Europe/London', version: log.sched ? 7 : 6, items: [{ content_item_id: 'i1', name: c.content, format: 'text', variants: [{ variant_id: 'v1', platform: c.platform, placement: 'feed', destination_label: c.label, workflow: flowNow(), current_revision_id: 'rev-1', active_approval_id: 'ap-1', active_schedule_id: log.sched ? 'sch-1' : null, current_content: { title: c.content, body: 'Body copy' } }] }], schedules: log.sched ? [{ schedule_id: 'sch-1', scheduled_for: log.sched.scheduled_for, timezone: log.sched.timezone }] : [] });
+    if (u.pathname === `/customer/campaigns/${c.id}/variants/v1/schedule` && m === 'POST') { log.sched = JSON.parse(req.postData()); log.schedulePosts.push(log.sched); return json(route, { result: { campaign_id: c.id }, campaign: campaignDoc() }); }
+    if (u.pathname === `/customer/campaigns/${c.id}`) return json(route, { campaign: campaignDoc() });
+    if (u.pathname === `/customer/campaigns/${c.id}/calendar`) { if (calendarDelayMs[brand]) await new Promise((r) => setTimeout(r, calendarDelayMs[brand])); if (approvedFirst && brand === 'ba') return json(route, { entries: log.sched ? [{ campaign_id: c.id, content_item_id: 'i1', variant_id: 'v1', workflow: 'scheduled', occurrence_at: log.sched.scheduled_for }] : [] });
+      return json(route, { entries: [{ campaign_id: c.id, content_item_id: 'i1', variant_id: 'v1', workflow: 'scheduled', occurrence_at: c.at }] }); }
     return json(route, {}, 404);
   });
   return log;
@@ -151,4 +155,29 @@ test('calendar: operable with the keyboard alone (view, navigation, filters, ref
   const refresh = page.getByRole('button', { name: /^refresh$/i });
   await refresh.focus(); await page.keyboard.press('Enter');
   await expect(page.getByText(/read 1 of 1 campaign for/i)).toBeVisible();
+});
+
+test('approved content can be given a planned time, which then appears in the all-campaigns calendar; nothing is published', async ({ page }) => {
+  const log = await setup(page, { approvedFirst: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Use Northgate Vehicle Leasing' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome back, Northgate Vehicle Leasing.' })).toBeVisible();
+  await nav(page).getByRole('button', { name: 'Campaign Studio', exact: true }).click();
+  const when = new Date(); when.setUTCDate(when.getUTCDate() + 3); const day = when.toISOString().slice(0, 10);
+  await page.getByLabel(/plan when to publish \(europe\/london\)/i).fill(`${day}T10:00`);
+  await expect(page.getByText(/does not post anything or remind you/i)).toBeVisible();
+  await checks(page, 'schedule-form');
+  await page.getByRole('button', { name: /save planned time/i }).click();
+  await expect(page.getByText(/^Scheduled for /)).toBeVisible();
+  expect(log.schedulePosts).toHaveLength(1);
+  expect(log.schedulePosts[0]).toMatchObject({ timezone: 'Europe/London', expected_campaign_version: 6, revision_id: 'rev-1' });
+  expect(log.schedulePosts[0].local_datetime).toBe(`${day}T10:00:00.000`);
+  await expect(page.getByText(/published by customer attestation/i)).toHaveCount(0);
+  await nav(page).getByRole('button', { name: 'Calendar', exact: true }).click();
+  await expect(page.getByText(/read 1 of 1 campaign for/i)).toBeVisible();
+  if (when.toISOString().slice(0, 7) !== new Date().toISOString().slice(0, 7)) await page.getByRole('button', { name: /next month/i }).click(); // the planned day may fall in next month
+  await expect(page.getByRole('table').getByText('Scheduled', { exact: true })).toBeVisible();
+  await expect(page.getByText('Lease offer post').first()).toBeVisible();
+  await checks(page, 'schedule-in-calendar');
+  expect(log.errors).toEqual([]);
 });

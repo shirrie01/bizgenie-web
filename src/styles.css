@@ -279,3 +279,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-strategy-group { border: 1px solid #d5dbd6; border-radius: 12px; padding: 8px 14px; background: #fff; }
 .ps-strategy-group summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
 .ps-strategy-group textarea { width: 100%; box-sizing: border-box; }
+
+/* BG-STUDIO-018-FE: planned-time controls must fit the narrowest screen (native date-time inputs have a wide intrinsic size). */
+.ps-schedule { display: grid; gap: 6px; min-width: 0; margin-top: 8px; }
+.ps-schedule input[type="datetime-local"] { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.ps-schedule p { margin: 0; overflow-wrap: anywhere; }

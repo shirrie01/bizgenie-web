@@ -1744,3 +1744,72 @@ describe("the workspace calendar inside the Premium Studio (BG-STUDIO-018-FE, DE
   });
 
 });
+
+describe("scheduling an approved item records a plan and never publishes (BG-STUDIO-018-FE)", () => {
+  const scheduledDoc = (at, tz = "Europe/London") => { const d = campaignDoc(7, 1, "scheduled"); d.items[0].variants[0].active_schedule_id = "schedule-1"; d.schedules = [{ schedule_id: "schedule-1", scheduled_for: at, timezone: tz }]; return d; };
+  async function toApproved() {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
+    fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
+    for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i));
+    await screen.findByRole("heading", { name: /your first recommendation/i });
+    fireEvent.click(button(/get my recommendation/i));
+    await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
+    fireEvent.click(button(/continue in campaign studio/i));
+    fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await screen.findByText("Server persisted review copy");
+    fireEvent.click(await screen.findByRole("button", { name: /^render preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^approve$/i }));
+    await screen.findByText("Approved");
+  }
+  const schedulePosts = () => calls.filter((c) => c.method === "POST" && /\/(schedule|reschedule)$/.test(c.path));
+
+  it("offers a planned time for approved content, sends exactly the fields the backend validates, and then shows the plan", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => ok({ result: { campaign_id: CID }, campaign: scheduledDoc("2099-01-15T10:00:00.000Z") });
+    await toApproved();
+    expect(screen.getByText(/this records the time you plan to publish\. it does not post anything or remind you/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/plan when to publish \(europe\/london\)/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByText(/scheduled for .*15 january 2099 at 10:00 \(europe\/london\)/i)).toBeInTheDocument();
+    const [post] = schedulePosts();
+    const body = JSON.parse(post.options.body);
+    expect(body).toMatchObject({ tenant_id: "tenant-a", project_id: "project-a", expected_campaign_version: 6, revision_id: "revision-1", scheduled_for: "2099-01-15T10:00:00.000Z", timezone: "Europe/London", local_datetime: "2099-01-15T10:00:00.000", utc_offset_minutes: 0 });
+    expect(body.idempotency_key).toMatch(/^(?=.{1,128}$)[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+    expect(post.options.headers.authorization).toBe("Bearer token-a");
+    expect(screen.getByText(/does not publish for you/i)).toBeInTheDocument();
+    expect(screen.queryByText(/published by customer attestation/i)).toBeNull(); // scheduling is never shown as publication
+    expect(calls.some((c) => /manual-publication/.test(c.path))).toBe(false);
+    expect(screen.getByRole("button", { name: /prepare manual publication/i })).toBeInTheDocument(); // manual publication stays possible
+  });
+
+  it("a time in the past is refused in words before anything is sent", async () => {
+    await toApproved();
+    fireEvent.change(screen.getByLabelText(/plan when to publish/i), { target: { value: "2020-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/choose a time in the future/i);
+    expect(schedulePosts()).toHaveLength(0);
+  });
+
+  it("a refused schedule says nothing was published and keeps the approval; a stale campaign tells the customer to reload", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => fail(409, { error: { code: "CAMPAIGN_VERSION_CONFLICT" } });
+    await toApproved();
+    fireEvent.change(screen.getByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/./);
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.queryByText(/planned time saved/i)).toBeNull();
+    expect(schedulePosts()).toHaveLength(1); // no automatic retry
+  });
+
+  it("an ended session during a schedule is reported as such, with 'Sign in again'", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => fail(401, { error: { code: "AUTHENTICATION_REQUIRED" } });
+    await toApproved();
+    fireEvent.change(screen.getByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByRole("button", { name: /^sign in again$/i })).toBeInTheDocument();
+  });
+});
