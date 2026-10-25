@@ -1622,6 +1622,7 @@ describe("the campaign calendar loads by itself and states its window (DEC-023, 
     fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
     await screen.findByText(/saved to your workspace/i);
     fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Calendar" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^this campaign/i })); // the campaign-level view stays available and labelled
   }
 
   it("requests the calendar once on opening it, states the window and the campaign-only scope, and never implies workspace-wide coverage", async () => {
@@ -1657,6 +1658,61 @@ describe("the campaign calendar loads by itself and states its window (DEC-023, 
     fireEvent.click(button(/^try again$/i));
     await screen.findByText(/no scheduled or published activity/i);
     expect(calendarCalls()).toHaveLength(2);
+  });
+
+});
+
+describe("the workspace calendar inside the Premium Studio (BG-STUDIO-018-FE, DEC-025)", () => {
+  const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const listed = () => ok({ campaigns: [{ campaign_id: CAMP, name: "Spring leasing", status: "active", archived_at: null, updated_at: "2026-10-20T09:00:00.000Z" }] });
+  const docOf = () => ok({ campaign: { campaign_id: CAMP, tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a", name: "Spring leasing", goal: "g", display_timezone: "Europe/London", version: 2, items: [
+    { content_item_id: "i1", name: "Offer announcement", format: "text", variants: [{ variant_id: "v1", platform: "instagram", placement: "feed", destination_label: "Instagram", workflow: "scheduled" }, { variant_id: "v2", platform: "email", placement: "newsletter", destination_label: "Email", workflow: "draft" }] }] } });
+  const calendarOf = () => { const t = new Date(); t.setUTCDate(t.getUTCDate() + 1); t.setUTCHours(10, 0, 0, 0); return ok({ entries: [{ campaign_id: CAMP, content_item_id: "i1", variant_id: "v1", workflow: "scheduled", occurrence_at: t.toISOString() }] }); };
+  const openCalendar = async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Calendar" }));
+  };
+
+  it("opens on all campaigns, loads once by itself with the explicit window, and shows real content, channel and status", async () => {
+    handlers["GET /customer/campaigns"] = listed; handlers[`GET /customer/campaigns/${CAMP}`] = docOf; handlers[`GET /customer/campaigns/${CAMP}/calendar`] = calendarOf;
+    await openCalendar();
+    expect(await screen.findByRole("heading", { name: /calendar · all campaigns/i })).toBeInTheDocument();
+    expect(await screen.findByText(/read 1 of 1 campaign for/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/offer announcement/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/spring leasing · instagram · feed/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/not yet scheduled \(1\)/i)).toBeInTheDocument();
+    const cal = calls.filter((c) => /\/calendar$/.test(c.path));
+    expect(cal).toHaveLength(1);
+    const q = new URL(cal[0].url).searchParams;
+    expect(q.get("tenant_id")).toBe("tenant-a"); expect(q.get("project_id")).toBe("project-a");
+    expect(Date.parse(q.get("from"))).toBeLessThan(Date.parse(q.get("to")));
+    expect(calls.every((c) => c.method === "GET" || !c.path.includes("/calendar"))).toBe(true);
+  });
+
+  it("keeps the campaign-level calendar available and labelled alongside it", async () => {
+    handlers["GET /customer/campaigns"] = listed; handlers[`GET /customer/campaigns/${CAMP}`] = docOf; handlers[`GET /customer/campaigns/${CAMP}/calendar`] = calendarOf;
+    await openCalendar();
+    await screen.findByText(/read 1 of 1 campaign/i);
+    fireEvent.click(screen.getByRole("button", { name: /^this campaign/i }));
+    expect(screen.getByRole("heading", { name: /calendar · this campaign/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^all campaigns$/i }));
+    expect(screen.getByRole("heading", { name: /calendar · all campaigns/i })).toBeInTheDocument();
+  });
+
+  it("an ended session is reported once, with 'Sign in again', not as an empty calendar", async () => {
+    handlers["GET /customer/campaigns"] = () => fail(401, { error: { code: "AUTHENTICATION_REQUIRED" } });
+    await openCalendar();
+    expect(await screen.findByRole("button", { name: /^sign in again$/i })).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/session has ended|could not be loaded/i);
+    expect(screen.queryByText(/no scheduled or published activity/i)).toBeNull();
+  });
+
+  it("a campaign that cannot be read is named, and the others are still shown", async () => {
+    handlers["GET /customer/campaigns"] = listed; handlers[`GET /customer/campaigns/${CAMP}`] = docOf; handlers[`GET /customer/campaigns/${CAMP}/calendar`] = () => fail(500);
+    await openCalendar();
+    expect(await screen.findByText(/could not read: spring leasing/i)).toBeInTheDocument();
+    expect(screen.getByText(/read 0 of 1 campaign/i)).toBeInTheDocument();
   });
 
 });

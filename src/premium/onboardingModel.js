@@ -99,7 +99,7 @@ export function buildSavePayload({ onboarding, form, brain = null, step = null, 
   // sector
   const texts = [form.industryText, form.businessName, form.description];
   const choice = clean(form.sectorChoice);
-  // A sector the API does not accept yet (BG-STUDIO-017-FE: "professional" until the backend ships it) is never sent: the
+  // A sector the API does not accept yet (BG-STUDIO-017-FE: "professional_services" until the backend ships it) is never sent: the
   // API would refuse the whole save. It still guides the workspace when worked out from the customer's words.
   if (choice && SECTORS[choice] && isSectorPersistable(choice)) {
     if (saved.sector.key !== choice || saved.sector.source !== "customer") { body.sector_key = choice; body.sector_source = "customer"; }

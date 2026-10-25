@@ -33,7 +33,7 @@ function accessSummary(subscription) {
 
 function BillingState({ state, onRecheck }) {
   if (state.status === "loading") return <p role="status">Checking your BizGenie billing status…</p>;
-  if (state.status === "error") return <p className="error" role="alert">{state.error}</p>;
+  if (state.status === "error") return (<div><p className="error" role="alert">{state.error}</p>{onRecheck && <button type="button" className="secondary" onClick={onRecheck}>Check again</button>}</div>);
   if (state.status !== "ready") return null;
 
   const subscription = state.data?.subscription;
@@ -156,9 +156,10 @@ export default function BillingPanel({ session, pathname = window.location.pathn
         <p role="status">Checking your existing subscription…</p>
       )}
       {billing.status === "error" && (
-        <p className="error" role="alert">
-          {billing.error} Checkout is unavailable until your account can be checked.
-        </p>
+        <div>
+          <p className="error" role="alert">{billing.error} Checkout is unavailable until your account can be checked.</p>
+          <button type="button" className="secondary" onClick={recheck}>Check again</button>
+        </div>
       )}
       {billing.status === "ready" && billing.data?.subscription && <BillingState state={billing} />}
       {billing.status === "ready" && !activeEntitlement ? (

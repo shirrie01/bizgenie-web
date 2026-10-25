@@ -178,16 +178,16 @@ describe("Professional services is never sent to an API that does not accept it 
   const PROF = { industryText: "Tax and advisory services for owner-managed businesses" };
 
   it("with the backend gate off: a worked-out professional sector guides the workspace, and is stored only as the API's own neutral/inferred", () => {
-    expect(effectiveSector({ texts: [PROF.industryText] })).toEqual({ key: "professional", source: "inferred" });
+    expect(effectiveSector({ texts: [PROF.industryText] })).toEqual({ key: "professional_services", source: "inferred" });
     expect(buildSavePayload({ onboarding: SAVED(), form: FORM(PROF) }).body).toMatchObject({ sector_key: "neutral", sector_source: "inferred" });
     // already stored that way: nothing is sent again, and the workspace still shows professional guidance labelled as not saved
     const stored = SAVED({ sector: { key: "neutral", source: "inferred" } });
     expect(buildSavePayload({ onboarding: stored, form: FORM(PROF) }).body.sector_key).toBeUndefined();
-    expect(effectiveSector({ texts: [PROF.industryText], onboarding: stored })).toEqual({ key: "professional", source: "inferred" });
+    expect(effectiveSector({ texts: [PROF.industryText], onboarding: stored })).toEqual({ key: "professional_services", source: "inferred" });
   });
 
   it("with the backend gate off: a choice of professional (impossible from the list) is not sent either", () => {
-    expect(buildSavePayload({ onboarding: SAVED(), form: FORM({ sectorChoice: "professional" }) }).body.sector_key).not.toBe("professional");
+    expect(buildSavePayload({ onboarding: SAVED(), form: FORM({ sectorChoice: "professional_services" }) }).body.sector_key).not.toBe("professional_services");
   });
 
   it("other sectors are unaffected by the gate", () => {
@@ -197,7 +197,7 @@ describe("Professional services is never sent to an API that does not accept it 
 
   it("only when the build says the backend accepts it, is professional saved", () => {
     vi.stubEnv("VITE_PROFESSIONAL_SECTOR_PERSISTED", "true");
-    expect(buildSavePayload({ onboarding: SAVED(), form: FORM({ sectorChoice: "professional" }) }).body).toMatchObject({ sector_key: "professional", sector_source: "customer" });
-    expect(buildSavePayload({ onboarding: SAVED(), form: FORM(PROF) }).body).toMatchObject({ sector_key: "professional", sector_source: "inferred" });
+    expect(buildSavePayload({ onboarding: SAVED(), form: FORM({ sectorChoice: "professional_services" }) }).body).toMatchObject({ sector_key: "professional_services", sector_source: "customer" });
+    expect(buildSavePayload({ onboarding: SAVED(), form: FORM(PROF) }).body).toMatchObject({ sector_key: "professional_services", sector_source: "inferred" });
   });
 });

@@ -198,4 +198,16 @@ describe("paid beta checkout surface", () => {
     await screen.findByText(/standard plan · active/i);
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
+
+  it("a failed subscription lookup says so plainly, never reads as 'not subscribed', blocks checkout, and can be re-checked by the customer", async () => {
+    global.fetch.mockResolvedValueOnce({ ok: false, status: 503 });
+    global.fetch.mockResolvedValueOnce(sub());
+    render(<BillingPanel session={readySession} pathname="/" />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/we can't check your subscription right now\. please try again/i);
+    expect(screen.queryByRole("button", { name: /secure checkout/i })).toBeNull();
+    expect(screen.queryByText(/your plan is not active yet/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^check again$/i }));
+    expect(await screen.findByText(/standard plan · active/i)).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
 });

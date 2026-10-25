@@ -1,7 +1,7 @@
 // Real-browser multi-industry QA of the Premium Studio (BG-STUDIO-017-FE), flag-ON production build.
 // The API and Supabase endpoints are fully MOCKED in the browser (no network, no credentials): this is NOT a deployed or
 // staging journey. Build with VITE_PREMIUM_STUDIO_ENABLED=true and placeholder VITE_* values.
-// For each of four businesses (vehicle leasing, professional services, aesthetics, drinks) it opens every workspace
+// For each of four businesses (vehicle leasing, professional services, aesthetics, fragrance, drinks) it opens every workspace
 // section and proves: the business's own name appears, no OTHER business's name or sector language appears, "Fonzo"
 // appears only for the drinks business that is genuinely called Fonzo, there is no horizontal overflow, and no page error.
 import { test, expect } from '@playwright/test';
@@ -22,13 +22,14 @@ const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers
 
 const BUSINESSES = [
   { id: 'leasing', name: 'Northgate Vehicle Leasing', description: 'We lease cars and vans to small businesses.', sector: 'leasing', label: 'Vehicle leasing' },
-  { id: 'prof', name: 'Ashdown & Pryce Chartered Accountants', description: 'Tax and advisory services for owner-managed businesses.', sector: 'neutral', shown: 'professional', label: 'Professional services' },
+  { id: 'prof', name: 'Ashdown & Pryce Chartered Accountants', description: 'Tax and advisory services for owner-managed businesses.', sector: 'neutral', shown: 'professional_services', label: 'Professional services' },
   { id: 'aesthetics', name: 'Clearskin Studio', description: 'A skincare and aesthetics clinic offering facials and consultations.', sector: 'aesthetics', label: 'Aesthetics clinic' },
+  { id: 'fragrance', name: 'Maison Aurelle', description: 'An independent perfume house making small-batch fragrances.', sector: 'perfume', label: 'Fragrance & perfume' },
   { id: 'drinks', name: 'Fonzo', description: 'Soft drinks for everyone.', sector: 'beverage', label: 'Soft drinks' },
 ];
 const SECTOR_TERMS = {
   leasing: [/\blease\b/i, /\bleasing\b/i], aesthetics: [/\bclinic\b/i, /\bfacials?\b/i, /\bskincare\b/i],
-  beverage: [/\bflavours?\b/i, /\bcans\b/i, /\bsoft drinks?\b/i], neutral: [], professional: [/\badvisory\b/i, /\bexpertise\b/i],
+  beverage: [/\bflavours?\b/i, /\bcans\b/i, /\bsoft drinks?\b/i], perfume: [/\bfragrances?\b/i, /\bperfumes?\b/i, /\bscents?\b/i], neutral: [], professional_services: [/\badvisory\b/i, /\bexpertise\b/i],
 };
 
 const workspace = (b) => ({ tenant_id: `t-${b.id}`, tenant_name: `${b.name} group`, project_id: `p-${b.id}`, project_name: `${b.name} campaigns`, brand_id: `b-${b.id}`, brand_name: b.name, brand_status: 'approved', membership_role: 'owner' });

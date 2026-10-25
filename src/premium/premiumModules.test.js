@@ -24,17 +24,17 @@ describe("sector resolution", () => {
   it("lets an explicit choice win, then falls back to the customer's own texts, then neutral", () => {
     expect(resolveSector({ choice: "perfume", texts: ["Northgate Vehicle Leasing"] })).toEqual({ key: "perfume", source: "chosen" });
     expect(resolveSector({ texts: ["", "Northgate Vehicle Leasing"] })).toEqual({ key: "leasing", source: "inferred" });
-    expect(resolveSector({ texts: ["Harbour Partners", "Business consulting"] })).toEqual({ key: "professional", source: "inferred" });
+    expect(resolveSector({ texts: ["Harbour Partners", "Business consulting"] })).toEqual({ key: "professional_services", source: "inferred" });
     expect(resolveSector({ texts: ["Brightside Window Cleaning", "Window cleaning for homes and shops"] })).toEqual({ key: "neutral", source: "none" });
     expect(resolveSector({})).toEqual({ key: "neutral", source: "none" });
     expect(resolveSector({ choice: "bogus", texts: ["Maison fragrance house"] }).key).toBe("perfume");
   });
   it("offers an automatic option, a neutral option and every sector", () => {
-    expect(sectorOptions().map((o) => o.value)).toEqual(["", "neutral", ...SECTOR_ORDER.filter((k) => k !== "professional")]);
+    expect(sectorOptions().map((o) => o.value)).toEqual(["", "neutral", ...SECTOR_ORDER.filter((k) => k !== "professional_services")]);
   });
   it("offers Professional services as a choice only once the backend accepts it (DEC-023), and never otherwise", () => {
-    expect(sectorOptions({}).map((o) => o.value)).not.toContain("professional");
-    expect(sectorOptions({ VITE_PROFESSIONAL_SECTOR_PERSISTED: "yes" }).map((o) => o.value)).not.toContain("professional");
+    expect(sectorOptions({}).map((o) => o.value)).not.toContain("professional_services");
+    expect(sectorOptions({ VITE_PROFESSIONAL_SECTOR_PERSISTED: "yes" }).map((o) => o.value)).not.toContain("professional_services");
     expect(sectorOptions({ VITE_PROFESSIONAL_SECTOR_PERSISTED: "true" }).map((o) => o.value)).toEqual(["", "neutral", ...SECTOR_ORDER]);
   });
   it("stays in step with the preview's resolver (drift guard)", () => {
@@ -43,7 +43,7 @@ describe("sector resolution", () => {
       const a = resolveSector({ texts: [text] });
       const b = previewResolve({ business: "", industryText: text });
       // The isolated preview has no professional-services profile (DEC-023 applies to the production Studio only); it falls back to neutral.
-      expect(a.key === "professional" ? "neutral" : a.key, text).toBe(b.key);
+      expect(a.key === "professional_services" ? "neutral" : a.key, text).toBe(b.key);
     }
   });
   it("has three guidance angles per sector and no claim wording", () => {
@@ -211,7 +211,7 @@ describe("cross-industry isolation", () => {
     { key: "beverage", brain: { name: "Fonzo", identity: { description: "Soft drinks." } } },
     { key: "charity", brain: { name: "WOW Charity", identity: { description: "We support local families." } } },
     { key: "neutral", brain: { name: "Brightside Window Cleaning", identity: { description: "Window cleaning for homes and shops." } } },
-    { key: "professional", brain: { name: "Harbour Partners", identity: { description: "Business consulting." } } },
+    { key: "professional_services", brain: { name: "Harbour Partners", identity: { description: "Business consulting." } } },
   ];
   const strip = (text, name, description) => text.split(name).join(" ").split(description).join(" ");
   const has = (text, term) => new RegExp(`\\b${term}\\b`, "i").test(text);
