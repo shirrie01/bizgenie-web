@@ -184,7 +184,8 @@ describe("workspace content is real and labelled", () => {
     ["Clearskin Studio", "An aesthetics clinic in Leeds.", "Aesthetics clinic", ["lease", "fragrance", "flavour"], "aesthetics"],
     ["Fonzo", "Soft drinks for everyone.", "Soft drinks & beverages", ["lease", "fragrance", "clinic"], "beverage"],
     ["WOW Charity", "We support local families.", "Charity & community", ["lease", "fragrance", "flavour"], "charity"],
-    ["Harbour Partners", "Business consulting.", "Not specified", ["lease", "fragrance", "flavour", "clinic", "donate"], null],
+    ["Harbour Partners", "Business consulting.", "Professional services", ["lease", "fragrance", "flavour", "clinic", "donate"], null],
+    ["Brightside Window Cleaning", "Window cleaning for homes and shops across Leeds.", "Not specified", ["lease", "fragrance", "flavour", "clinic", "donate", "advisory", "expertise"], null],
   ])("%s gets its own sector and no other industry's wording", async (name, description, label, forbidden, savedKey) => {
     handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor(name, description) });
     // Saved as inferred (never as a customer choice), so a saved leasing choice cannot leak into other brands.
@@ -1569,4 +1570,93 @@ describe("the business profile tile never says 'Complete' while details are miss
     expect(within(tiles).getByText("Complete")).toBeInTheDocument();
     expect(within(tiles).queryByText("Confirmed")).toBeNull();
   });
+});
+
+describe("an ended session offers 'Sign in again', not retry buttons that cannot work (BG-STUDIO-017-FE)", () => {
+  const authRefused = () => fail(401, { status: "failed", error: { code: "AUTHENTICATION_REQUIRED" } });
+
+  it("shows a session-ended notice with a working 'Sign in again' when the Brand Brain and setup are refused with 401", async () => {
+    handlers["GET /customer/workspace/brand-brain"] = authRefused;
+    handlers["GET /customer/workspace/onboarding"] = authRefused;
+    render(<App />);
+    const alert = await screen.findByText(/your session has ended\.$/i, { selector: "strong" });
+    const banner = alert.closest("[role='status']");
+    expect(banner).toHaveTextContent(/sign in again to continue/i);
+    expect(banner).toHaveTextContent(/typed but not saved .* may be lost/i);
+    const { signOut } = await import("../authClient");
+    fireEvent.click(within(banner).getByRole("button", { name: /^sign in again$/i }));
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+  });
+
+  it("does not claim the session ended for a temporary outage (503)", async () => {
+    handlers["GET /customer/workspace/brand-brain"] = () => fail(503, { status: "failed", error: { code: "BRAND_BRAIN_UNAVAILABLE" } });
+    render(<App />);
+    await screen.findByText(/your brand brain could not be loaded/i);
+    expect(screen.queryByRole("button", { name: /^sign in again$/i })).toBeNull();
+  });
+
+  it("clears the notice once a retry succeeds", async () => {
+    let refused = true;
+    handlers["GET /customer/workspace/brand-brain"] = () => (refused ? authRefused() : ok({ status: "ready", brand_brain: NORTHGATE }));
+    handlers["GET /customer/workspace/onboarding"] = () => (refused ? authRefused() : onboardingResponse(onboardingDoc()));
+    render(<App />);
+    await screen.findByRole("button", { name: /^sign in again$/i });
+    refused = false;
+    for (const retry of screen.getAllByRole("button", { name: /^try again$/i })) fireEvent.click(retry);
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^sign in again$/i })).toBeNull());
+  });
+});
+
+describe("the campaign calendar loads by itself and states its window (DEC-023, BG-STUDIO-017-FE)", () => {
+  const calendarCalls = () => calls.filter((c) => c.method === "GET" && /\/calendar$/.test(c.path));
+  async function toCalendarWithCampaign() {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
+    fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
+    for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i));
+    await screen.findByRole("heading", { name: /your first recommendation/i });
+    fireEvent.click(button(/get my recommendation/i));
+    await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
+    fireEvent.click(button(/continue in campaign studio/i));
+    fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Calendar" }));
+  }
+
+  it("requests the calendar once on opening it, states the window and the campaign-only scope, and never implies workspace-wide coverage", async () => {
+    handlers["GET /customer/campaigns/*/calendar"] = () => ok({ entries: [{ campaign_id: CID, variant_id: "v1", content_item_id: "c1", workflow: "scheduled", occurrence_at: "2026-11-02T10:00:00.000Z" }] });
+    await toCalendarWithCampaign();
+    expect(await screen.findByText(/showing activity from .* to .* \(the last 30 days and the next 90 days\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/lease enquiry campaign/i, { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getByText(/only\. a calendar across all your campaigns is not available yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/scheduled/i, { selector: "strong" })).toBeInTheDocument();
+    expect(calendarCalls()).toHaveLength(1);
+    const url = new URL(calendarCalls()[0].url);
+    const days = (new Date(url.searchParams.get("to")) - new Date(url.searchParams.get("from"))) / 86400000;
+    expect(Math.round(days)).toBe(120);
+    expect(screen.queryByText(/all your (campaigns|content)/i, { selector: "h2, h3, strong" })).toBeNull();
+  });
+
+  it("an empty calendar says so for this period; Refresh asks again only when pressed", async () => {
+    handlers["GET /customer/campaigns/*/calendar"] = () => ok({ entries: [] });
+    await toCalendarWithCampaign();
+    expect(await screen.findByText(/no scheduled or published activity is recorded for this campaign in this period/i)).toBeInTheDocument();
+    expect(calendarCalls()).toHaveLength(1);
+    fireEvent.click(button(/^refresh$/i));
+    await waitFor(() => expect(calendarCalls()).toHaveLength(2));
+  });
+
+  it("a failed load is not retried in a loop: it shows the error and a 'Try again' button", async () => {
+    handlers["GET /customer/campaigns/*/calendar"] = () => fail(503);
+    await toCalendarWithCampaign();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/calendar activity could not be loaded yet/i);
+    await act(async () => { await new Promise((r) => setTimeout(r, 150)); });
+    expect(calendarCalls()).toHaveLength(1);
+    handlers["GET /customer/campaigns/*/calendar"] = () => ok({ entries: [] });
+    fireEvent.click(button(/^try again$/i));
+    await screen.findByText(/no scheduled or published activity/i);
+    expect(calendarCalls()).toHaveLength(2);
+  });
+
 });

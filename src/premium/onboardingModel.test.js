@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MISSING_GUIDANCE, buildSavePayload, channelState, confirmationReadiness, effectiveSector, formFromOnboarding, hasUnsavedChanges, isBareUrl, isNotADescription, isSeededDescription } from "./onboardingModel";
 
 const SAVED = (over = {}) => ({ contract_version: "workspace-onboarding.v1", version: 2, status: "in_progress", sector: { key: null, source: null }, industry_text: null, channels: { values: [], source: null }, current_step: null, draft: {}, ...over });
@@ -170,5 +170,34 @@ describe("confirmation readiness", () => {
     expect(isSeededDescription("  Customer-provided website or profile: x")).toBe(true);
     expect(isSeededDescription("We sell perfume. Customer-provided website or profile: x")).toBe(false);
     expect(isSeededDescription("")).toBe(false);
+  });
+});
+
+describe("Professional services is never sent to an API that does not accept it (DEC-023, BG-STUDIO-017-FE)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const PROF = { industryText: "Tax and advisory services for owner-managed businesses" };
+
+  it("with the backend gate off: a worked-out professional sector guides the workspace, and is stored only as the API's own neutral/inferred", () => {
+    expect(effectiveSector({ texts: [PROF.industryText] })).toEqual({ key: "professional", source: "inferred" });
+    expect(buildSavePayload({ onboarding: SAVED(), form: FORM(PROF) }).body).toMatchObject({ sector_key: "neutral", sector_source: "inferred" });
+    // already stored that way: nothing is sent again, and the workspace still shows professional guidance labelled as not saved
+    const stored = SAVED({ sector: { key: "neutral", source: "inferred" } });
+    expect(buildSavePayload({ onboarding: stored, form: FORM(PROF) }).body.sector_key).toBeUndefined();
+    expect(effectiveSector({ texts: [PROF.industryText], onboarding: stored })).toEqual({ key: "professional", source: "inferred" });
+  });
+
+  it("with the backend gate off: a choice of professional (impossible from the list) is not sent either", () => {
+    expect(buildSavePayload({ onboarding: SAVED(), form: FORM({ sectorChoice: "professional" }) }).body.sector_key).not.toBe("professional");
+  });
+
+  it("other sectors are unaffected by the gate", () => {
+    expect(buildSavePayload({ onboarding: SAVED(), form: FORM({ sectorChoice: "leasing" }) }).body).toMatchObject({ sector_key: "leasing", sector_source: "customer" });
+    expect(buildSavePayload({ onboarding: SAVED(), form: FORM({ industryText: "Vehicle leasing" }) }).body).toMatchObject({ sector_key: "leasing", sector_source: "inferred" });
+  });
+
+  it("only when the build says the backend accepts it, is professional saved", () => {
+    vi.stubEnv("VITE_PROFESSIONAL_SECTOR_PERSISTED", "true");
+    expect(buildSavePayload({ onboarding: SAVED(), form: FORM({ sectorChoice: "professional" }) }).body).toMatchObject({ sector_key: "professional", sector_source: "customer" });
+    expect(buildSavePayload({ onboarding: SAVED(), form: FORM(PROF) }).body).toMatchObject({ sector_key: "professional", sector_source: "inferred" });
   });
 });

@@ -233,3 +233,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-readonly { padding: 10px 14px; background: #e9ecf3; border-left: 4px solid #1d4a7a; border-radius: 6px; }
 .ps-brain .ps-truth { margin: 16px 0 14px; }
 .ps-brain .ps-field { margin-bottom: 14px; }
+
+/* BG-STUDIO-017-FE: billing facts come from the API entitlement (plan, credits, period). */
+.billing-facts { margin: 8px 0 0; }
+.billing-facts dt { margin-top: 8px; color: #4b564f; font-size: .88rem; }
+.billing-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }

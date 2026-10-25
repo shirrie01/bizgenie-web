@@ -10,7 +10,7 @@ const FIXTURES = [
   { id: "leasing", name: "Northgate Vehicle Leasing", description: "We lease cars and vans to small businesses.", expectKey: "leasing" },
   { id: "beauty", name: "Clearskin Studio", description: "A skincare and aesthetics clinic offering facials and consultations.", expectKey: "aesthetics" },
   { id: "fragrance", name: "Maison Aurelle", description: "An independent perfume house making small-batch fragrances.", expectKey: "perfume" },
-  { id: "b2b", name: "Ashdown & Pryce Chartered Accountants", description: "Tax and advisory services for owner-managed businesses.", expectKey: "neutral" },
+  { id: "b2b", name: "Ashdown & Pryce Chartered Accountants", description: "Tax and advisory services for owner-managed businesses.", expectKey: "professional" },
   { id: "local", name: "Brightside Window Cleaning", description: "Window cleaning for homes and shops across Leeds.", expectKey: "neutral" },
 ];
 const brainOf = (f) => ({ brand_id: `b-${f.id}`, project_id: `p-${f.id}`, name: f.name, identity: { description: f.description }, audience: { summary: "Local customers." }, commercial: { primary_cta: "Get in touch" }, metadata: { version: 1, status: "approved" } });
@@ -45,7 +45,7 @@ describe("five business kinds each see only their own workspace", () => {
   });
 
   it("each sector's guidance uses its own language and none of another sector's", () => {
-    for (const key of ["leasing", "aesthetics", "perfume"]) {
+    for (const key of ["leasing", "aesthetics", "perfume", "professional"]) {
       const f = FIXTURES.find((x) => x.expectKey === key);
       const text = allText(modelOf(f)).toLowerCase();
       expect(text).toMatch(new RegExp(signatureTerms(key).join("|")));

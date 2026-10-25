@@ -92,6 +92,9 @@ async function bootstrapCustomerWorkspace({ accessToken, goal }) {
 // Premium Studio only (BG-STUDIO-008-FE). A request that never answers must not leave a spinner forever. The
 // request itself is not cancelled, so callers say plainly when a write may still have completed.
 const PREMIUM_TIMEOUT_MS = 20000;
+// A refusal because the session is no longer valid (401), as typed by the Premium Studio clients.
+const isAuthRefusal = (error) => Boolean(error) && (error.kind === "auth" || error.code === "AUTHENTICATION_REQUIRED");
+
 function withTimeout(promise, message = "This is taking longer than expected. Please try again.", ms = PREMIUM_TIMEOUT_MS, props = null) {
   let timer;
   const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(props ? Object.assign(new Error(message), props) : new Error(message)), ms); });
@@ -358,6 +361,9 @@ export default function App() {
   const [brandBrainState, setBrandBrainState] = useState({ status: "idle", brain: null, draft: "", error: "" });
   const premiumEnabled = isPremiumStudioEnabled();
   const [campaignList, setCampaignList] = useState({ status: "idle", campaigns: [], error: "" });
+  // BG-STUDIO-017-FE: set when any Premium Studio call is refused with 401, so the shell can offer "Sign in again" instead of retry buttons that cannot work.
+  const [sessionEnded, setSessionEnded] = useState(false);
+  useEffect(() => { setSessionEnded(false); }, [session.accessToken]);
   const [premiumEpoch, setPremiumEpoch] = useState(0);
   // Persistent onboarding (BG-STUDIO-010-FE): the saved record for the selected workspace, as the API returned it.
   const [onboardingState, setOnboardingState] = useState({ status: "idle", onboarding: null, brandNamePlaceholder: null, error: "" });
@@ -635,7 +641,7 @@ export default function App() {
       const to = new Date(now);
       to.setUTCDate(to.getUTCDate() + 90);
       const entries = await getCampaignCalendar({ accessToken: session.accessToken, session, campaign: campaignState.campaign, from: from.toISOString(), to: to.toISOString() });
-      setCalendarState({ status: "ready", entries, error: "" });
+      setCalendarState({ status: "ready", entries, error: "", window: { from: from.toISOString(), to: to.toISOString() } });
     } catch (error) {
       setCalendarState({ status: "error", entries: [], error: error.message });
     }
@@ -832,8 +838,10 @@ export default function App() {
       const result = await withTimeout(fetchBrandBrain({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken }), "Your Brand Brain is taking longer than expected to load.");
       if (scopeToken !== scopeTokenRef.current) return;
       setBrandBrainState({ status: "ready", brain: result.brand_brain, draft: JSON.stringify(result.brand_brain, null, 2), error: "", errorCode: "" });
+      setSessionEnded(false);
     } catch (error) {
       if (scopeToken !== scopeTokenRef.current) return;
+      if (isAuthRefusal(error)) setSessionEnded(true);
       // A workspace the customer can no longer use is not an outage: say so, and let the screen offer the chooser.
       setBrandBrainState({ status: "error", brain: null, draft: "", error: error.message, errorCode: error.code === "WORKSPACE_NOT_AUTHORIZED" ? "WORKSPACE_NOT_AUTHORIZED" : "" });
     }
@@ -868,8 +876,10 @@ export default function App() {
       const result = await withTimeout(fetchOnboarding({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken }), "Your saved setup is taking longer than expected to load.");
       if (scopeToken !== scopeTokenRef.current) return;
       setOnboardingState({ status: "ready", onboarding: result.onboarding, brandNamePlaceholder: result.brandNamePlaceholder, error: "" });
+      setSessionEnded(false);
     } catch (error) {
       if (scopeToken !== scopeTokenRef.current) return;
+      if (isAuthRefusal(error)) setSessionEnded(true);
       // Never keep an earlier record on screen as if it were current once a reload has failed.
       setOnboardingState({ status: error.code === "ONBOARDING_UNAVAILABLE" ? "unavailable" : "error", onboarding: null, brandNamePlaceholder: null, error: error.message, errorCode: error.code || "" });
     }
@@ -913,6 +923,7 @@ export default function App() {
       // 503, a dropped connection and a timeout can all follow a commit whose acknowledgement was lost: never "not saved".
       if (error.outcome === "unknown" || error.code === "NETWORK") return { ok: false, unconfirmed: true, message: error.message };
       if (error.code === "ONBOARDING_INCOMPLETE") return { ok: false, missing: error.missing || [], message: error.message };
+      if (isAuthRefusal(error)) setSessionEnded(true);
       return { ok: false, message: error.message };
     }
   }
@@ -929,6 +940,7 @@ export default function App() {
       setWorkspaceState((current) => (current.status === "switching" ? current : { ...current, status: "ready", workspaces: result.workspaces, selectionRequired: result.status === "selection_required", error: "", errorCode: "", target: null }));
     } catch (error) {
       if (scopeToken !== scopeTokenRef.current) return;
+      if (isAuthRefusal(error)) setSessionEnded(true);
       // Never keep an earlier list on screen as if it were current once a reload has failed.
       setWorkspaceState((current) => (current.status === "switching" ? current : { ...current, status: "error", workspaces: [], selectionRequired: false, error: error.message, errorCode: error.code || "", target: null }));
     }
@@ -1008,6 +1020,7 @@ export default function App() {
     } catch (error) {
       if (scopeToken !== scopeTokenRef.current) return gone;
       if (error.code === "WORKSPACE_NOT_AUTHORIZED") { premiumLoadRole(); return { ok: false, workspaceUnavailable: true, message: `${error.message} Nothing was saved.` }; }
+      if (isAuthRefusal(error)) setSessionEnded(true);
       return { ok: false, message: error.kind === "auth" ? "Your session has ended. Sign in again to continue. Nothing was saved." : "Your latest saved Brand Brain could not be checked, so nothing was saved. Your answers are still on this screen. Try again." };
     }
     if (scopeToken !== scopeTokenRef.current) return gone;
@@ -1034,6 +1047,7 @@ export default function App() {
         const latest = await reread();
         return { ok: false, conflict: true, reloaded: Boolean(latest), message: error.message };
       }
+      if (isAuthRefusal(error)) setSessionEnded(true);
       return { ok: false, message: error.message };
     }
   }
@@ -1090,6 +1104,8 @@ export default function App() {
         onSelectWorkspace={premiumSelectWorkspace}
         membershipRole={roleState.role}
         readOnly={isReadOnlyRole(roleState.role)}
+        sessionEnded={sessionEnded}
+        onSignOut={handleSignOut}
         onboardingState={onboardingState}
         onLoadOnboarding={premiumLoadOnboarding}
         onSaveOnboarding={premiumSaveOnboarding}
