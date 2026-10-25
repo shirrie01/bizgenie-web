@@ -5,6 +5,8 @@ import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
+import { fetchWorkspaceCalendar } from "./premium/workspaceCalendarClient";
+import ScheduleControls from "./premium/ScheduleControls";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import { operationKey } from "./operationKey";
@@ -92,6 +94,8 @@ async function bootstrapCustomerWorkspace({ accessToken, goal }) {
 // Premium Studio only (BG-STUDIO-008-FE). A request that never answers must not leave a spinner forever. The
 // request itself is not cancelled, so callers say plainly when a write may still have completed.
 const PREMIUM_TIMEOUT_MS = 20000;
+const WS_CAL_IDLE = { status: "idle", items: [], failures: [], error: "", window: null, campaignsRead: 0, campaignsChosen: 0, campaignsTotal: 0, truncated: false };
+
 // A refusal because the session is no longer valid (401), as typed by the Premium Studio clients.
 const isAuthRefusal = (error) => Boolean(error) && (error.kind === "auth" || error.code === "AUTHENTICATION_REQUIRED");
 
@@ -120,6 +124,7 @@ async function bootstrapWorkspaceWithProfile({ accessToken, businessName, websit
 async function getCampaignList({ accessToken, session }) {
   const query = new URLSearchParams({ tenant_id: session.tenantId, project_id: session.projectId });
   const response = await fetch(`${API_BASE_URL}/customer/campaigns?${query.toString()}`, { headers: authorizationHeader(accessToken) });
+  if (response.status === 401) throw Object.assign(new Error("Your session has ended. Sign in again to continue."), { kind: "auth", code: "AUTHENTICATION_REQUIRED" });
   if (!response.ok) throw new Error("Your campaigns could not be loaded yet.");
   const result = await response.json();
   return Array.isArray(result?.campaigns) ? result.campaigns : [];
@@ -282,9 +287,24 @@ async function approveCampaignVariant({ accessToken, session, campaign, variant,
   return result.campaign;
 }
 
+// Record (or change) the planned publication time of an approved variant. POST .../schedule or .../reschedule. Records a plan only.
+async function scheduleVariant({ accessToken, session, campaign, variant, payload, mode }) {
+  const revisionId = currentRevisionFor(variant);
+  if (!revisionId || !["approved", "scheduled"].includes(variant.workflow)) throw new Error("Only approved content can be scheduled.");
+  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/${mode}`, {
+    method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
+    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, ...payload, idempotency_key: await operationKey(campaign, variant, revisionId, `${mode}-${payload.scheduled_for}`) }),
+  });
+  if (response.status === 401) throw Object.assign(new Error("Your session has ended. Sign in again to continue. Nothing was scheduled."), { kind: "auth", code: "AUTHENTICATION_REQUIRED" });
+  if (!response.ok) throw await reviewRequestError(response, "That time could not be saved yet. Nothing was published and your approval is still safe.");
+  const result = await response.json();
+  if (!result?.campaign?.campaign_id) throw new Error("The planned time could not be confirmed yet. Reload the latest campaign to check it.");
+  return result.campaign;
+}
+
 async function beginManualPublication({ accessToken, session, campaign, variant }) {
   const revisionId = currentRevisionFor(variant);
-  if (!revisionId || variant.workflow !== "approved") throw new Error("Only approved content can be prepared for manual publication.");
+  if (!revisionId || !["approved", "scheduled"].includes(variant.workflow)) throw new Error("Only approved content can be prepared for manual publication.");
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/manual-publication`, {
     method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "manual-publication") }),
@@ -355,6 +375,8 @@ export default function App() {
   const [reviewState, setReviewState] = useState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
   const [manualState, setManualState] = useState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
   const [calendarState, setCalendarState] = useState({ status: "idle", entries: [], error: "" });
+  const [workspaceCalendarState, setWorkspaceCalendarState] = useState(WS_CAL_IDLE); // BG-STUDIO-018-FE
+  const [scheduleState, setScheduleState] = useState({ status: "idle", variantId: "", error: "" });
   const [resultsState, setResultsState] = useState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
   const [session, setSession] = useState({ status: "loading" });
   const [pendingSubmit, setPendingSubmit] = useState(false);
@@ -388,6 +410,8 @@ export default function App() {
     setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
     setManualState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
     setCalendarState({ status: "idle", entries: [], error: "" });
+    setWorkspaceCalendarState(WS_CAL_IDLE);
+    setScheduleState({ status: "idle", variantId: "", error: "" });
     setResultsState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
     setBrandBrainState({ status: "idle", brain: null, draft: "", error: "" });
     setCampaignList({ status: "idle", campaigns: [], error: "" });
@@ -496,6 +520,7 @@ export default function App() {
     setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
     setManualState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
     setCalendarState({ status: "idle", entries: [], error: "" });
+    setWorkspaceCalendarState(WS_CAL_IDLE);
     try {
       const readySession = await ensureReadySession(activeSession);
       if (readySession.status !== "ready") {
@@ -595,6 +620,26 @@ export default function App() {
     } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message, stale: Boolean(error.stale), unavailable: Boolean(error.unavailable) })); }
   }
 
+  // BG-STUDIO-018-FE (Premium Studio only): record or change the planned publication time. Nothing is published.
+  async function runSchedule(variant, payload, mode) {
+    if (!campaignState.campaign || scheduleState.status === "saving") return;
+    const scopeToken = scopeTokenRef.current;
+    setScheduleState({ status: "saving", variantId: variant.variant_id, error: "" });
+    try {
+      const campaign = await scheduleVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, payload, mode });
+      if (scopeToken !== scopeTokenRef.current) return;
+      setCampaignState({ status: "ready", campaign, error: "" });
+      setCalendarState({ status: "idle", entries: [], error: "" });
+      setWorkspaceCalendarState(WS_CAL_IDLE);
+      if (campaignVariant(campaign, variant.variant_id)?.workflow !== "scheduled") throw new Error("The planned time could not be confirmed yet. Reload the latest campaign to check it.");
+      setScheduleState({ status: "saved", variantId: variant.variant_id, error: "" });
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
+      if (isAuthRefusal(error)) setSessionEnded(true);
+      setScheduleState({ status: "error", variantId: variant.variant_id, error: error.message });
+    }
+  }
+
   async function runManualStart(variant) {
     if (!campaignState.campaign || manualState.status === "starting") return;
     setManualState({ status: "starting", variantId: variant.variant_id, attemptId: "", url: "", error: "" });
@@ -647,6 +692,25 @@ export default function App() {
     }
   }
 
+  // BG-STUDIO-018-FE: the workspace-wide calendar, assembled from existing read endpoints (no workspace endpoint exists yet).
+  async function runWorkspaceCalendar(win) {
+    if (session.status !== "ready" || workspaceCalendarState.status === "loading") return;
+    const scopeToken = scopeTokenRef.current;
+    const current = () => scopeToken === scopeTokenRef.current;
+    setWorkspaceCalendarState({ ...WS_CAL_IDLE, status: "loading", window: win });
+    try {
+      const campaigns = await getCampaignList({ accessToken: session.accessToken, session });
+      if (!current()) return;
+      const result = await fetchWorkspaceCalendar({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId }, from: win.from, to: win.to, campaigns, isCurrent: current });
+      if (!current()) return;
+      setWorkspaceCalendarState({ ...WS_CAL_IDLE, status: "ready", window: win, ...result });
+    } catch (error) {
+      if (!current()) return;
+      if (isAuthRefusal(error)) setSessionEnded(true);
+      setWorkspaceCalendarState({ ...WS_CAL_IDLE, status: "error", window: win, error: isAuthRefusal(error) ? "Your session has ended. Sign in again to continue." : "The calendar could not be loaded yet." });
+    }
+  }
+
   async function runManualConfirm(variant) {
     if (manualState.status !== "prepared" || manualState.variantId !== variant.variant_id) return;
     setManualState((current) => ({ ...current, status: "confirming", error: "" }));
@@ -655,6 +719,7 @@ export default function App() {
       setCampaignState({ status: "ready", campaign: result.campaign, error: "" });
       setManualState((current) => ({ ...current, status: "published", error: "" }));
       setCalendarState({ status: "idle", entries: [], error: "" });
+      setWorkspaceCalendarState(WS_CAL_IDLE);
     } catch (error) { setManualState((current) => ({ ...current, status: "error", error: error.message })); }
   }
 
@@ -678,6 +743,7 @@ export default function App() {
     setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
     setManualState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
     setCalendarState({ status: "idle", entries: [], error: "" });
+    setWorkspaceCalendarState(WS_CAL_IDLE);
     setPendingSubmit(false);
   }
 
@@ -737,7 +803,8 @@ export default function App() {
                       </button>
                     )}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
-                    {variant.workflow === "approved" && <div>
+                    {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <ScheduleControls campaign={campaignState.campaign} variant={variant} state={scheduleState} onSchedule={runSchedule} />}
+                    {(variant.workflow === "approved" || (premiumEnabled && variant.workflow === "scheduled")) && <div>
                       <p>Manual publication required. BizGenie will not claim this was published until you confirm it.</p>
                       <button className="secondary" type="button" onClick={() => runManualStart(variant)} disabled={manualState.status === "starting"}>{manualState.status === "starting" ? "Preparing handoff…" : "Prepare manual publication"}</button>
                     </div>}
@@ -864,6 +931,7 @@ export default function App() {
       }
     } catch (error) {
       if (scopeToken !== scopeTokenRef.current) return;
+      if (isAuthRefusal(error)) setSessionEnded(true);
       setCampaignList((current) => ({ ...current, status: "error", error: error.message }));
     }
   }, [session.status, session.accessToken, session.tenantId, session.projectId]);
@@ -1116,6 +1184,8 @@ export default function App() {
         onLoadCampaigns={premiumLoadCampaigns}
         calendarState={calendarState}
         onLoadCalendar={runCalendar}
+        workspaceCalendarState={workspaceCalendarState}
+        onLoadWorkspaceCalendar={runWorkspaceCalendar}
         sections={{
           auth: (
             <section className="recommendation ps-auth" aria-label="Account access">

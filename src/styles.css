@@ -238,3 +238,49 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .billing-facts { margin: 8px 0 0; }
 .billing-facts dt { margin-top: 8px; color: #4b564f; font-size: .88rem; }
 .billing-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
+/* BG-STUDIO-018-FE: workspace-wide calendar. Status is always text, never colour alone. */
+.ps-wcal { display: grid; gap: 12px; }
+.ps-wcal-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.ps-wcal-views, .ps-wcal-nav { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.ps-wcal-views button, .ps-wcal-nav button { min-height: 44px; padding: 10px 18px; background: #fff; color: #16211d; border: 1px solid #bfc3b9; }
+.ps-wcal-views button.on { background: #16211d; color: #fff; border-color: #16211d; }
+.ps-wcal-dow { display: none; }
+.ps-wcal-filters { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.ps-wcal-filters label { display: grid; gap: 4px; font-size: .88rem; color: #4b564f; min-width: 0; }
+.ps-wcal-filters select { max-width: 100%; }
+.ps-wcal-title { margin: 8px 0 0; }
+.ps-wcal-grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.ps-wcal-grid th, .ps-wcal-grid td { border: 1px solid #d5dbd6; vertical-align: top; padding: 6px; text-align: left; overflow-wrap: anywhere; }
+.ps-wcal-grid td { min-height: 64px; background: #fff; }
+.ps-wcal-grid td.is-outside { background: #f1f3ef; color: #4b564f; }
+.ps-wcal-grid td.is-today .ps-wcal-date time { background: #14201c; color: #fff; border-radius: 999px; padding: 1px 7px; }
+.ps-wcal-date { display: block; font-weight: 600; margin-bottom: 4px; }
+.ps-wcal-grid ul, .ps-wcal-daylist, .ps-wcal-undated ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ps-wcal-entry { display: grid; gap: 2px; padding: 6px 8px; border: 1px solid #c3cbc5; border-left-width: 4px; border-radius: 8px; background: #fbfcfa; font-size: .85rem; min-width: 0; overflow-wrap: anywhere; }
+.ps-wcal-entry.st-published { border-left-color: #1f6b3a; }
+.ps-wcal-entry.st-scheduled { border-left-color: #1f3f66; }
+.ps-wcal-meta { color: #4b564f; }
+.ps-wcal-status { font-weight: 600; }
+.ps-wcal-clash { color: #7a2e0a; font-weight: 600; }
+.ps-wcal-undated { margin-top: 8px; }
+.ps-wcal-undated summary { cursor: pointer; font-weight: 600; min-height: 24px; }
+@media (max-width: 719px) {
+  .ps-wcal-dow { display: inline; }
+  .ps-wcal-grid, .ps-wcal-grid tbody, .ps-wcal-grid tr, .ps-wcal-grid td { display: block; width: 100%; }
+  .ps-wcal-grid thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .ps-wcal-grid td:not(.has-items):not(.is-today) { display: none; }
+  .ps-wcal-grid td { margin-bottom: 6px; border-radius: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .ps-wcal * { transition: none !important; animation: none !important; } }
+
+/* BG-STUDIO-018-FE: voice, positioning and strategy editor in the Brand tab. */
+.ps-strategy { display: grid; gap: 12px; margin-top: 24px; }
+.ps-strategy-group { border: 1px solid #d5dbd6; border-radius: 12px; padding: 8px 14px; background: #fff; }
+.ps-strategy-group summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.ps-strategy-group textarea { width: 100%; box-sizing: border-box; }
+
+/* BG-STUDIO-018-FE: planned-time controls must fit the narrowest screen (native date-time inputs have a wide intrinsic size). */
+.ps-schedule { display: grid; gap: 6px; min-width: 0; margin-top: 8px; }
+.ps-schedule input[type="datetime-local"] { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.ps-schedule p { margin: 0; overflow-wrap: anywhere; }

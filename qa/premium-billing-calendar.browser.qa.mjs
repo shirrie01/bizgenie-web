@@ -81,28 +81,30 @@ test('billing: not subscribed offers checkout, says Stripe shows the price, and 
   await checks(page, 'billing-not-subscribed');
 });
 
-test('calendar: loads by itself for the open campaign, states the window and the campaign-only scope', async ({ page }) => {
+test('campaign calendar: loads by itself for the open campaign, states the window and the campaign-only scope', async ({ page }) => {
   const log = await open(page, { subscription: { status: 'not_subscribed', subscription: null }, calendar: [{ campaign_id: CID, content_item_id: 'c1', variant_id: 'v1', workflow: 'scheduled', occurrence_at: '2026-11-02T10:00:00.000Z' }] });
   await page.goto('/');
   await page.getByRole('heading', { name: 'Welcome back, Northgate Vehicle Leasing.' }).waitFor();
   await nav(page).getByRole('button', { name: 'Calendar', exact: true }).click();
+  await page.getByRole('button', { name: /^this campaign/i }).click(); // the campaign-level view stays available and labelled
   await expect(page.getByText(/showing activity from .* to .* \(the last 30 days and the next 90 days\)/i)).toBeVisible();
   await expect(page.getByText(/Northgate spring leasing/, { exact: false }).first()).toBeVisible();
   await expect(page.getByText(/a calendar across all your campaigns is not available yet/i)).toBeVisible();
   await expect(page.getByText('Scheduled', { exact: true })).toBeVisible();
-  expect(log.calls.filter((c) => c.endsWith('/calendar'))).toHaveLength(1); // exactly one automatic request, no loop
+  expect(log.calls.filter((c) => c.endsWith('/calendar'))).toHaveLength(2); // one automatic request per view (all campaigns, then this campaign), no loop
   expect(Math.round((new Date(log.calendarQuery.to) - new Date(log.calendarQuery.from)) / 86400000)).toBe(120);
   await checks(page, 'calendar-auto');
 });
 
-test('calendar: a failed load shows the error once, with Try again, and does not loop', async ({ page }) => {
+test('campaign calendar: a failed load shows the error once, with Try again, and does not loop', async ({ page }) => {
   const log = await open(page, { subscription: { status: 'not_subscribed', subscription: null }, calendarStatus: 503 });
   await page.goto('/');
   await page.getByRole('heading', { name: 'Welcome back, Northgate Vehicle Leasing.' }).waitFor();
   await nav(page).getByRole('button', { name: 'Calendar', exact: true }).click();
+  await page.getByRole('button', { name: /^this campaign/i }).click(); // the campaign-level view stays available and labelled
   await expect(page.getByRole('alert').filter({ hasText: /calendar activity could not be loaded yet/i })).toBeVisible();
   await page.waitForTimeout(800);
-  expect(log.calls.filter((c) => c.endsWith('/calendar'))).toHaveLength(1);
+  expect(log.calls.filter((c) => c.endsWith('/calendar'))).toHaveLength(2); // all campaigns once, this campaign once; neither retried
   await expect(page.getByRole('button', { name: /^try again$/i })).toBeVisible();
   await checks(page, 'calendar-error');
 });

@@ -3,6 +3,8 @@ import PremiumOnboarding, { STAGES } from "./PremiumOnboarding";
 import PremiumWorkspace from "./PremiumWorkspace";
 import PremiumWorkspaces from "./PremiumWorkspaces";
 import PremiumBrandBrain from "./PremiumBrandBrain";
+import PremiumWorkspaceCalendar from "./PremiumWorkspaceCalendar";
+import { todayKey, windowFor } from "./workspaceCalendarModel";
 import { brainFormValues, rebaseDraft } from "./brainClient";
 import { buildWorkspaceModel } from "./workspaceModel";
 import { buildSavePayload, formFromOnboarding, hasUnsavedChanges, isSeededDescription } from "./onboardingModel";
@@ -36,7 +38,7 @@ const windowText = ({ from, to }) => {
 
 const EMPTY_DRAFT = { businessName: "", website: "", challenge: "", industryText: "", sectorChoice: "", description: "", audience: "", cta: "", goal: "" };
 
-export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, membershipRole, readOnly = false, workspaceState, onLoadWorkspaces, onSelectWorkspace, sessionEnded = false, onSignOut, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, sections }) {
+export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, membershipRole, readOnly = false, workspaceState, onLoadWorkspaces, onSelectWorkspace, sessionEnded = false, onSignOut, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, workspaceCalendarState, onLoadWorkspaceCalendar, sections }) {
   const [view, setView] = useState(null); // null until the starting point has been decided
   const [stage, setStage] = useState(0);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -164,7 +166,10 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
   // BG-STUDIO-017-FE (DEC-023): the calendar loads by itself when it is opened for a campaign. Only from "idle", so a failure is
   // never retried in a loop; "Refresh" is the customer's choice.
   const calendarIdle = calendarState.status === "idle";
-  useEffect(() => { if (view === "calendar" && campaign && calendarIdle && onLoadCalendar) onLoadCalendar(); }, [view, campaign, calendarIdle, onLoadCalendar]);
+  const [calScope, setCalScope] = useState("all"); // "all" campaigns (BG-STUDIO-018-FE) or "campaign": the open one
+  const wcIdle = Boolean(workspaceCalendarState) && workspaceCalendarState.status === "idle";
+  useEffect(() => { if (view === "calendar" && calScope === "campaign" && campaign && calendarIdle && onLoadCalendar) onLoadCalendar(); }, [view, calScope, campaign, calendarIdle, onLoadCalendar]);
+  useEffect(() => { if (view === "calendar" && calScope === "all" && wcIdle && onLoadWorkspaceCalendar) onLoadWorkspaceCalendar(windowFor(todayKey())); }, [view, calScope, wcIdle, onLoadWorkspaceCalendar]);
 
   if (session.status === "loading") return <p className="ps-loading" role="status">Checking your account…</p>;
   if (!ready && !scopeMissing) return sections.auth;
@@ -198,9 +203,9 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
       </section>
     );
   } else if (view === "calendar") {
-    content = (
+    const campaignCalendar = (
       <section className="ps-empty" aria-label="Campaign calendar">
-        <h2>Calendar</h2>
+        <h2>Calendar · this campaign</h2>
         {!campaign ? <p>Create a campaign to see its calendar. Only activity recorded for a real campaign appears here.</p> : (<>
           <p>Scheduled and published activity recorded for <strong>{campaign.name}</strong> only. A calendar across all your campaigns is not available yet.</p>
           {calendarState.status === "loading" && <p role="status">Loading this campaign's calendar…</p>}
@@ -214,6 +219,15 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
           {(calendarState.status === "ready" || calendarState.status === "error") && <button type="button" className="secondary" onClick={onLoadCalendar}>{calendarState.status === "error" ? "Try again" : "Refresh"}</button>}
         </>)}
       </section>
+    );
+    content = (
+      <div className="ps-wcal-wrap">
+        <div role="group" aria-label="Calendar scope" className="ps-wcal-views">
+          <button type="button" className={calScope === "all" ? "on" : ""} aria-pressed={calScope === "all"} onClick={() => setCalScope("all")}>All campaigns</button>
+          <button type="button" className={calScope === "campaign" ? "on" : ""} aria-pressed={calScope === "campaign"} onClick={() => setCalScope("campaign")}>This campaign{campaign ? `: ${campaign.name}` : ""}</button>
+        </div>
+        {calScope === "all" ? <PremiumWorkspaceCalendar state={workspaceCalendarState} onLoad={onLoadWorkspaceCalendar} /> : campaignCalendar}
+      </div>
     );
   } else if (view === "workspaces") {
     content = <PremiumWorkspaces session={session} workspaceState={workspaceState} onLoad={onLoadWorkspaces} onSelect={onSelectWorkspace} unsavedAnswers={dirty} required={scopeMissing} />;

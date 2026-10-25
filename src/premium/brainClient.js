@@ -33,6 +33,95 @@ export class BrainSaveError extends Error {
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const section = (current, key, value) => (value ? { ...(current || {}), [key]: value } : current);
 
+// ---- Extended Brand Brain fields (BG-STUDIO-018-FE) ----
+// The backend Brand Brain (bizgenie-api src/brand-brain/schema.js) holds far more than the four fields first built. These are
+// plain, customer-written fields; none is the business name or description, so DEC-021/022 are not touched. Limits mirror
+// the backend schema: prose 2000 characters; list items 300 characters, at most 20; claim and term lists 200 characters, at most 12.
+// The id is the only thing the screen sends: it is looked up here, so no arbitrary path can reach the document.
+const L = { prose: { max: 2000 }, list: { max: 300, items: 20 }, governance: { max: 200, items: 12 } };
+export const EXTENDED_GROUPS = [
+  { id: "positioning", title: "Positioning and values", fields: [
+    { id: "positioning", section: "identity", key: "positioning", kind: "prose", label: "Positioning", hint: "How you want to be seen compared with the alternatives." },
+    { id: "mission", section: "identity", key: "mission", kind: "prose", label: "Mission" },
+    { id: "vision", section: "identity", key: "vision", kind: "prose", label: "Vision" },
+    { id: "values", section: "identity", key: "values", kind: "list", label: "Values", hint: "One per line." }] },
+  { id: "voice", title: "Voice and language", fields: [
+    { id: "tone", section: "voice", key: "tone", kind: "prose", label: "Tone of voice", hint: "For example: warm, plain-spoken, confident." },
+    { id: "writing_style", section: "voice", key: "writing_style", kind: "prose", label: "Writing style" },
+    { id: "personality", section: "voice", key: "personality", kind: "prose", label: "Personality" },
+    { id: "preferred_terms", section: "voice", key: "preferred_terms", kind: "list", label: "Words and phrases to use", hint: "One per line." },
+    { id: "prohibited_terms", section: "voice", key: "prohibited_terms", kind: "governance", label: "Words and phrases to avoid", hint: "One per line, up to 12." }] },
+  { id: "audience", title: "Audience insight", fields: [
+    { id: "pain_points", section: "audience", key: "pain_points", kind: "list", label: "Problems your customers have", hint: "One per line." },
+    { id: "goals", section: "audience", key: "goals", kind: "list", label: "What your customers want to achieve", hint: "One per line." },
+    { id: "objections", section: "audience", key: "objections", kind: "list", label: "Objections you hear", hint: "One per line." },
+    { id: "buying_triggers", section: "audience", key: "buying_triggers", kind: "list", label: "What makes them decide", hint: "One per line." }] },
+  { id: "offer", title: "Offer and claims", fields: [
+    { id: "differentiators", section: "commercial", key: "differentiators", kind: "list", label: "What sets you apart", hint: "One per line." },
+    { id: "approved_claims", section: "commercial", key: "approved_claims", kind: "governance", label: "Claims you can evidence", hint: "One per line, up to 12. BizGenie does not check them: only list what you can back up." },
+    { id: "prohibited_claims", section: "commercial", key: "prohibited_claims", kind: "governance", label: "Claims never to make", hint: "One per line, up to 12." }] },
+  { id: "competitors", title: "Competitors", fields: [
+    { id: "competitor_names", section: "competitors", key: "names", kind: "list", label: "Competitors", hint: "One per line." },
+    { id: "competitor_notes", section: "competitors", key: "notes", kind: "prose", label: "Notes on the competition" }] },
+  { id: "visual", title: "Visual style", fields: [
+    { id: "colours", section: "visual", key: "colours", kind: "list", label: "Brand colours", hint: "One per line." },
+    { id: "fonts", section: "visual", key: "fonts", kind: "list", label: "Fonts", hint: "One per line." },
+    { id: "photography_style", section: "visual", key: "photography_style", kind: "prose", label: "Photography style" }] },
+];
+export const EXTENDED_FIELDS = EXTENDED_GROUPS.flatMap((g) => g.fields);
+const EXT_BY_ID = Object.fromEntries(EXTENDED_FIELDS.map((f) => [f.id, f]));
+
+// What the form shows for a stored Brand Brain: prose as text, lists as one item per line.
+export function extendedFormValues(brain) {
+  const out = {};
+  for (const f of EXTENDED_FIELDS) {
+    const v = brain && brain[f.section] ? brain[f.section][f.key] : undefined;
+    out[f.id] = Array.isArray(v) ? v.join("\n") : typeof v === "string" ? v : "";
+  }
+  return out;
+}
+const linesOf = (text) => String(text == null ? "" : text).split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+// The value to store for a typed value: trimmed prose, or a list of non-empty lines. Empty means "remove the field".
+export const extendedValue = (field, text) => (field.kind === "prose" ? String(text == null ? "" : text).trim() : linesOf(text));
+
+// Per-field problems, in plain words, before anything is sent.
+export function validateExtended(values, ids) {
+  const found = {};
+  for (const id of ids) {
+    const f = EXT_BY_ID[id]; if (!f) continue;
+    const v = extendedValue(f, values[id]);
+    if (f.kind === "prose") { if (v.length > L.prose.max) found[id] = `${f.label} must be ${L.prose.max} characters or fewer.`; continue; }
+    const lim = L[f.kind];
+    if (v.length > lim.items) found[id] = `${f.label} can have at most ${lim.items} lines.`;
+    else if (v.some((x) => x.length > lim.max)) found[id] = `Each line of ${f.label} must be ${lim.max} characters or fewer.`;
+  }
+  return found;
+}
+
+// Which extended fields differ from a baseline (both as form values).
+export function changedExtended(values, baseline) {
+  const out = {};
+  for (const f of EXTENDED_FIELDS) {
+    const now = JSON.stringify(extendedValue(f, values[f.id])); const was = JSON.stringify(extendedValue(f, baseline ? baseline[f.id] : ""));
+    if (now !== was) out[f.id] = extendedValue(f, values[f.id]);
+  }
+  return out;
+}
+
+// Applies edited extended fields to a (copy of a) stored brain. Unknown ids are ignored. An empty value removes the field, and an
+// emptied section is dropped (the backend replaces the whole document, so omitted optional fields are removed).
+function applyExtended(merged, extended) {
+  for (const [id, value] of Object.entries(extended || {})) {
+    const f = EXT_BY_ID[id]; if (!f) continue;
+    const empty = Array.isArray(value) ? value.length === 0 : !String(value).trim();
+    const base = merged[f.section];
+    const sec = base && typeof base === "object" && !Array.isArray(base) ? { ...base } : {}; // a malformed section is replaced by a valid one, never spread
+    if (empty) delete sec[f.key]; else sec[f.key] = Array.isArray(value) ? [...value] : String(value).trim();
+    if (Object.keys(sec).length) merged[f.section] = sec; else delete merged[f.section];
+  }
+  return merged;
+}
+
 // The document to send. `canChangeIdentity` is false for a member known to be a non-owner: such a save never touches the
 // name or description, and repeats the stored values exactly. The input brain is never modified.
 export function mergeBrainFields(brain, fields, { canChangeIdentity = true } = {}) {
@@ -44,6 +133,7 @@ export function mergeBrainFields(brain, fields, { canChangeIdentity = true } = {
   if (identity) merged.identity = identity;
   if (audience) merged.audience = audience;
   if (commercial) merged.commercial = commercial;
+  if (fields.extended) applyExtended(merged, fields.extended);
   return merged;
 }
 

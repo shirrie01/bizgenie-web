@@ -58,7 +58,7 @@ export async function readCustomerBillingState({ accessToken, tenantId }) {
   if (!response.ok) {
     if (response.status === 401) throw new Error("Sign in again to check your billing status.");
     if (response.status === 404) throw new Error("Billing access could not be verified. Please do not start another checkout.");
-    throw new Error("Billing status could not be checked yet.");
+    throw new Error("We can't check your subscription right now. Please try again.");
   }
 
   return response.json();

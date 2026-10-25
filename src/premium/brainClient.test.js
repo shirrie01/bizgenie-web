@@ -142,3 +142,44 @@ describe("describeBrainFailure", () => {
     expect(describeBrainFailure({ unconfirmed: true, message: BRAIN_SAVE_UNCONFIRMED }).text).not.toMatch(/not saved/i);
   });
 });
+
+describe("extended Brand Brain fields (BG-STUDIO-018-FE)", () => {
+  const BRAIN = { brand_id: "b", project_id: "p", name: "Northgate", identity: { description: "We lease cars.", positioning: "Plain-spoken" }, voice: { tone: "warm", prohibited_terms: ["cheap"] }, audience: { summary: "SMEs" }, metadata: { version: 3, status: "approved" } };
+
+  it("applies only edited fields to a copy, keeps everything else and never touches the name or description", async () => {
+    const { mergeBrainFields } = await import("./brainClient");
+    const out = mergeBrainFields(BRAIN, { extended: { tone: "calm", values: ["Honest", "Local"], competitor_names: ["Acme"] } }, { canChangeIdentity: false });
+    expect(out.name).toBe("Northgate"); expect(out.identity).toEqual({ description: "We lease cars.", positioning: "Plain-spoken", values: ["Honest", "Local"] });
+    expect(out.voice).toEqual({ tone: "calm", prohibited_terms: ["cheap"] }); expect(out.competitors).toEqual({ names: ["Acme"] });
+    expect(BRAIN.voice.tone).toBe("warm"); expect(BRAIN.identity.values).toBeUndefined(); // the input is never modified
+  });
+
+  it("an empty value removes the field, and an emptied section is dropped; unknown ids and identity paths are ignored", async () => {
+    const { mergeBrainFields } = await import("./brainClient");
+    const out = mergeBrainFields(BRAIN, { extended: { prohibited_terms: [], tone: "", name: "Hacked", description: "Hacked", "identity.description": "Hacked", bogus: "x" } });
+    expect(out.voice).toBeUndefined(); expect(out.name).toBe("Northgate"); expect(out.identity.description).toBe("We lease cars.");
+    expect(JSON.stringify(out)).not.toMatch(/Hacked|bogus/);
+  });
+
+  it("shows lists one per line, trims lines, and detects only real changes", async () => {
+    const { extendedFormValues, changedExtended, extendedValue, EXTENDED_FIELDS } = await import("./brainClient");
+    const base = extendedFormValues({ ...BRAIN, voice: { prohibited_terms: ["cheap", "free"] } });
+    expect(base.prohibited_terms).toBe("cheap\nfree");
+    expect(changedExtended({ ...base }, base)).toEqual({});
+    expect(changedExtended({ ...base, prohibited_terms: "cheap\r\n free \n\n" }, base)).toEqual({}); // same items, different spacing: not a change
+    expect(changedExtended({ ...base, prohibited_terms: "cheap" }, base)).toEqual({ prohibited_terms: ["cheap"] });
+    expect(changedExtended({ ...base, tone: "  " }, base)).toEqual({});
+    expect(extendedValue(EXTENDED_FIELDS.find((f) => f.id === "tone"), "  calm ")).toBe("calm");
+  });
+
+  it("enforces the backend's limits before anything is sent", async () => {
+    const { validateExtended } = await import("./brainClient");
+    const lines = (n, len = 5) => Array.from({ length: n }, () => "x".repeat(len)).join("\n");
+    expect(validateExtended({ tone: "x".repeat(2001) }, ["tone"]).tone).toMatch(/2000 characters or fewer/);
+    expect(validateExtended({ values: lines(21) }, ["values"]).values).toMatch(/at most 20 lines/);
+    expect(validateExtended({ values: lines(2, 301) }, ["values"]).values).toMatch(/300 characters/);
+    expect(validateExtended({ approved_claims: lines(13) }, ["approved_claims"]).approved_claims).toMatch(/at most 12 lines/);
+    expect(validateExtended({ approved_claims: lines(2, 201) }, ["approved_claims"]).approved_claims).toMatch(/200 characters/);
+    expect(validateExtended({ values: lines(20, 300), approved_claims: lines(12, 200), tone: "x".repeat(2000) }, ["values", "approved_claims", "tone"])).toEqual({});
+  });
+});

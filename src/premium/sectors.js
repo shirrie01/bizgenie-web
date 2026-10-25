@@ -9,8 +9,8 @@
 
 import { isProfessionalSectorPersisted } from "./flag";
 
-// "professional" is last, so a business that matches a more specific sector (for example fleet consultancy) keeps that one.
-export const SECTOR_ORDER = ["leasing", "perfume", "aesthetics", "beverage", "charity", "takeaway", "professional"];
+// "professional_services" is last, so a business that matches a more specific sector (for example fleet consultancy) keeps that one.
+export const SECTOR_ORDER = ["leasing", "perfume", "aesthetics", "beverage", "charity", "takeaway", "professional_services"];
 
 const NEUTRAL_ANGLES = [
   { stage: "Awareness", text: "Introduce the business and who it is for." },
@@ -74,8 +74,8 @@ export const SECTORS = {
       { stage: "Action", text: "Make ordering direct and easy." },
     ],
   },
-  professional: {
-    key: "professional", label: "Professional services", short: "professional services", accent: "#2f4858",
+  professional_services: {
+    key: "professional_services", label: "Professional services", short: "professional services", accent: "#2f4858",
     keywords: /\b(accountants?|accountancy|chartered|bookkeep(ing|ers?)|tax|solicitors?|law firm|lawyers?|legal|consult(ing|ancy|ants?)|advis(ory|ers?|ors?)|architects?|surveyors?|recruit(ment|ers?)|financial planning|professional services)\b/i,
     angles: [
       { stage: "Awareness", text: "Explain who you help and which problems you solve, in plain language." },
@@ -85,8 +85,8 @@ export const SECTORS = {
   },
 };
 
-// Whether the API accepts this sector today. "professional" only after the backend enum and constraint ship (see flag.js).
-export const isSectorPersistable = (key, env) => (key === "professional" ? isProfessionalSectorPersisted(env) : Boolean(SECTORS[key]));
+// Whether the API accepts this sector today. "professional_services" only after the backend enum and constraint ship (see flag.js).
+export const isSectorPersistable = (key, env) => (key === "professional_services" ? isProfessionalSectorPersisted(env) : Boolean(SECTORS[key]));
 
 export const sectorOptions = (env) => [
   { value: "", label: "Work it out from what I have typed" },
@@ -117,5 +117,5 @@ export const signatureTerms = (key) => ({
   beverage: ["drink", "drinks", "flavour"],
   charity: ["charity", "donate", "volunteer"],
   takeaway: ["takeaway", "cook", "ordering"],
-  professional: ["advisory", "expertise"],
+  professional_services: ["advisory", "expertise"],
 }[key] || []);

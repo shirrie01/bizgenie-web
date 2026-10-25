@@ -421,6 +421,7 @@ describe("recommendation-to-campaign creation", () => {
     expect(ackBody).toMatchObject({ expected_campaign_version: 4, revision_id: "revision-1", render_receipt_id: "receipt-1", acknowledged: true });
     fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
     await screen.findByText("Approved");
+    expect(screen.queryByLabelText(/plan when to publish/i)).toBeNull(); // scheduling controls exist only in the Premium Studio (flag off here)
     const approvalBody = JSON.parse(apiCalls()[8][1].body);
     expect(approvalBody).toMatchObject({ expected_campaign_version: 5, revision_id: "revision-1", preview_id: "preview-1", approved: true });
     // The API rejects idempotency keys longer than 128 characters or outside [A-Za-z0-9._:-]; every review write must comply.

@@ -1525,6 +1525,34 @@ describe("Brand Brain integrity under change (BG-STUDIO-015)", () => {
     expect(body.commercial.primary_cta).toBe("Request a sample");
   });
 
+  it("voice and strategy details save through the same read-latest path: a member's save repeats the stored name and description exactly and keeps every other field (BG-STUDIO-018-FE)", async () => {
+    await open("member");
+    fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));
+    fireEvent.change(await screen.findByLabelText(/^tone of voice$/i), { target: { value: "Warm and direct" } });
+    fireEvent.change(screen.getByLabelText(/^values$/i), { target: { value: "Honest\nLocal" } });
+    fireEvent.click(screen.getByRole("button", { name: /save voice and strategy/i }));
+    expect(await screen.findByText(/only the details you changed here were sent/i)).toBeInTheDocument();
+    const body = lastBody();
+    expect(body.name).toBe("Maison Aurelle");
+    expect(body.identity.description).toBe("A small-batch perfume house."); // the stored description, repeated exactly
+    expect(body.audience.summary).toBe("Gift buyers."); expect(body.commercial.primary_cta).toBe("Shop the new scent"); // untouched fields kept
+    expect(body.voice).toEqual({ tone: "Warm and direct" });
+    expect(body.identity.values).toEqual(["Honest", "Local"]);
+    for (const key of ["brand_id", "project_id", "metadata"]) expect(body).not.toHaveProperty(key);
+    expect(called("GET", "/brand-brain").length).toBeGreaterThanOrEqual(2); // the latest stored version was read before the write
+  });
+
+  it("a refused (403) voice and strategy save keeps what was typed and says nothing was saved", async () => {
+    await open("owner");
+    fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));
+    handlers["PUT /customer/workspace/brand-brain"] = () => fail(403, { status: "failed", error: { code: "BRAND_BRAIN_WRITE_FORBIDDEN" } });
+    fireEvent.change(await screen.findByLabelText(/^mission$/i), { target: { value: "Keep businesses moving" } });
+    fireEvent.click(screen.getByRole("button", { name: /save voice and strategy/i }));
+    expect(await screen.findByText(/nothing was saved/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^mission$/i)).toHaveValue("Keep businesses moving");
+    expect(screen.queryByText(/only the details you changed here were sent/i)).toBeNull();
+  });
+
   it("D10 refreshing the page with unsaved Brand Brain edits warns first", async () => {
     await open("owner");
     fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));
@@ -1622,6 +1650,7 @@ describe("the campaign calendar loads by itself and states its window (DEC-023, 
     fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
     await screen.findByText(/saved to your workspace/i);
     fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Calendar" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^this campaign/i })); // the campaign-level view stays available and labelled
   }
 
   it("requests the calendar once on opening it, states the window and the campaign-only scope, and never implies workspace-wide coverage", async () => {
@@ -1659,4 +1688,128 @@ describe("the campaign calendar loads by itself and states its window (DEC-023, 
     expect(calendarCalls()).toHaveLength(2);
   });
 
+});
+
+describe("the workspace calendar inside the Premium Studio (BG-STUDIO-018-FE, DEC-025)", () => {
+  const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const listed = () => ok({ campaigns: [{ campaign_id: CAMP, name: "Spring leasing", status: "active", archived_at: null, updated_at: "2026-10-20T09:00:00.000Z" }] });
+  const docOf = () => ok({ campaign: { campaign_id: CAMP, tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a", name: "Spring leasing", goal: "g", display_timezone: "Europe/London", version: 2, items: [
+    { content_item_id: "i1", name: "Offer announcement", format: "text", variants: [{ variant_id: "v1", platform: "instagram", placement: "feed", destination_label: "Instagram", workflow: "scheduled" }, { variant_id: "v2", platform: "email", placement: "newsletter", destination_label: "Email", workflow: "draft" }] }] } });
+  const calendarOf = () => { const t = new Date(); t.setUTCDate(t.getUTCDate() + 1); t.setUTCHours(10, 0, 0, 0); return ok({ entries: [{ campaign_id: CAMP, content_item_id: "i1", variant_id: "v1", workflow: "scheduled", occurrence_at: t.toISOString() }] }); };
+  const openCalendar = async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Calendar" }));
+  };
+
+  it("opens on all campaigns, loads once by itself with the explicit window, and shows real content, channel and status", async () => {
+    handlers["GET /customer/campaigns"] = listed; handlers[`GET /customer/campaigns/${CAMP}`] = docOf; handlers[`GET /customer/campaigns/${CAMP}/calendar`] = calendarOf;
+    await openCalendar();
+    expect(await screen.findByRole("heading", { name: /calendar · all campaigns/i })).toBeInTheDocument();
+    expect(await screen.findByText(/read 1 of 1 campaign for/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/offer announcement/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/spring leasing · instagram · feed/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/not yet scheduled \(1\)/i)).toBeInTheDocument();
+    const cal = calls.filter((c) => /\/calendar$/.test(c.path));
+    expect(cal).toHaveLength(1);
+    const q = new URL(cal[0].url).searchParams;
+    expect(q.get("tenant_id")).toBe("tenant-a"); expect(q.get("project_id")).toBe("project-a");
+    expect(Date.parse(q.get("from"))).toBeLessThan(Date.parse(q.get("to")));
+    expect(calls.every((c) => c.method === "GET" || !c.path.includes("/calendar"))).toBe(true);
+  });
+
+  it("keeps the campaign-level calendar available and labelled alongside it", async () => {
+    handlers["GET /customer/campaigns"] = listed; handlers[`GET /customer/campaigns/${CAMP}`] = docOf; handlers[`GET /customer/campaigns/${CAMP}/calendar`] = calendarOf;
+    await openCalendar();
+    await screen.findByText(/read 1 of 1 campaign/i);
+    fireEvent.click(screen.getByRole("button", { name: /^this campaign/i }));
+    expect(screen.getByRole("heading", { name: /calendar · this campaign/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^all campaigns$/i }));
+    expect(screen.getByRole("heading", { name: /calendar · all campaigns/i })).toBeInTheDocument();
+  });
+
+  it("an ended session is reported once, with 'Sign in again', not as an empty calendar", async () => {
+    handlers["GET /customer/campaigns"] = () => fail(401, { error: { code: "AUTHENTICATION_REQUIRED" } });
+    await openCalendar();
+    expect(await screen.findByRole("button", { name: /^sign in again$/i })).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/session has ended|could not be loaded/i);
+    expect(screen.queryByText(/no scheduled or published activity/i)).toBeNull();
+  });
+
+  it("a campaign that cannot be read is named, and the others are still shown", async () => {
+    handlers["GET /customer/campaigns"] = listed; handlers[`GET /customer/campaigns/${CAMP}`] = docOf; handlers[`GET /customer/campaigns/${CAMP}/calendar`] = () => fail(500);
+    await openCalendar();
+    expect(await screen.findByText(/could not read: spring leasing/i)).toBeInTheDocument();
+    expect(screen.getByText(/read 0 of 1 campaign/i)).toBeInTheDocument();
+  });
+
+});
+
+describe("scheduling an approved item records a plan and never publishes (BG-STUDIO-018-FE)", () => {
+  const scheduledDoc = (at, tz = "Europe/London") => { const d = campaignDoc(7, 1, "scheduled"); d.items[0].variants[0].active_schedule_id = "schedule-1"; d.schedules = [{ schedule_id: "schedule-1", scheduled_for: at, timezone: tz }]; return d; };
+  async function toApproved() {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
+    fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
+    for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i));
+    await screen.findByRole("heading", { name: /your first recommendation/i });
+    fireEvent.click(button(/get my recommendation/i));
+    await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
+    fireEvent.click(button(/continue in campaign studio/i));
+    fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await screen.findByText("Server persisted review copy");
+    fireEvent.click(await screen.findByRole("button", { name: /^render preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^approve$/i }));
+    await screen.findByText("Approved");
+  }
+  const schedulePosts = () => calls.filter((c) => c.method === "POST" && /\/(schedule|reschedule)$/.test(c.path));
+
+  it("offers a planned time for approved content, sends exactly the fields the backend validates, and then shows the plan", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => ok({ result: { campaign_id: CID }, campaign: scheduledDoc("2099-01-15T10:00:00.000Z") });
+    await toApproved();
+    expect(screen.getByText(/this records the time you plan to publish\. it does not post anything or remind you/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/plan when to publish \(europe\/london\)/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByText(/scheduled for .*15 january 2099 at 10:00 \(europe\/london\)/i)).toBeInTheDocument();
+    const [post] = schedulePosts();
+    const body = JSON.parse(post.options.body);
+    expect(body).toMatchObject({ tenant_id: "tenant-a", project_id: "project-a", expected_campaign_version: 6, revision_id: "revision-1", scheduled_for: "2099-01-15T10:00:00.000Z", timezone: "Europe/London", local_datetime: "2099-01-15T10:00:00.000", utc_offset_minutes: 0 });
+    expect(body.idempotency_key).toMatch(/^(?=.{1,128}$)[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+    expect(post.options.headers.authorization).toBe("Bearer token-a");
+    expect(screen.getByText(/does not publish for you/i)).toBeInTheDocument();
+    expect(screen.queryByText(/published by customer attestation/i)).toBeNull(); // scheduling is never shown as publication
+    expect(calls.some((c) => /manual-publication/.test(c.path))).toBe(false);
+    expect(screen.getByRole("button", { name: /prepare manual publication/i })).toBeInTheDocument(); // manual publication stays possible
+  });
+
+  it("a time in the past is refused in words before anything is sent", async () => {
+    await toApproved();
+    fireEvent.change(screen.getByLabelText(/plan when to publish/i), { target: { value: "2020-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/choose a time in the future/i);
+    expect(schedulePosts()).toHaveLength(0);
+  });
+
+  it("a refused schedule says nothing was published and keeps the approval; a stale campaign tells the customer to reload", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => fail(409, { error: { code: "CAMPAIGN_VERSION_CONFLICT" } });
+    await toApproved();
+    fireEvent.change(screen.getByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/./);
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.queryByText(/planned time saved/i)).toBeNull();
+    expect(schedulePosts()).toHaveLength(1); // no automatic retry
+  });
+
+  it("an ended session during a schedule is reported as such, with 'Sign in again'", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => fail(401, { error: { code: "AUTHENTICATION_REQUIRED" } });
+    await toApproved();
+    fireEvent.change(screen.getByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByRole("button", { name: /^sign in again$/i })).toBeInTheDocument();
+  });
 });

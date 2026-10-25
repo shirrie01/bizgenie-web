@@ -2,6 +2,7 @@ import React, { useRef, useState } from "react";
 import { changedBrainFields, describeBrainFailure } from "./brainClient";
 import { isNotADescription } from "./onboardingModel";
 import { roleLabel } from "./membershipClient";
+import PremiumBrandStrategy from "./PremiumBrandStrategy";
 
 // Brand Brain tab of the Premium Studio (BG-STUDIO-015-FE). It replaces, for the flag-on Studio only, the shared legacy
 // "Review Brand Brain" panel (which edited the whole document, ignored who may change what, and turned every refused save
@@ -76,6 +77,7 @@ export default function PremiumBrandBrain({ brainState, onLoadBrain, onSave, dra
         <button type="button" className="ps-primary" onClick={save} disabled={busy || nothingToSave} aria-describedby={nothingToSave ? "pb-nochange" : undefined}>{busy ? "Saving…" : locked ? "Save who it serves and customer action" : "Save to Brand Brain"}</button>
         {nothingToSave && !busy && <p className="ps-hint" id="pb-nochange">Change a detail above to save it.</p>}
       </>)}
+      {brain && <PremiumBrandStrategy brain={brain} onSave={onSave} />}
       {message.text && (
         <div className={message.kind === "ok" ? "ps-ok" : message.kind === "unconfirmed" ? "ps-warn" : "error"} role={message.kind === "ok" ? "status" : "alert"} data-kind={message.kind}>
           <p>{message.text}</p>
