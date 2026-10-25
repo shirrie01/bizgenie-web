@@ -2,6 +2,8 @@
 
 25 October 2026. **Staging RED / NO-GO. Launch not authorised.** This is engineering evidence for the sole Google Sheets Mission Control (DEC-015); it is not a second register. Nothing here was run against staging, production, Stripe, Supabase or any provider: every browser result below used a **mocked** API and Supabase.
 
+> **Update (DEC-023):** the professional-services sector, billing display, calendar window and payment wording gaps listed below were addressed in `BG_STUDIO_017_FE_DEC023_ADDENDUM.md`; read that for the current state.
+
 Evidence classes: **[M]** local mocked browser/unit test · **[R]** repository/code read · **[C]** contract read from backend code at the stated SHA · **[F]** founder-supplied · **[—]** not tested.
 
 ## 1. Canonical inputs (verified live against GitHub before work)
