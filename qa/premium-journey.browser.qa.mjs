@@ -26,7 +26,7 @@ const doc = (w) => ({ contract_version: 'workspace-onboarding.v1', tenant_id: w.
 const sessionJson = (w) => JSON.stringify({ access_token: w ? `tok-${w.brand_id}` : 'tok-identity', refresh_token: 'refresh-x', token_type: 'bearer', expires_in: 99999, expires_at: 4102444800, user: { id: 'u', app_metadata: w ? { tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id } : {} } });
 
 async function setup(page, { calendarDelayMs = {} } = {}) {
-  const log = { selected: null, errors: [], leakedAfterSwitch: [] };
+  const log = { selected: null, errors: [], leakedAfterSwitch: [], puts: [], stored: {} };
   page.on('pageerror', (e) => log.errors.push(e.message));
   await page.addInitScript(([t]) => { if (!localStorage.getItem('sb-supabase-auth-token')) localStorage.setItem('sb-supabase-auth-token', t); }, [sessionJson(null)]);
   await page.route(/fonts\./, (r) => r.abort());
@@ -40,7 +40,8 @@ async function setup(page, { calendarDelayMs = {} } = {}) {
     if (u.pathname === '/customer/workspace/select') { const b = JSON.parse(req.postData()); const w = [WS.a, WS.b].find((x) => x.project_id === b.project_id); log.selected = w; return json(route, { status: 'ready', workspace: w, requires_session_refresh: true }); }
     if (!d) return json(route, { status: 'failed', error: { code: 'WORKSPACE_NOT_AUTHORIZED' } }, 403);
     const w = brand === 'ba' ? WS.a : WS.b; const c = d.camp;
-    if (u.pathname.endsWith('/workspace/brand-brain')) return json(route, { status: 'ready', brand_brain: { brand_id: w.brand_id, project_id: w.project_id, name: w.brand_name, identity: { description: d.desc }, metadata: { version: 1, status: 'approved' } } });
+    if (u.pathname.endsWith('/workspace/brand-brain') && m === 'PUT') { const b = JSON.parse(req.postData()); log.puts.push(b); log.stored[brand] = { ...b, brand_id: w.brand_id, project_id: w.project_id, metadata: { version: 2, status: 'approved' } }; return json(route, { status: 'ready', brand_brain: log.stored[brand] }); }
+    if (u.pathname.endsWith('/workspace/brand-brain')) return json(route, { status: 'ready', brand_brain: log.stored[brand] || { brand_id: w.brand_id, project_id: w.project_id, name: w.brand_name, identity: { description: d.desc }, metadata: { version: 1, status: 'approved' } } });
     if (u.pathname.endsWith('/workspace/onboarding')) return json(route, { status: 'ready', onboarding: doc(w), brand_name_placeholder: false });
     if (u.pathname === '/customer/campaigns') return json(route, { campaigns: [{ campaign_id: c.id, name: c.name, status: 'active', archived_at: null, updated_at: '2026-10-20T09:00:00.000Z' }] });
     if (u.pathname === `/customer/campaigns/${c.id}`) return json(route, { campaign: { campaign_id: c.id, tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id, name: c.name, goal: 'g', display_timezone: 'Europe/London', version: 2, items: [{ content_item_id: 'i1', name: c.content, format: 'text', variants: [{ variant_id: 'v1', platform: c.platform, placement: 'feed', destination_label: c.label, workflow: 'scheduled' }] }] } });
@@ -94,5 +95,30 @@ test('switching workspace while the first workspace\'s calendar is still loading
   expect(text).not.toMatch(/Northgate|Lease offer post|spring leasing/);
   await expect(page.getByText('Brookside glow campaign').first()).toBeVisible();
   await checks(page, 'journey-switched');
+  expect(log.errors).toEqual([]);
+});
+
+test('Brand tab: voice and strategy sends only what changed, keeps the owner-confirmed identity, and is accessible', async ({ page }) => {
+  const log = await setup(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Use Northgate Vehicle Leasing' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome back, Northgate Vehicle Leasing.' })).toBeVisible();
+  await nav(page).getByRole('button', { name: 'Brand', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /voice, positioning and strategy/i })).toBeVisible();
+  await expect(page.getByText(/none of this is a measured result or an insight learned from your performance/i)).toBeVisible();
+  await page.getByText('Voice and language').click();
+  await page.getByLabel('Tone of voice').fill('Warm and plain-spoken');
+  await page.getByLabel('Words and phrases to avoid').fill('cheap\nfree');
+  await checks(page, 'brand-strategy');
+  await page.getByRole('button', { name: /save voice and strategy/i }).click();
+  await expect(page.getByText(/only the details you changed here were sent/i)).toBeVisible();
+  expect(log.puts).toHaveLength(1);
+  expect(log.puts[0].name).toBe('Northgate Vehicle Leasing');
+  expect(log.puts[0].identity.description).toBe('We lease cars and vans to small businesses.');
+  expect(log.puts[0].voice).toEqual({ tone: 'Warm and plain-spoken', prohibited_terms: ['cheap', 'free'] });
+  await page.reload();
+  await nav(page).getByRole('button', { name: 'Brand', exact: true }).click();
+  await page.getByText(/Voice and language/).click();
+  await expect(page.getByLabel('Tone of voice')).toHaveValue('Warm and plain-spoken');
   expect(log.errors).toEqual([]);
 });

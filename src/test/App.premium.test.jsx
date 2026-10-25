@@ -1525,6 +1525,34 @@ describe("Brand Brain integrity under change (BG-STUDIO-015)", () => {
     expect(body.commercial.primary_cta).toBe("Request a sample");
   });
 
+  it("voice and strategy details save through the same read-latest path: a member's save repeats the stored name and description exactly and keeps every other field (BG-STUDIO-018-FE)", async () => {
+    await open("member");
+    fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));
+    fireEvent.change(await screen.findByLabelText(/^tone of voice$/i), { target: { value: "Warm and direct" } });
+    fireEvent.change(screen.getByLabelText(/^values$/i), { target: { value: "Honest\nLocal" } });
+    fireEvent.click(screen.getByRole("button", { name: /save voice and strategy/i }));
+    expect(await screen.findByText(/only the details you changed here were sent/i)).toBeInTheDocument();
+    const body = lastBody();
+    expect(body.name).toBe("Maison Aurelle");
+    expect(body.identity.description).toBe("A small-batch perfume house."); // the stored description, repeated exactly
+    expect(body.audience.summary).toBe("Gift buyers."); expect(body.commercial.primary_cta).toBe("Shop the new scent"); // untouched fields kept
+    expect(body.voice).toEqual({ tone: "Warm and direct" });
+    expect(body.identity.values).toEqual(["Honest", "Local"]);
+    for (const key of ["brand_id", "project_id", "metadata"]) expect(body).not.toHaveProperty(key);
+    expect(called("GET", "/brand-brain").length).toBeGreaterThanOrEqual(2); // the latest stored version was read before the write
+  });
+
+  it("a refused (403) voice and strategy save keeps what was typed and says nothing was saved", async () => {
+    await open("owner");
+    fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));
+    handlers["PUT /customer/workspace/brand-brain"] = () => fail(403, { status: "failed", error: { code: "BRAND_BRAIN_WRITE_FORBIDDEN" } });
+    fireEvent.change(await screen.findByLabelText(/^mission$/i), { target: { value: "Keep businesses moving" } });
+    fireEvent.click(screen.getByRole("button", { name: /save voice and strategy/i }));
+    expect(await screen.findByText(/nothing was saved/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^mission$/i)).toHaveValue("Keep businesses moving");
+    expect(screen.queryByText(/only the details you changed here were sent/i)).toBeNull();
+  });
+
   it("D10 refreshing the page with unsaved Brand Brain edits warns first", async () => {
     await open("owner");
     fireEvent.click(screen.getByRole("button", { name: /^brand$/i }));

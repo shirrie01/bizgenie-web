@@ -273,3 +273,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   .ps-wcal-grid td { margin-bottom: 6px; border-radius: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .ps-wcal * { transition: none !important; animation: none !important; } }
+
+/* BG-STUDIO-018-FE: voice, positioning and strategy editor in the Brand tab. */
+.ps-strategy { display: grid; gap: 12px; margin-top: 24px; }
+.ps-strategy-group { border: 1px solid #d5dbd6; border-radius: 12px; padding: 8px 14px; background: #fff; }
+.ps-strategy-group summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.ps-strategy-group textarea { width: 100%; box-sizing: border-box; }
