@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 
 describe("server-nested manual publication facts (bizgenie-api #218)", () => {
   it("publicationFor prefers the variant's nested record and maps record_id", async () => {
