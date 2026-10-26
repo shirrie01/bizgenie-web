@@ -53,9 +53,9 @@ export function itemsFromCampaign(campaign, entries) {
 // Reads up to `limit` of the most recently updated, unarchived campaigns. A campaign that cannot be read is reported in
 // `failures` and the rest are still shown; a 401 stops everything (the session has ended). `isCurrent()` lets the caller
 // discard the whole read when the workspace changed meanwhile.
-export async function fetchWorkspaceCalendar({ apiBaseUrl, accessToken, scope, from, to, campaigns, limit = MAX_CAMPAIGNS, fetchImpl = (...a) => fetch(...a), isCurrent = () => true }) {
+export async function fetchWorkspaceCalendar({ apiBaseUrl, accessToken, scope, from, to, campaigns, limit = MAX_CAMPAIGNS, offset = 0, fetchImpl = (...a) => fetch(...a), isCurrent = () => true }) {
   const eligible = (campaigns || []).filter((c) => c && c.campaign_id && !c.archived_at).sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
-  const chosen = eligible.slice(0, limit);
+  const chosen = eligible.slice(offset, offset + limit);
   const q = new URLSearchParams({ tenant_id: scope.tenantId, project_id: scope.projectId });
   const qc = new URLSearchParams({ tenant_id: scope.tenantId, project_id: scope.projectId, from, to });
   const items = []; const failures = [];
@@ -80,5 +80,7 @@ export async function fetchWorkspaceCalendar({ apiBaseUrl, accessToken, scope, f
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, chosen.length) }, worker));
   if (fatal) throw fatal;
-  return { items, failures, campaignsRead: chosen.length - failures.length, campaignsChosen: chosen.length, campaignsTotal: eligible.length, truncated: eligible.length > chosen.length };
+  const reached = offset + chosen.length;
+  // `nextOffset` is how the rest is reached: nothing is ever dropped without a way to load it.
+  return { items, failures, campaignsRead: chosen.length - failures.length, campaignsChosen: chosen.length, campaignsTotal: eligible.length, truncated: eligible.length > reached, nextOffset: reached < eligible.length ? reached : null };
 }

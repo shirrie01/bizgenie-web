@@ -1813,3 +1813,266 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
     expect(await screen.findByRole("button", { name: /^sign in again$/i })).toBeInTheDocument();
   });
 });
+
+describe("campaign management in the Premium Studio (BG-STUDIO-019-FE, workstream E)", () => {
+  const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"; const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  let server;
+  const detail = (id) => ({ campaign_id: id, tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a", name: server[id].name, goal: "g", display_timezone: "Europe/London", version: server[id].version, archived_at: server[id].archived_at, items: [], schedules: [], publications: [] });
+  const summary = (id) => ({ campaign_id: id, name: server[id].name, status: "active", archived_at: server[id].archived_at, updated_at: server[id].updated });
+  const patchCalls = () => calls.filter((c) => c.method === "PATCH");
+  const posts = (suffix) => calls.filter((c) => c.method === "POST" && c.path.endsWith(suffix));
+  function serve(extra = {}) {
+    server = { [A]: { name: "Spring leasing", version: 4, archived_at: null, updated: "2026-10-20T09:00:00.000Z" }, [B]: { name: "Old promotion", version: 9, archived_at: "2026-09-01T09:00:00.000Z", updated: "2026-09-01T09:00:00.000Z" } };
+    handlers["GET /customer/campaigns"] = () => ok({ campaigns: [summary(A), summary(B)] });
+    handlers[`GET /customer/campaigns/${A}`] = () => ok({ campaign: detail(A) });
+    handlers[`GET /customer/campaigns/${B}`] = () => ok({ campaign: detail(B) });
+    handlers[`PATCH /customer/campaigns/${A}`] = (_u, o) => { const b = JSON.parse(o.body); server[A].name = b.name; server[A].version += 1; return ok({ result: {}, campaign: detail(A) }); };
+    handlers[`POST /customer/campaigns/${A}/archive`] = () => { server[A].archived_at = "2026-10-26T09:00:00.000Z"; server[A].version += 1; return ok({ result: {}, campaign: detail(A) }); };
+    handlers[`POST /customer/campaigns/${B}/restore`] = () => { server[B].archived_at = null; server[B].version += 1; return ok({ result: {}, campaign: detail(B) }); };
+    Object.assign(handlers, extra);
+  }
+  const openTab = async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Campaigns" }));
+    await screen.findByRole("heading", { name: "Campaigns" });
+  };
+
+  it("lists active campaigns, keeps archived ones out of sight until asked, and offers only what applies to each", async () => {
+    serve(); await openTab();
+    expect(await screen.findByText("Spring leasing")).toBeInTheDocument();
+    expect(screen.queryByText("Old promotion")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /show archived campaigns \(1\)/i }));
+    const archived = screen.getByRole("list", { name: /archived campaigns/i });
+    expect(within(archived).getByText("Old promotion")).toBeInTheDocument();
+    expect(within(archived).getByRole("button", { name: /restore old promotion/i })).toBeInTheDocument();
+    expect(within(archived).queryByRole("button", { name: /rename|open/i })).toBeNull(); // an archived campaign cannot be opened or renamed
+  });
+
+  it("renames against the LATEST version and timezone, then shows the new name in the list", async () => {
+    serve(); await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: /rename spring leasing/i }));
+    fireEvent.change(screen.getByLabelText("Campaign name"), { target: { value: "  Autumn leasing  " } });
+    fireEvent.click(screen.getByRole("button", { name: /save name/i }));
+    expect(await screen.findByText(/renamed to autumn leasing/i)).toBeInTheDocument();
+    expect(screen.getByText("Autumn leasing")).toBeInTheDocument();
+    const body = JSON.parse(patchCalls()[0].options.body);
+    expect(body).toMatchObject({ tenant_id: "tenant-a", project_id: "project-a", name: "Autumn leasing", expected_campaign_version: 4, display_timezone: "Europe/London" });
+    expect(calls.findIndex((c) => c.method === "GET" && c.path === `/customer/campaigns/${A}`)).toBeLessThan(calls.findIndex((c) => c.method === "PATCH")); // read first
+  });
+
+  it("archiving asks why, explains that nothing is deleted, sends the reason, and removes the campaign from the list", async () => {
+    serve(); await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: /archive spring leasing/i }));
+    expect(screen.getByText(/nothing is deleted/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^archive campaign$/i })).toBeDisabled(); // a reason is required
+    fireEvent.change(screen.getByLabelText(/why are you archiving it/i), { target: { value: "Season over" } });
+    fireEvent.click(screen.getByRole("button", { name: /^archive campaign$/i }));
+    expect(await screen.findByText(/archived spring leasing\. it is hidden from your campaigns and calendar, not deleted/i)).toBeInTheDocument();
+    expect(JSON.parse(posts("/archive")[0].options.body)).toMatchObject({ reason: "Season over", expected_campaign_version: 4 });
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^rename spring leasing$/i })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /show archived campaigns \(2\)/i }));
+    expect(screen.getByRole("button", { name: /restore spring leasing/i })).toBeInTheDocument();
+  });
+
+  it("restoring an archived campaign returns it to the list", async () => {
+    serve(); await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: /show archived campaigns/i }));
+    fireEvent.click(screen.getByRole("button", { name: /restore old promotion/i }));
+    fireEvent.change(screen.getByLabelText(/why are you restoring it/i), { target: { value: "Running it again" } });
+    fireEvent.click(screen.getByRole("button", { name: /^restore campaign$/i }));
+    expect(await screen.findByText(/restored old promotion/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: /rename old promotion/i })).toBeInTheDocument());
+  });
+
+  it("a campaign with something scheduled cannot be archived: the backend's refusal is explained and nothing changes", async () => {
+    serve({ [`POST /customer/campaigns/${A}/archive`]: () => fail(409, { error: { code: "INVALID_TRANSITION" } }) });
+    await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: /archive spring leasing/i }));
+    fireEvent.change(screen.getByLabelText(/why are you archiving it/i), { target: { value: "Season over" } });
+    fireEvent.click(screen.getByRole("button", { name: /^archive campaign$/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/not possible in the campaign's current state/i);
+    expect(screen.getByText("Spring leasing")).toBeInTheDocument();
+    expect(posts("/archive")).toHaveLength(1);
+  });
+
+  it("a campaign that changed elsewhere (409 version) reloads the truth and does not overwrite", async () => {
+    serve({ [`PATCH /customer/campaigns/${A}`]: () => fail(409, { error: { code: "VERSION_CONFLICT" } }) });
+    await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: /rename spring leasing/i }));
+    fireEvent.change(screen.getByLabelText("Campaign name"), { target: { value: "Mine" } });
+    fireEvent.click(screen.getByRole("button", { name: /save name/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/changed somewhere else, so nothing was changed/i);
+    expect(patchCalls()).toHaveLength(1);
+    expect(screen.queryByText("Mine", { selector: "strong" })).toBeNull();
+  });
+
+  it("a campaign that is gone or no longer yours (404) says so and refreshes the list", async () => {
+    let reads = 0; // the first read is the automatic restore of the newest campaign; later reads find it gone
+    serve({ [`GET /customer/campaigns/${A}`]: () => (++reads === 1 ? ok({ campaign: detail(A) }) : fail(404, { error: { code: "RESOURCE_NOT_AVAILABLE" } })) });
+    await openTab();
+    const before = calls.filter((c) => c.method === "GET" && c.path === "/customer/campaigns").length;
+    fireEvent.click(await screen.findByRole("button", { name: /rename spring leasing/i }));
+    fireEvent.change(screen.getByLabelText("Campaign name"), { target: { value: "X" } });
+    fireEvent.click(screen.getByRole("button", { name: /save name/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/not available to you any more/i);
+    await waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.path === "/customer/campaigns").length).toBeGreaterThan(before));
+    expect(patchCalls()).toHaveLength(0);
+  });
+
+  it("an ended session during a management action offers 'Sign in again'", async () => {
+    serve({ [`PATCH /customer/campaigns/${A}`]: () => fail(401, { error: { code: "AUTHENTICATION_REQUIRED" } }) });
+    await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: /rename spring leasing/i }));
+    fireEvent.change(screen.getByLabelText("Campaign name"), { target: { value: "X" } });
+    fireEvent.click(screen.getByRole("button", { name: /save name/i }));
+    expect(await screen.findByRole("button", { name: /^sign in again$/i })).toBeInTheDocument();
+  });
+
+  it("opening a campaign loads it into Campaign Studio and clears the previous campaign's calendar and review state", async () => {
+    serve(); await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: /open spring leasing in campaign studio/i }));
+    expect(await screen.findByText(/saved to your workspace/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Spring leasing" })).toBeInTheDocument();
+  });
+});
+
+describe("recording how a manual publication went (BG-STUDIO-019-FE, workstream E)", () => {
+  const ATTEMPT = "99999999-9999-4999-8999-999999999999";
+  const withPending = (doc) => { doc.items[0].variants[0].pending_attempt_id = ATTEMPT; return doc; };
+  const published = () => { const d = campaignDoc(9, 1, "published"); d.items[0].variants[0].publication_id = "pub-1"; d.publications = [{ publication_id: "pub-1", published_at: "2026-10-26T09:30:00.000Z", publication_url: "https://instagram.com/p/abc", evidence_kind: "customer_attestation" }]; return d; };
+  async function toPrepared() {
+    handlers["POST /customer/campaigns/*/variants/*/manual-publication"] = () => ok({ result: { created_ids: { attempt_ids: [ATTEMPT] } }, campaign: withPending(campaignDoc(7, 1, "approved")) }, 201);
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
+    fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
+    for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i));
+    await screen.findByRole("heading", { name: /your first recommendation/i });
+    fireEvent.click(button(/get my recommendation/i));
+    await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
+    fireEvent.click(button(/continue in campaign studio/i));
+    fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await screen.findByText("Server persisted review copy");
+    fireEvent.click(await screen.findByRole("button", { name: /^render preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^approve$/i }));
+    await screen.findByText("Approved");
+    fireEvent.click(button(/prepare manual publication/i));
+    await screen.findByRole("form", { name: /record the manual publication/i });
+  }
+  const resolutions = (outcome) => calls.filter((c) => c.method === "POST" && c.path.endsWith(`/manual-publication/${outcome}`));
+
+  it("offers all three outcomes, and says plainly that nothing was published by BizGenie", async () => {
+    await toPrepared();
+    const form = screen.getByRole("form", { name: /record the manual publication/i });
+    expect(within(form).getAllByRole("radio").map((r) => r.parentElement.textContent.trim())).toEqual(["I published it", "I tried, but it did not publish", "I am not going ahead"]);
+    expect(within(form).getByText(/it does not check the platform and it does not publish anything/i)).toBeInTheDocument();
+    expect(within(form).getByLabelText(/approved content/i)).toHaveAttribute("readonly");
+  });
+
+  it("'I published it' records the customer's own time and address, refuses a non-https address first, and then shows a statement, never a verification", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/manual-publication/confirm"] = () => ok({ result: {}, campaign: published() });
+    await toPrepared();
+    fireEvent.change(screen.getByLabelText(/public address of the post/i), { target: { value: "http://insecure.test/p" } });
+    fireEvent.click(button(/record that i published it/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/starting https/i);
+    expect(resolutions("confirm")).toHaveLength(0);
+    fireEvent.change(screen.getByLabelText(/public address of the post/i), { target: { value: "https://instagram.com/p/abc" } });
+    fireEvent.change(screen.getByLabelText(/reference \(optional\)/i), { target: { value: "post-abc" } });
+    fireEvent.change(screen.getByLabelText(/note \(optional\)/i), { target: { value: "Posted by the studio" } });
+    fireEvent.click(button(/record that i published it/i));
+    expect(await screen.findByText(/recorded by you as published/i)).toBeInTheDocument();
+    const body = JSON.parse(resolutions("confirm")[0].options.body);
+    expect(body).toMatchObject({ attempt_id: ATTEMPT, publication_url: "https://instagram.com/p/abc", external_reference: "post-abc", note: "Posted by the studio", expected_campaign_version: 7 });
+    expect(Date.parse(body.published_at)).toBeLessThanOrEqual(Date.now());
+    expect(screen.getByText(/has not checked the platform: this is your own statement/i)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/verified|bizgenie published/i);
+    expect(screen.getByRole("link", { name: /open the post you recorded/i })).toHaveAttribute("href", "https://instagram.com/p/abc");
+  });
+
+  it("'did not publish' needs a reason, keeps the approval, and lets the customer prepare again", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/manual-publication/fail"] = () => ok({ result: {}, campaign: campaignDoc(8, 1, "approved") });
+    await toPrepared();
+    fireEvent.click(screen.getByLabelText("I tried, but it did not publish"));
+    fireEvent.click(button(/record the failure/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/say what went wrong/i);
+    expect(resolutions("fail")).toHaveLength(0);
+    fireEvent.change(screen.getByLabelText(/what went wrong/i), { target: { value: "The platform rejected the upload" } });
+    fireEvent.click(button(/record the failure/i));
+    expect(await screen.findByText(/recorded as not published\. your approval is kept/i)).toBeInTheDocument();
+    expect(JSON.parse(resolutions("fail")[0].options.body)).toMatchObject({ attempt_id: ATTEMPT, reason: "The platform rejected the upload" });
+    expect(screen.getByRole("button", { name: /prepare manual publication/i })).toBeInTheDocument();
+    expect(screen.queryByText(/recorded by you as published/i)).toBeNull();
+  });
+
+  it("'not going ahead' closes the handoff with a reason and publishes nothing", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/manual-publication/cancel"] = () => ok({ result: {}, campaign: campaignDoc(8, 1, "approved") });
+    await toPrepared();
+    fireEvent.click(screen.getByLabelText("I am not going ahead"));
+    fireEvent.change(screen.getByLabelText(/why are you not going ahead/i), { target: { value: "Changed the plan" } });
+    fireEvent.click(button(/close the handoff/i));
+    expect(await screen.findByText(/handoff closed\. nothing was published/i)).toBeInTheDocument();
+    expect(JSON.parse(resolutions("cancel")[0].options.body).reason).toBe("Changed the plan");
+  });
+
+  it("an unconfirmed answer (503) is not shown as recorded, and the latest saved campaign is re-read", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/manual-publication/cancel"] = () => fail(503, { error: { code: "CAMPAIGN_TEMPORARILY_UNAVAILABLE" } });
+    await toPrepared();
+    const before = calls.filter((c) => c.method === "GET" && /\/customer\/campaigns\/[^/]+$/.test(c.path)).length;
+    fireEvent.click(screen.getByLabelText("I am not going ahead"));
+    fireEvent.change(screen.getByLabelText(/why are you not going ahead/i), { target: { value: "x" } });
+    fireEvent.click(button(/close the handoff/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/may or may not have been saved/i);
+    expect(screen.queryByText(/handoff closed/i)).toBeNull();
+    await waitFor(() => expect(calls.filter((c) => c.method === "GET" && /\/customer\/campaigns\/[^/]+$/.test(c.path)).length).toBeGreaterThan(before));
+  });
+
+  it("a handoff that was already waiting before a reload is still there: the saved campaign, not memory, decides", async () => {
+    const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    handlers["GET /customer/campaigns"] = () => ok({ campaigns: [{ campaign_id: CAMP, name: "Lease Enquiry Campaign", status: "active", archived_at: null, updated_at: "2026-10-20T09:00:00.000Z" }] });
+    handlers[`GET /customer/campaigns/${CAMP}`] = () => ok({ campaign: withPending({ ...campaignDoc(7, 1, "approved"), campaign_id: CAMP }) });
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Campaign Studio" }));
+    expect(await screen.findByRole("form", { name: /record the manual publication/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /prepare manual publication/i })).toBeNull(); // not a second handoff
+  });
+});
+
+describe("the workspace calendar never drops campaigns silently and opens them on request (BG-STUDIO-019-FE, workstream B1)", () => {
+  const id = (n) => `${String(n).padStart(8, "0")}-0000-4000-8000-000000000000`;
+  const summaries = (n) => Array.from({ length: n }, (_, i) => ({ campaign_id: id(i + 1), name: `Campaign ${i + 1}`, status: "active", archived_at: null, updated_at: `2026-10-${String(10 + (i % 15)).padStart(2, "0")}T0${i % 10}:00:00.000Z` }));
+  const doc = (cid, name) => ({ campaign_id: cid, tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a", name, goal: "g", display_timezone: "Europe/London", version: 3, items: [{ content_item_id: `i-${cid}`, name: `Post for ${name}`, format: "text", variants: [{ variant_id: `v-${cid}`, platform: "instagram", placement: "feed", destination_label: "Instagram", workflow: "draft" }] }], schedules: [] });
+  function serve(n) {
+    const list = summaries(n);
+    handlers["GET /customer/campaigns"] = () => ok({ campaigns: list });
+    for (const c of list) { handlers[`GET /customer/campaigns/${c.campaign_id}`] = () => ok({ campaign: doc(c.campaign_id, c.name) }); handlers[`GET /customer/campaigns/${c.campaign_id}/calendar`] = () => ok({ entries: [] }); }
+  }
+  const openCalendar = async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Calendar" }));
+  };
+
+  it("with more campaigns than one batch it says how many are unread, and the customer can load them all", async () => {
+    serve(11); await openCalendar();
+    expect(await screen.findByText(/read 8 of 11 campaigns for/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 more campaigns have not been read yet/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /load the next 3 campaigns/i }));
+    expect(await screen.findByText(/read 11 of 11 campaigns for/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /load the next/i })).toBeNull();
+    expect(screen.getByText(/not yet scheduled \(11\)/i)).toBeInTheDocument(); // every campaign's draft is there: nothing was dropped
+  });
+
+  it("opening an item's campaign from the calendar loads it into Campaign Studio", async () => {
+    serve(2); await openCalendar();
+    await screen.findByText(/read 2 of 2 campaigns for/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /open campaign campaign 2: post for campaign 2/i })[0]);
+    expect(await screen.findByText(/saved to your workspace/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Campaign 2" })).toBeInTheDocument();
+  });
+});
+
