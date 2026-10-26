@@ -22,8 +22,8 @@ All adapters were rewritten to the real contracts. A new opt-in harness (20 test
 | Tested code SHA | `9aac8dff4c05f0acbaf9bd0ba87ca11a074bad55` (documentation commits after it change only `docs/`) |
 | Commits | `f4cd414` reconcile adapters with the backend draft; `0be52e3` lazy-load, social and analytics adapters, unschedule; `9aac8df` real-route findings and integration harness |
 | Backend verified against | bizgenie-api draft PR #216 head `f8d81bf07977b57496d97db0df75e984bc8c425f` (matches the head stated in the work order; read from git, not from its report). No BG-STUDIO-020 backend branch existed yet |
-| Hosted CI on the tested SHA | CI_RESULT_PLACEHOLDER |
-| Draft PR | DRAFT_PR_PLACEHOLDER |
+| Hosted CI on the tested SHA | [run 37](https://github.com/shirrie01/bizgenie-web/actions/runs/40323442713), checked out at the exact tested SHA (`ref` and `expected_sha` both `9aac8df…`; the SHA guard passed): **13 of 13 jobs success on attempt 2**. Attempt 1 had 10 of 13 green; 3 jobs (app-a11y 1440 and 768, preview 1440) failed only because Ubuntu package downloads timed out in the Chromium install step (infrastructure, no test code ran), and only those 3 were re-run, once. An earlier dispatch (run 36) failed at the SHA guard because the branch moved while it was queued; it is not relied on |
+| Draft PR | [#53](https://github.com/shirrie01/bizgenie-web/pull/53) (draft, base `bg-studio-019-fe-launch-completion`) |
 
 ## 3. Five-direction launch checklist
 
