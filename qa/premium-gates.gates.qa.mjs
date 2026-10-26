@@ -113,11 +113,13 @@ test('manage: cancelling goes to a Stripe-hosted page, with the rules shown firs
   expect(log.errors).toEqual([]);
 });
 
-test('manage: payment details and invoices open the Stripe portal; there is no invoice list of our own', async ({ page }) => {
-  await open(page, { subscription: { status: 'ready', subscription: { plan_code: 'standard', entitlement_status: 'active' }, available_credits: 9 } });
+test('manage: payment details open the Stripe portal; the owner can also ask for the invoice list, which is Stripe-sourced and never shown unasked', async ({ page }) => {
+  const log = await open(page, { subscription: { status: 'ready', subscription: { plan_code: 'standard', entitlement_status: 'active' }, available_credits: 9 } });
   await page.goto('/'); await welcome(page);
   await nav(page).getByRole('button', { name: 'Plan and billing', exact: true }).click();
-  await expect(page.getByRole('button', { name: /show invoices/i })).toHaveCount(0);
+  // The invoice list (billing-invoices.v1 draft) is an owner action behind a button: nothing is fetched or shown until it is pressed.
+  await expect(page.getByRole('button', { name: /show invoices/i })).toBeVisible();
+  expect(log.calls.some((c) => c.includes('/customer/billing/invoices'))).toBe(false);
   await page.getByRole('button', { name: 'Payment details, invoices and receipts' }).click();
   await expect(page).toHaveURL(/billing\.stripe\.com/);
 });
