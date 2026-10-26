@@ -49,3 +49,31 @@ export const requestPlanChange = ({ apiBaseUrl, accessToken, tenantId, planCode,
   return call(fetchImpl, apiBaseUrl, "subscription/change", tenantId, accessToken, { request_id: id, plan_code: planCode }, "Your plan change");
 };
 export const requestCancellation = ({ apiBaseUrl, accessToken, tenantId, fetchImpl = (...a) => fetch(...a), id = requestId("cancel") }) => call(fetchImpl, apiBaseUrl, "subscription/cancel", tenantId, accessToken, { request_id: id }, "Your cancellation");
+
+// Invoices (BG-STUDIO-021-FE): the backend draft `createDraftInvoiceRouter` (bizgenie-api PR #217, src/billing/stripe/invoicesDraft.js, contract `billing-invoices.v1`),
+// UNMOUNTED and disabled, intended at /customer/billing/invoices.
+//   GET /customer/billing/invoices?tenant_id&limit(1..50, default 25)&cursor(in_…)  owner only; 200 { contract_version, invoices: [ { invoice_id, number|null, issued_at,
+//   amount_minor, currency, status: paid|open|void|uncollectible|draft, hosted_invoice_url: https://invoice.stripe.com/…|null, receipt_url: null } ], next_cursor|null }
+//   400 BILLING_VALIDATION_ERROR · 401 · 404 (not the owner) · 503 BILLING_INVOICES_UNAVAILABLE.
+// A missing number or link is shown as missing, never invented; the status is Stripe's word for it; pagination is followed on request so a long history is
+// never silently cut off.
+const stripeInvoice = (v) => { try { const u = new URL(v); return u.protocol === "https:" && u.hostname === "invoice.stripe.com" && !u.username && !u.password && !u.port; } catch { return false; } };
+export async function fetchInvoices({ apiBaseUrl, accessToken, tenantId, cursor = "", limit = 25, fetchImpl = (...a) => fetch(...a) }) {
+  const q = new URLSearchParams({ tenant_id: tenantId, limit: String(Math.min(Math.max(Number.isInteger(limit) ? limit : 25, 1), 50)) }); if (cursor) q.set("cursor", cursor);
+  let response;
+  try { response = await fetchImpl(`${apiBaseUrl}/customer/billing/invoices?${q}`, { headers: { authorization: `Bearer ${accessToken}` } }); }
+  catch { throw new BillingManagementError("Invoices could not be loaded because the connection failed.", { kind: "network", code: "NETWORK" }); }
+  if (response.status === 401) throw new BillingManagementError("Your session has ended. Sign in again to continue.", { kind: "auth", status: 401 });
+  if (response.status === 404) throw new BillingManagementError("Only the workspace owner can see invoices.", { kind: "forbidden", status: 404 });
+  if (response.status === 503) throw new BillingManagementError("Invoices are temporarily unavailable. Try again shortly.", { kind: "unavailable", status: 503 });
+  if (!response.ok) throw new BillingManagementError("Invoices could not be loaded yet.", { kind: "error", status: response.status });
+  let json = null; try { json = await response.json(); } catch { json = null; }
+  if (!json || json.contract_version !== "billing-invoices.v1" || !Array.isArray(json.invoices)) throw new BillingManagementError("The server sent an unexpected answer, so no invoices are shown.", { kind: "invalid" });
+  const invoices = []; let skipped = 0;
+  for (const i of json.invoices) {
+    const ok = i && /^in_[A-Za-z0-9]+$/.test(i.invoice_id || "") && Number.isFinite(Date.parse(i.issued_at)) && Number.isInteger(i.amount_minor) && /^[A-Z]{3}$/.test(i.currency || "") && ["paid", "open", "void", "uncollectible", "draft"].includes(i.status);
+    if (!ok) { skipped += 1; continue; }
+    invoices.push({ id: i.invoice_id, number: typeof i.number === "string" && i.number.trim() ? i.number.trim() : "", issuedAt: i.issued_at, amountMinor: i.amount_minor, currency: i.currency, status: i.status, url: stripeInvoice(i.hosted_invoice_url) ? new URL(i.hosted_invoice_url).toString() : "" });
+  }
+  return { invoices: invoices.sort((a, b) => b.issuedAt.localeCompare(a.issuedAt)), skipped, nextCursor: typeof json.next_cursor === "string" && /^in_[A-Za-z0-9]+$/.test(json.next_cursor) ? json.next_cursor : null };
+}

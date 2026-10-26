@@ -2178,12 +2178,12 @@ describe("the credit cost is shown before generation, and a refusal says why (BG
   });
 });
 
-describe("with the quote API available, nothing is generated before the customer confirms the cost (BG-STUDIO-019-FE, workstream D; MOCKED endpoint)", () => {
-  const QUOTE = (over = {}) => ({ quote_id: "q-1", execution_class: "text.standard", credits: 7, kind: "fixed", max_credits: null, available_credits: 30, sufficient: true, expires_at: new Date(Date.now() + 600000).toISOString(), policy_version: "policy-v1", ...over });
-  const quotes = () => calls.filter((c) => c.method === "POST" && c.path === "/customer/generation-quotes");
+describe("the read-only price preview before a text draft (BG-STUDIO-021-FE; MOCKED endpoint shaped like execution-cost-preview.v1)", () => {
+  const PREVIEW = (over = {}) => ({ contract_version: "execution-cost-preview.v1", tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a", execution_class: "text.standard", credit_cost: 7, policy_id: "pol", entitlement_id: "ent", available_credits: 30, spend_cap: 9007199254740991, affordability: "within_limit", observed_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60000).toISOString(), reserved: false, execution_authorized: false, confirmation_supported: false, ...over });
+  const previews = () => calls.filter((c) => c.method === "GET" && c.path === "/customer/billing/credit-preview");
   const generations = () => calls.filter((c) => c.method === "POST" && c.path.endsWith("/generate"));
   async function toDraft() {
-    vi.stubEnv("VITE_GENERATION_QUOTE_API", "true");
+    vi.stubEnv("VITE_CREDIT_PREVIEW_API", "true");
     render(<App />);
     await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
     fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
@@ -2196,45 +2196,38 @@ describe("with the quote API available, nothing is generated before the customer
     fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
     await screen.findByText(/saved to your workspace/i);
   }
+  const check = async () => fireEvent.click((await screen.findAllByRole("button", { name: /check the credit cost/i }))[0]);
 
-  it("quote first (no generation, no charge), then confirm; the generate request carries the quote and the authorised maximum", async () => {
-    handlers["POST /customer/generation-quotes"] = () => ok(QUOTE({ kind: "estimate", credits: 5, max_credits: 9 }), 201);
-    await toDraft();
-    fireEvent.click(screen.getAllByRole("button", { name: /check the credit cost/i })[0]);
-    expect(await screen.findByRole("group", { name: /credit cost/i })).toHaveTextContent(/about 5 credits, at most 9 credits/i);
-    expect(generations()).toHaveLength(0);
-    const q = JSON.parse(quotes()[0].options.body);
-    expect(q).toMatchObject({ tenant_id: "tenant-a", project_id: "project-a", execution_class: "text.standard", execution_mode: "ai" });
-    fireEvent.click(screen.getByRole("button", { name: /use up to 9 credits and generate/i }));
+  it("shows the current price first (nothing generated, nothing reserved); generating then carries NO quote field, because the backend body is strict", async () => {
+    handlers["GET /customer/billing/credit-preview"] = (url) => ok(PREVIEW({ brand_id: new URL(url).searchParams.get("brand_id") }));
+    await toDraft(); await check();
+    const card = await screen.findByRole("group", { name: /credit cost/i });
+    expect(card).toHaveTextContent(/right now this uses 7 credits/i); expect(card).toHaveTextContent(/not a locked quote/i); expect(generations()).toHaveLength(0);
+    expect(Object.fromEntries(new URL(previews()[0].url).searchParams)).toMatchObject({ tenant_id: "tenant-a", project_id: "project-a", execution_class: "text.standard" });
+    fireEvent.click(screen.getByRole("button", { name: "Generate now" }));
     await screen.findByText("Server persisted review copy");
-    expect(JSON.parse(generations()[0].options.body)).toMatchObject({ quote_id: "q-1", max_credits: 9 });
+    expect(Object.keys(JSON.parse(generations()[0].options.body))).not.toContain("quote_id");
   });
-
-  it("insufficient credits: no confirm is possible and no generation request is ever sent", async () => {
-    handlers["POST /customer/generation-quotes"] = () => ok(QUOTE({ available_credits: 2, sufficient: false }), 201);
-    await toDraft();
-    fireEvent.click(screen.getAllByRole("button", { name: /check the credit cost/i })[0]);
-    expect(await screen.findByText(/do not have enough credits for this\. nothing will be charged/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /use 7 credits and generate/i })).toBeDisabled();
-    expect(generations()).toHaveLength(0);
+  it("insufficient credits: Generate now is disabled and no generation request is sent", async () => {
+    handlers["GET /customer/billing/credit-preview"] = (url) => ok(PREVIEW({ brand_id: new URL(url).searchParams.get("brand_id"), available_credits: 2, affordability: "insufficient_credits" }));
+    await toDraft(); await check();
+    expect(await screen.findByText(/do not have enough credits for this\. nothing will be charged/i)).toBeInTheDocument(); expect(screen.getByRole("button", { name: "Generate now" })).toBeDisabled(); expect(generations()).toHaveLength(0);
   });
-
-  it("a price that changed on the server (409 QUOTE_CHANGED) is reported, nothing is charged, and the customer must re-check", async () => {
-    handlers["POST /customer/generation-quotes"] = () => ok(QUOTE(), 201);
-    handlers["POST /customer/campaigns/*/variants/*/generate"] = () => fail(409, { error: { code: "QUOTE_CHANGED" } });
-    await toDraft();
-    fireEvent.click(screen.getAllByRole("button", { name: /check the credit cost/i })[0]);
-    fireEvent.click(await screen.findByRole("button", { name: /use 7 credits and generate/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/price changed.*nothing was started or charged/i);
-    expect(generations()).toHaveLength(1);
-    expect(screen.getByRole("button", { name: /check the cost again/i })).toBeInTheDocument();
+  it("a server refusal at generate time (402) is explained and nothing is charged", async () => {
+    handlers["GET /customer/billing/credit-preview"] = (url) => ok(PREVIEW({ brand_id: new URL(url).searchParams.get("brand_id") }));
+    handlers["POST /customer/campaigns/*/variants/*/generate"] = () => fail(402, { error: { code: "GENERATION_CREDITS_UNAVAILABLE" } });
+    await toDraft(); await check(); fireEvent.click(await screen.findByRole("button", { name: "Generate now" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/do not have enough credits.*nothing was charged/i); expect(generations()).toHaveLength(1);
   });
-
-  it("a malformed quote is never shown as a price", async () => {
-    handlers["POST /customer/generation-quotes"] = () => ok({ quote_id: "q-1", credits: "seven" }, 201);
+  it("a preview that claims it reserved credits, or is malformed, is never shown as a price", async () => {
+    handlers["GET /customer/billing/credit-preview"] = (url) => ok(PREVIEW({ brand_id: new URL(url).searchParams.get("brand_id"), reserved: true }));
+    await toDraft(); await check();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/credit cost could not be checked yet.*nothing was started or charged/i); expect(screen.queryByRole("group", { name: /credit cost/i })).toBeNull(); expect(generations()).toHaveLength(0);
+  });
+  it("image and video items get the quote/confirm panel, not the text draft button", async () => {
+    vi.stubEnv("VITE_CREDIT_PREVIEW_API", "true");
     await toDraft();
-    fireEvent.click(screen.getAllByRole("button", { name: /check the credit cost/i })[0]);
-    expect(await screen.findByRole("alert")).toHaveTextContent(/credit cost could not be confirmed.*nothing was charged/i);
-    expect(screen.queryByRole("group", { name: /credit cost/i })).toBeNull(); expect(generations()).toHaveLength(0);
+    // the recommendation creates text items; media items appear only when added, and are covered in qa/integration
+    expect(screen.queryByText(/Create the image for this post/)).toBeNull();
   });
 });

@@ -13,6 +13,8 @@ const EVIDENCE = process.env.EVIDENCE_DIR || '';
 const W = Number((process.env.BG_VIEWPORT || '1440x900').split('x')[0]);
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
 const CID = '33333333-3333-4333-8333-333333333333';
+const VID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const QID = '44444444-4444-4444-8444-444444444444';
 const mkWs = (role) => ({ tenant_id: 't1', tenant_name: 'Northgate Group', project_id: 'p1', project_name: 'Northgate campaigns', brand_id: 'b1', brand_name: 'Northgate Vehicle Leasing', brand_status: 'approved', membership_role: role });
 const sess = JSON.stringify({ access_token: 'tok-b1', refresh_token: 'r', token_type: 'bearer', expires_in: 99999, expires_at: 4102444800, user: { id: 'u', app_metadata: { tenant_id: 't1', project_id: 'p1', brand_id: 'b1' } } });
 const onboarding = { contract_version: 'workspace-onboarding.v1', tenant_id: 't1', project_id: 'p1', brand_id: 'b1', version: 3, status: 'completed', sector: { key: 'leasing', source: 'customer' }, industry_text: null, channels: { values: ['email'], source: 'customer' }, current_step: 6, draft: {}, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] }, completed_at: '2026-10-24T10:00:00.000Z', updated_at: '2026-10-24T10:00:00.000Z' };
@@ -21,14 +23,14 @@ const plans = { contract_version: 'commercial-catalog.v1', plans: [plan('standar
 const soon = () => new Date(Date.now() + 10 * 60000).toISOString();
 
 async function open(page, { role = 'owner', subscription = { status: 'not_subscribed', subscription: null, available_credits: null }, jobs = [] } = {}) {
-  const log = { calls: [], bodies: {}, errors: [], calendarReqs: [], name: 'Northgate spring leasing', archived: false, version: 3 };
+  const log = { calls: [], bodies: {}, errors: [], calendarReqs: [], extraItems: [], quoteState: null, name: 'Northgate spring leasing', archived: false, version: 3 };
   page.on('pageerror', (e) => log.errors.push(e.message));
   await page.addInitScript(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [sess]);
   await page.route(/fonts\./, (r) => r.abort());
   await page.route(/^https:\/\/(checkout\.example\.test|billing\.stripe\.com)\//, (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<title>Stripe-hosted page (test)</title>' }));
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: CORS, body: JSON.stringify(body) });
   await page.route('http://supabase.test/**', (route) => json(route, JSON.parse(sess)));
-  const campaign = (workflow) => ({ campaign_id: CID, tenant_id: 't1', project_id: 'p1', brand_id: 'b1', name: log.name, goal: 'More enquiries', display_timezone: 'Europe/London', version: log.version, archived_at: log.archived ? '2026-10-26T09:00:00.000Z' : null, items: [{ content_item_id: 'i1', name: 'Lease offer post', format: 'text', variants: [{ variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow, current_revision_id: 'rev-1', current_content: { title: 'Lease offer', body: 'Body copy' } }] }], schedules: [] });
+  const campaign = (workflow) => ({ campaign_id: CID, tenant_id: 't1', project_id: 'p1', brand_id: 'b1', name: log.name, goal: 'More enquiries', display_timezone: 'Europe/London', version: log.version, archived_at: log.archived ? '2026-10-26T09:00:00.000Z' : null, items: [{ content_item_id: 'i1', name: 'Lease offer post', format: 'text', variants: [{ variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow, current_revision_id: 'rev-1', current_content: { title: 'Lease offer', body: 'Body copy' } }] }, ...log.extraItems], schedules: [] });
   await page.route('http://api.test/**', (route) => {
     const req = route.request(); const u = new URL(req.url()); const m = req.method(); const key = `${m} ${u.pathname}`; log.calls.push(key);
     if (m !== 'GET' && m !== 'OPTIONS') { try { log.bodies[key] = JSON.parse(req.postData()); } catch { /* none */ } }
@@ -53,7 +55,10 @@ async function open(page, { role = 'owner', subscription = { status: 'not_subscr
     if (p === '/customer/publishing-queue') return json(route, { contract_version: 'publishing-queue.v1', items: [{ publication_id: 'pub1', campaign_id: CID, variant_id: 'v1', account_id: 'a1', scheduled_for: '2026-11-01T10:00:00Z', status: 'failed', attempts: 2, last_error_code: 'TOKEN_EXPIRED', platform_post_url: null, verified_by: null }], next_cursor: null });
     if (p === `/customer/campaigns/${CID}/results`) return json(route, { contract_version: 'campaign-results.v1', metrics: [{ metric: 'clicks', value: 12, unit: 'count', observed_at: '2026-10-20T00:00:00Z', source: 'customer_entered', method: null, fresh_as_of: '2026-10-21T00:00:00Z' }] });
     if (p === '/customer/learning/insights') return json(route, { contract_version: 'learning-insights.v1', insights: [{ insight_id: 'i1', statement: 'TEST suggestion: shorter posts got more clicks.', confidence: 'low', status: 'proposed', generated_by: 'ai', created_at: '2026-10-22T00:00:00Z', evidence: [{ source: 'customer_entered', metric: 'clicks', period_from: '2026-10-01T00:00:00Z', period_to: '2026-10-20T00:00:00Z', sample_size: 3 }] }] });
-    if (p === '/customer/generate-image') return json(route, { status: 'completed', execution_id: log.bodies[key].execution_id, generation_id: log.bodies[key].generation_id, media: { provider: 'mock', provider_job_id: 'j1', asset: { location: 'gs://private-bucket/a.png', mime_type: 'image/png' }, aspect_ratio: '1:1', approval_status: 'pending', created_at: '2026-10-26T10:00:00Z', completed_at: '2026-10-26T10:00:05Z' } });
+    if (p === `/customer/campaigns/${CID}/content-items` && m === 'POST') { const b = log.bodies[key]; log.version += 1; log.extraItems.push({ content_item_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', name: b.name, format: b.format, variants: [{ variant_id: VID, platform: b.platform, placement: b.placement, destination_label: b.destination_label, workflow: 'draft', current_revision_id: 'rev-img', current_content: { title: null, body: '', caption: null, alt_text: null, asset_refs: [] } }] }); return json(route, { result: { campaign_id: CID, campaign_version: log.version }, campaign: campaign('draft') }, 201); }
+    if (p === '/customer/generation-quotes' && m === 'POST') { const b = log.bodies[key]; log.quoteRequests = (log.quoteRequests || 0) + 1; log.quoteState = { state: 'quoted' }; return json(route, { contract_version: 'generation-quote.v1', quote_id: QID, execution_class: b.execution_class, credits: 3, kind: 'fixed', max_credits: 3, available_credits: 40, sufficient: true, expires_at: new Date(Date.now() + 120000).toISOString(), policy_version: 'pol:1', state: 'quoted' }, 201); }
+    if (p === `/customer/generation-quotes/${QID}/confirm`) { log.quoteState = { state: 'confirmed', polls: 0 }; return json(route, { status: 'queued', job_id: 'quoted:job1', quote_id: QID, reserved_credits: 3, replay: false }, 202); }
+    if (p === `/customer/generation-quotes/${QID}` && m === 'GET') { const st = log.quoteState || { state: 'quoted' }; st.polls = (st.polls || 0) + 1; const seq = ['queued', 'claimed', 'calling', 'succeeded']; const state = st.state === 'confirmed' ? seq[Math.min(st.polls - 1, seq.length - 1)] : st.state; return json(route, { quote_id: QID, job_id: 'quoted:job1', state, execution_class: 'image.normal', reserved_credits: state === 'succeeded' ? 0 : 3, reservation_state: state === 'succeeded' ? 'settled' : 'held' }); }
     return json(route, { status: 'failed', error: { code: 'NOT_FOUND' } }, 404);
   });
   return log;
@@ -139,33 +144,40 @@ test('credit cost: a read-only price preview is shown as the current price (not 
   expect(Object.keys(log.bodies[`POST /customer/campaigns/${CID}/variants/v1/generate`])).not.toContain('quote_id'); // the backend body is strict
 });
 
-test('creative: image brief, cost check first, one request with stable ids; the result is never displayed or approved without private delivery', async ({ page }) => {
+test('creative: add an image item, get a binding price, confirm, follow the job to Finished (not approved, not shown) and resume after a reload', async ({ page }) => {
   const log = await open(page);
   await toStudio(page);
-  await page.getByText('Create an image or video for this post').click();
-  await expect(page.getByText(/own photos or videos combined with AI/)).toBeVisible();
-  await page.getByLabel('Image', { exact: true }).check();
-  await page.getByLabel('Shape').selectOption('1:1');
+  await page.getByText('Add an image or video to this campaign').click();
+  await page.getByLabel('Name', { exact: true }).fill('Spring image'); await page.getByLabel('Account or page').fill('Brand page');
+  await checks(page, 'add-item');
+  await page.getByRole('button', { name: 'Add to the campaign' }).click();
+  await expect.poll(() => log.bodies[`POST /customer/campaigns/${CID}/content-items`]).toMatchObject({ name: 'Spring image', format: 'image', platform: 'instagram', placement: 'feed', destination_label: 'Brand page' });
+  await expect(page.getByText('Create the image for this post')).toBeVisible();
+  await page.getByText('Create the image for this post').click();
+  await expect(page.getByText(/The shape is set by BizGenie/)).toBeVisible();
   await page.getByLabel('Brief', { exact: true }).fill('A calm product shot');
   await checks(page, 'creative-form');
-  await page.locator('.ps-creative').getByRole('button', { name: 'Check the credit cost' }).click();
-  await expect(page.locator('.ps-creative').getByRole('group', { name: 'Credit cost' })).toBeVisible();
-  expect(log.previewQuery.execution_class).toBe('image.normal');
-  expect(log.calls.some((c) => c === 'POST /customer/generate-image')).toBe(false);
-  await page.locator('.ps-creative').getByRole('button', { name: 'Generate now' }).click();
-  await expect(page.getByText('Image created')).toBeVisible();
-  const sent = log.bodies['POST /customer/generate-image'];
-  expect(sent).toMatchObject({ tenant_id: 't1', project_id: 'p1', brand_id: 'b1', campaign_id: CID, topic: 'Lease offer post', aspect_ratio: '1:1', image_purpose: 'A calm product shot' });
-  expect(sent.execution_id).toMatch(/^exec_/); expect(sent.generation_id).toMatch(/^gen_/); expect(sent).not.toHaveProperty('user_id');
-  await expect(page.getByText(/stored privately/)).toBeVisible();
-  await expect(page.locator('.ps-creative img')).toHaveCount(0);
-  await expect(page.locator('main')).not.toContainText('gs://');
-  await expect(page.getByRole('button', { name: /^approve/i })).toHaveCount(0);
-  await checks(page, 'creative-created');
+  await page.getByRole('button', { name: /Get the price for the image/ }).click();
+  const card = page.getByRole('group', { name: 'Price' });
+  await expect(card).toContainText('3 credits'); await expect(card).toContainText('You have 40 credits available'); await expect(card).toContainText('fixed price and the most you can be charged');
+  expect(log.calls).not.toContain('POST /customer/generation-quotes/' + QID + '/confirm'); // a price starts nothing
+  expect(log.bodies['POST /customer/generation-quotes']).toMatchObject({ campaign_id: CID, variant_id: VID, execution_class: 'image.normal', execution_mode: 'ai', execution_brief: 'A calm product shot', supplied_assets: [] });
+  expect(log.bodies['POST /customer/generation-quotes'].idempotency_key).toMatch(/^q:[0-9a-f]{48}:/);
+  await checks(page, 'creative-price');
+  await page.getByRole('button', { name: /Confirm and set aside 3 credits/ }).click();
+  await expect.poll(() => log.bodies[`POST /customer/generation-quotes/${QID}/confirm`]).toMatchObject({ max_credits: 3, confirmed: true });
+  await expect(page.getByText(/Finished\. 3 credits used/)).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText(/Finished is not approved and not published/)).toBeVisible();
+  await expect(page.getByText(/needs one more step on BizGenie's side/)).toBeVisible();
+  await expect(page.locator('.ps-creative img, .ps-creative video')).toHaveCount(0);
+  await expect(page.locator('main')).not.toContainText(/gs:\/\/|s3:\/\//);
+  await checks(page, 'creative-finished');
+  const quotesBefore = log.quoteRequests;
   await page.reload(); await welcome(page);
   await nav(page).getByRole('button', { name: 'Campaign Studio', exact: true }).click();
-  await page.getByText('Create an image or video for this post').click();
-  await expect(page.getByText('Image created')).toBeVisible(); // the finished record is remembered per workspace and item, so a reload shows the same honest state
+  await page.getByText('Create the image for this post').click();
+  await expect(page.getByText(/Finished\. 3 credits used/)).toBeVisible(); // the same job is read back from the server
+  expect(log.quoteRequests).toBe(quotesBefore); // a reload never asks for a new price
   expect(log.errors).toEqual([]);
 });
 

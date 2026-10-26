@@ -114,4 +114,18 @@ describe("BillingManagement (opens Stripe-hosted pages; never reports a change a
     resolve({ url: "https://billing.stripe.com/p/x" });
     await screen.findByText(/Nothing changes until you confirm there/);
   });
+  it("invoices: lists them with Stripe's status, shows a missing number or link as missing, and loads older ones on request", async () => {
+    const inv = (id, n, url, d) => ({ id, number: n, issuedAt: d, amountMinor: 500, currency: "GBP", status: "paid", url });
+    const f = vi.fn().mockResolvedValueOnce({ invoices: [inv("in_1", "FX-2", "https://invoice.stripe.com/i/1", "2026-10-01T00:00:00Z"), inv("in_2", "", "", "2026-09-01T00:00:00Z")], skipped: 1, nextCursor: "in_2" }).mockResolvedValueOnce({ invoices: [inv("in_3", "FX-0", "https://invoice.stripe.com/i/3", "2026-08-01T00:00:00Z")], skipped: 0, nextCursor: null });
+    setup({ fetchInvoices: f }); fireEvent.click(screen.getByRole("button", { name: "Show invoices" }));
+    const list = await screen.findByRole("list", { name: "Invoices" }); expect(list).toHaveTextContent("FX-2"); expect(list).toHaveTextContent("Invoice (no number yet)"); expect(list).toHaveTextContent("no link available"); expect(list).toHaveTextContent("status from Stripe: paid");
+    expect(screen.getByText(/1 invoice could not be shown/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show older invoices" })); await waitFor(() => expect(screen.getByRole("list", { name: "Invoices" })).toHaveTextContent("FX-0"));
+    expect(f.mock.calls[1][0].cursor).toBe("in_2"); expect(screen.getByText(/every invoice on file/)).toBeInTheDocument();
+  });
+  it("invoices: a member-only 404 and outages are explained, and an empty history is said plainly", async () => {
+    const f = vi.fn().mockRejectedValueOnce(Object.assign(new Error("Only the workspace owner can see invoices."), { kind: "forbidden" })).mockResolvedValueOnce({ invoices: [], skipped: 0, nextCursor: null });
+    setup({ fetchInvoices: f }); fireEvent.click(screen.getByRole("button", { name: "Show invoices" })); expect(await screen.findByRole("alert")).toHaveTextContent(/Only the workspace owner/);
+    fireEvent.click(screen.getByRole("button", { name: "Show invoices" })); expect(await screen.findByText(/no invoices yet/i)).toBeInTheDocument();
+  });
 });

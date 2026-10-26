@@ -116,3 +116,20 @@ describe("failures are named, never turned into success", () => {
     expect((await errorFor(bad(418, ""), "That")).kind).toBe("error");
   });
 });
+
+describe("addContentItem (BG-STUDIO-021-FE)", () => {
+  const campaign = { campaign_id: "11111111-1111-4111-8111-111111111111", version: 4 };
+  const ok = (b) => vi.fn(async () => ({ ok: true, status: 201, json: async () => b }));
+  it("posts the strict body with a key derived from the campaign version and the item", async () => {
+    const f = ok({ result: {}, campaign: { campaign_id: campaign.campaign_id, version: 5, items: [] } });
+    const { addContentItem } = await import("./campaignManagementClient");
+    const c = await addContentItem({ apiBaseUrl: "http://a", accessToken: "tk", scope: { tenantId: "t", projectId: "p" }, campaign, name: "Spring image", format: "image", platform: "instagram", placement: "feed", destinationLabel: "Brand page", fetchImpl: f });
+    expect(c.version).toBe(5); expect(f.mock.calls[0][0]).toBe(`http://a/customer/campaigns/${campaign.campaign_id}/content-items`);
+    const body = JSON.parse(f.mock.calls[0][1].body);
+    expect(body).toMatchObject({ tenant_id: "t", project_id: "p", expected_campaign_version: 4, name: "Spring image", format: "image", platform: "instagram", placement: "feed", destination_label: "Brand page" }); expect(body.idempotency_key).toMatch(/^op:add-item:[0-9a-f]{64}$/);
+  });
+  it.each([["no name", { name: " " }], ["unknown format", { format: "carousel" }], ["unknown platform", { platform: "myspace" }], ["bad placement", { placement: "a b" }], ["no destination", { destinationLabel: "" }]])("refuses %s before any request", async (_l, over) => {
+    const f = vi.fn(); const { addContentItem } = await import("./campaignManagementClient");
+    await expect(addContentItem({ apiBaseUrl: "h", accessToken: "t", scope: { tenantId: "t", projectId: "p" }, campaign, name: "n", format: "image", platform: "instagram", placement: "feed", destinationLabel: "d", ...over, fetchImpl: f })).rejects.toMatchObject({ kind: "invalid" }); expect(f).not.toHaveBeenCalled();
+  });
+});

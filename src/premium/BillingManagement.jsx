@@ -1,21 +1,22 @@
 import React, { useRef, useState } from "react";
-import { openBillingPortal as realOpenPortal, requestCancellation as realCancel, requestId, requestPlanChange as realChange } from "./billingManagementClient";
+import { fetchInvoices as realFetchInvoices, openBillingPortal as realOpenPortal, requestCancellation as realCancel, requestId, requestPlanChange as realChange } from "./billingManagementClient";
 import { formatMoney } from "./planCatalogueClient";
 
 // Subscription management (BG-STUDIO-019/020-FE, workstream B2), matching the backend DRAFT in bizgenie-api PR #216 (unmounted there).
 // Every action opens a Stripe-HOSTED page where the customer confirms; BizGenie never changes a plan or cancels from this screen, and nothing is
 // reported as done: the subscription changes only when Stripe's webhook reaches BizGenie and the subscription read shows it. Real buttons exist only
 // when the backend offers the route (build gate) and the caller is the workspace owner; otherwise the page says plainly what is not available.
-// There is no invoices endpoint: invoices and receipts are in Stripe's portal.
+// Invoices come from the draft owner-only invoice route (billing-invoices.v1, unmounted); receipts are in Stripe's portal.
 const redirectDefault = (url) => window.location.assign(url);
 const SUPPORT = "A support contact has not been published yet.";
 
 export default function BillingManagement({ enabled, isOwner, session, subscription, catalogue, onRecheck, api = {}, onRedirect = redirectDefault }) {
-  const openPortal = api.openBillingPortal || realOpenPortal; const change = api.requestPlanChange || realChange; const cancel = api.requestCancellation || realCancel;
+  const invoicesApi = api.fetchInvoices || realFetchInvoices; const openPortal = api.openBillingPortal || realOpenPortal; const change = api.requestPlanChange || realChange; const cancel = api.requestCancellation || realCancel;
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState({ kind: "", text: "" });
   const [panel, setPanel] = useState(""); // "", "change", "cancel"
   const [target, setTarget] = useState("");
+  const [inv, setInv] = useState({ status: "idle", list: [], skipped: 0, next: null, error: "" });
   const reqIds = useRef({ portal: null, change: null, cancel: null }).current; // a retry of the SAME request reuses its id
   const base = () => ({ apiBaseUrl: import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080", accessToken: session.accessToken, tenantId: session.tenantId });
   const run = async (name, work) => {
@@ -43,6 +44,11 @@ export default function BillingManagement({ enabled, isOwner, session, subscript
   const others = (catalogue ? catalogue.plans : []).filter((p) => p.planCode !== current);
   const chosen = others.find((p) => p.planCode === target);
   const currentPlan = catalogue && catalogue.plans.find((p) => p.planCode === current);
+  const loadInvoices = async (more) => {
+    if (inv.status === "loading") return; const cursor = more ? inv.next : ""; setInv((x) => ({ ...x, status: "loading", error: "" }));
+    try { const r = await invoicesApi({ ...base(), cursor }); setInv((x) => ({ status: "ready", list: more ? [...x.list, ...r.invoices] : r.invoices, skipped: (more ? x.skipped : 0) + r.skipped, next: r.nextCursor, error: "" })); }
+    catch (e) { setInv((x) => ({ ...x, status: x.list.length ? "ready" : "error", error: e.message })); }
+  };
   const toStripe = (key, work) => run(key, async () => { reqIds[key] = reqIds[key] || requestId(key); const r = await work(reqIds[key]); reqIds[key] = null; setPanel(""); setMsg({ kind: "ok", text: "Taking you to Stripe to confirm. Nothing changes until you confirm there and BizGenie receives Stripe's confirmation." }); onRedirect(r.url); });
 
   return (
@@ -69,6 +75,18 @@ export default function BillingManagement({ enabled, isOwner, session, subscript
           {currentPlan ? <p>Read the <a href={currentPlan.terms.cancellationUrl} target="_blank" rel="noopener noreferrer">cancellation rules</a> and the <a href={currentPlan.terms.refundUrl} target="_blank" rel="noopener noreferrer">refund rules</a> first.</p> : <p>The approved cancellation terms are not available here yet.</p>}
           <p className="ps-hint">Stripe shows when your access would end before you confirm. The date shown on your subscription here is the one that counts once Stripe has confirmed.</p>
           <div className="ps-camp-actions"><button type="button" className="ps-primary" disabled={Boolean(busy)} onClick={() => toStripe("cancel", (id) => cancel({ ...base(), id }))}>{busy === "cancel" ? "Opening…" : "Continue to Stripe"}</button><button type="button" className="secondary" onClick={() => setPanel("")} disabled={Boolean(busy)}>Keep my subscription</button></div>
+        </div>
+      )}
+      <div className="ps-camp-actions"><button type="button" className="secondary" disabled={inv.status === "loading"} onClick={() => loadInvoices(false)}>{inv.status === "loading" && !inv.list.length ? "Loading…" : "Show invoices"}</button></div>
+      {inv.status === "error" && <p className="error" role="alert">{inv.error}</p>}
+      {inv.status !== "error" && inv.error && <p className="error" role="alert">{inv.error}</p>}
+      {inv.status === "ready" && inv.list.length === 0 && <p>You have no invoices yet.</p>}
+      {inv.list.length > 0 && (
+        <div>
+          <ul className="ps-invoices" aria-label="Invoices">{inv.list.map((i) => <li key={i.id}><strong>{i.number || "Invoice (no number yet)"}</strong> · {new Date(i.issuedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} · {formatMoney(i.amountMinor, i.currency)} · status from Stripe: {i.status} · {i.url ? <a href={i.url} target="_blank" rel="noopener noreferrer">View invoice</a> : "no link available"}</li>)}</ul>
+          {inv.skipped > 0 && <p className="ps-hint">{inv.skipped} invoice{inv.skipped === 1 ? "" : "s"} could not be shown because the server sent {inv.skipped === 1 ? "it" : "them"} in an unreadable form.</p>}
+          {inv.next && <button type="button" className="secondary" disabled={inv.status === "loading"} onClick={() => loadInvoices(true)}>{inv.status === "loading" ? "Loading…" : "Show older invoices"}</button>}
+          {!inv.next && <p className="ps-hint">That is every invoice on file.</p>}
         </div>
       )}
       {onRecheck && <p><button type="button" className="secondary" onClick={onRecheck}>Check my subscription</button></p>}
