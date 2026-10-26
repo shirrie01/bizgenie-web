@@ -1,34 +1,30 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { CatalogueError, fetchPlanCatalogue, formatMoney, isPlanCatalogueApiEnabled, normaliseCatalogue } from "./planCatalogueClient";
+import { CatalogueError, fetchPlanCatalogue, formatMoney, isPlanCatalogueApiEnabled, normaliseCatalogue, planLabel } from "./planCatalogueClient";
 
-// MOCKED CONTRACT TESTS. GET /billing/plans does not exist and no approved pricing source has been found. Every figure below is a
-// TEST FIXTURE chosen to prove formatting and validation; none is a real, approved or proposed price.
-const PLAN = (over = {}) => ({ plan_code: "alpha", name: "Fixture Alpha", tier: 1, summary: "Fixture summary", price: { amount_minor: 1234, currency: "GBP", interval: "month" }, included_credits: 17, additional_usage: { text: "Fixture additional-usage rule." }, trial: null, renewal: { text: "Fixture renewal rule." }, cancellation: { text: "Fixture cancellation rule." }, refund: { text: "Fixture refund rule." }, current: false, ...over });
-const CAT = (over = {}) => ({ catalogue_version: "fx-1", effective_from: "2026-11-01T00:00:00.000Z", currency: "GBP", vat: { treatment: "inclusive", text: "Fixture VAT statement." }, terms: { version: "terms-fx-1", effective_from: "2026-11-01T00:00:00.000Z", url: "https://example.test/terms" }, support: { email: "support@example.test", hours: "Fixture hours" }, plans: [PLAN({ plan_code: "beta", name: "Fixture Beta", tier: 2, price: { amount_minor: 5600, currency: "GBP", interval: "month" } }), PLAN()], ...over });
+// MOCKED CONTRACT TESTS against `commercial-catalog.v1` (backend draft, bizgenie-api PR #216 f8d81bf). No approved pricing source exists; every figure
+// below is a TEST FIXTURE chosen to prove formatting and validation, not a real, approved or proposed price.
+const PLAN = (over = {}) => ({ plan_code: "standard", plan_version: 1, amount_minor: 1234, currency: "GBP", billing_cadence: "month", tax: { presentation: "inclusive", jurisdiction: "Fixtureland", wording: "Fixture tax wording." }, credit_grant_cadence: "month", included_credits: 17, policy_id: "pol-fx", entitlement_codes: ["generation"], effective_from: "2026-01-01T00:00:00.000Z", effective_to: null, terms: { version: "terms-fx-1", url: "https://example.test/terms", cancellation_url: "https://example.test/cancel", refund_url: "https://example.test/refund" }, approval: { decision: "DEC-FX", source: "https://example.test/decision", approved_at: "2026-01-01T00:00:00.000Z" }, ...over });
+const CAT = (over = {}) => ({ contract_version: "commercial-catalog.v1", plans: [PLAN(), PLAN({ plan_code: "pro", amount_minor: 5600, included_credits: 99 })], ...over });
 
 describe("catalogue validation fails closed", () => {
-  it("accepts a complete catalogue, orders plans by tier and keeps the server's words", () => {
+  it("accepts a complete catalogue, orders plans by price and keeps the server's words and links", () => {
     const c = normaliseCatalogue(CAT());
-    expect(c.plans.map((p) => p.planCode)).toEqual(["alpha", "beta"]); expect(c.vat).toEqual({ treatment: "inclusive", text: "Fixture VAT statement." });
-    expect(c.terms).toEqual({ version: "terms-fx-1", effectiveFrom: "2026-11-01T00:00:00.000Z", url: "https://example.test/terms" }); expect(c.plans[0].refund).toBe("Fixture refund rule.");
+    expect(c.plans.map((p) => p.planCode)).toEqual(["standard", "pro"]);
+    expect(c.plans[0]).toMatchObject({ name: "Standard", priceMinor: 1234, interval: "month", includedCredits: 17, tax: { presentation: "inclusive", jurisdiction: "Fixtureland", wording: "Fixture tax wording." }, terms: { cancellationUrl: "https://example.test/cancel", refundUrl: "https://example.test/refund" } });
   });
+  it.each([["no contract version", { contract_version: undefined }], ["a different contract version", { contract_version: "commercial-catalog.v2" }], ["no plans", { plans: [] }], ["not an object", null]])("shows nothing when there is %s", (_l, over) => { expect(() => normaliseCatalogue(over === null ? null : CAT(over))).toThrow(CatalogueError); });
   it.each([
-    ["no catalogue version", { catalogue_version: "" }], ["no effective date", { effective_from: "x" }], ["bad currency", { currency: "pounds" }], ["no VAT treatment", { vat: { text: "x" } }], ["unknown VAT treatment", { vat: { treatment: "maybe", text: "x" } }],
-    ["no terms version", { terms: { version: "", effective_from: "2026-11-01T00:00:00Z", url: "https://example.test/t" } }], ["terms link not https", { terms: { version: "v", effective_from: "2026-11-01T00:00:00Z", url: "http://example.test/t" } }],
-    ["no support contact", { support: { hours: "9-5" } }], ["no plans", { plans: [] }], ["not an object", null],
-  ])("shows nothing when there is %s", (_l, over) => { expect(() => normaliseCatalogue(over === null ? null : CAT(over))).toThrow(CatalogueError); });
-  it.each([
-    ["a plan with no name", { name: "" }], ["a fractional price", { price: { amount_minor: 12.5, currency: "GBP", interval: "month" } }], ["a price in another currency", { price: { amount_minor: 1, currency: "USD", interval: "month" } }],
-    ["an unknown billing frequency", { price: { amount_minor: 1, currency: "GBP", interval: "fortnight" } }], ["missing included credits", { included_credits: -1 }], ["no refund terms", { refund: null }],
-    ["no cancellation terms", { cancellation: { text: " " } }], ["no renewal terms", { renewal: undefined }], ["no additional-usage rule", { additional_usage: null }], ["a malformed trial", { trial: { days: "7" } }],
-    ["a bad plan code", { plan_code: "Has Space" }],
+    ["a fractional price", { amount_minor: 12.5 }], ["a negative price", { amount_minor: -1 }], ["a bad currency", { currency: "pounds" }], ["an unknown cadence", { billing_cadence: "fortnight" }],
+    ["no tax statement", { tax: undefined }], ["unknown tax presentation", { tax: { presentation: "none", jurisdiction: "x", wording: "x" } }], ["blank tax wording", { tax: { presentation: "inclusive", jurisdiction: "x", wording: " " } }],
+    ["a credit grant that is not monthly", { credit_grant_cadence: "year" }], ["missing included credits", { included_credits: undefined }],
+    ["terms link not https", { terms: { version: "v", url: "http://example.test/t", cancellation_url: "https://e.test/c", refund_url: "https://e.test/r" } }],
+    ["no cancellation link", { terms: { version: "v", url: "https://e.test/t", cancellation_url: "", refund_url: "https://e.test/r" } }], ["no refund link", { terms: { version: "v", url: "https://e.test/t", cancellation_url: "https://e.test/c" } }],
+    ["no approval record", { approval: undefined }], ["approval source not https", { approval: { decision: "d", source: "http://x.test", approved_at: "2026-01-01T00:00:00Z" } }],
+    ["a bad effective date", { effective_from: "soon" }], ["no entitlement codes", { entitlement_codes: [] }], ["a bad plan code", { plan_code: "Has Space" }], ["a bad plan version", { plan_version: 0 }],
   ])("shows nothing when there is %s", (_l, over) => { expect(() => normaliseCatalogue(CAT({ plans: [PLAN(over)] }))).toThrow(/cannot be shown right now/i); });
   it("rejects duplicate plan codes", () => { expect(() => normaliseCatalogue(CAT({ plans: [PLAN(), PLAN()] }))).toThrow(CatalogueError); });
-  it("keeps a trial only when the server stated one, with its conditions", () => {
-    expect(normaliseCatalogue(CAT({ plans: [PLAN({ trial: { days: 14, conditions: "Fixture trial rule." } })] })).plans[0].trial).toEqual({ days: 14, conditions: "Fixture trial rule." });
-    expect(normaliseCatalogue(CAT()).plans[0].trial).toBeNull();
-  });
+  it("derives a label from the plan code only, never inventing a marketing name", () => { expect(planLabel("pro")).toBe("Pro"); expect(planLabel("")).toBe("Plan"); });
 });
 
 describe("money and fetching", () => {
@@ -41,10 +37,13 @@ describe("money and fetching", () => {
   it("sends the workspace and a bearer token, and returns the validated catalogue", async () => {
     const f = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => CAT() });
     const c = await fetchPlanCatalogue({ apiBaseUrl: "http://api.test", accessToken: "tok", tenantId: "t1", fetchImpl: f });
-    expect(f.mock.calls[0][0]).toBe("http://api.test/billing/plans?tenant_id=t1"); expect(f.mock.calls[0][1].headers.authorization).toBe("Bearer tok"); expect(c.version).toBe("fx-1");
+    expect(f.mock.calls[0][0]).toBe("http://api.test/customer/billing/plans?tenant_id=t1"); expect(f.mock.calls[0][1].headers.authorization).toBe("Bearer tok"); expect(c.version).toBe("commercial-catalog.v1");
   });
-  it.each([[401, "auth"], [403, "unavailable"], [404, "unavailable"], [500, "error"], [503, "error"]])("status %s is a typed error, never an empty catalogue", async (status, kind) => {
+  it.each([[401, "auth"], [403, "unavailable"], [404, "unavailable"], [500, "error"], [503, "unavailable"]])("status %s is a typed error, never an empty catalogue", async (status, kind) => {
     await expect(fetchPlanCatalogue({ apiBaseUrl: "x", accessToken: "t", tenantId: "t1", fetchImpl: vi.fn().mockResolvedValue({ ok: false, status, json: async () => ({}) }) })).rejects.toMatchObject({ kind });
+  });
+  it("503 says approved plans are not published, rather than showing an empty or invented list", async () => {
+    await expect(fetchPlanCatalogue({ apiBaseUrl: "x", accessToken: "t", tenantId: "t1", fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({ status: "unavailable", error: { code: "COMMERCIAL_CATALOG_UNAVAILABLE" } }) }) })).rejects.toThrow(/not been published yet/i);
   });
   it("a dropped connection and an invalid body are errors that say nothing is charged", async () => {
     await expect(fetchPlanCatalogue({ apiBaseUrl: "x", accessToken: "t", tenantId: "t1", fetchImpl: vi.fn().mockRejectedValue(new Error("x")) })).rejects.toThrow(/nothing is charged/i);

@@ -3,18 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import PremiumBilling from "./PremiumBilling";
 import BillingManagement from "./BillingManagement";
-
-// Fixture values only: these are test data for a mocked server, never product pricing.
-const body = {
-  catalogue_version: "fx-1", effective_from: "2026-01-01T00:00:00Z", currency: "GBP", vat: { treatment: "inclusive", text: "FIXTURE VAT TEXT" },
-  terms: { version: "fx-t1", effective_from: "2026-01-01T00:00:00Z", url: "https://example.test/terms" }, support: { email: "help@example.test", hours: "FIXTURE HOURS" },
-  plans: [
-    { plan_code: "alpha", name: "Alpha", tier: 1, price: { amount_minor: 1111, currency: "GBP", interval: "month" }, included_credits: 11, additional_usage: { text: "FX ADD A" }, renewal: { text: "FX RENEW A" }, cancellation: { text: "FX CANCEL A" }, refund: { text: "FX REFUND A" }, trial: { days: 7 } },
-    { plan_code: "beta", name: "Beta", tier: 2, price: { amount_minor: 2222, currency: "GBP", interval: "year" }, included_credits: 22, additional_usage: { text: "FX ADD B" }, renewal: { text: "FX RENEW B" }, cancellation: { text: "FX CANCEL B" }, refund: { text: "FX REFUND B" } },
-  ],
-};
 import { normaliseCatalogue } from "./planCatalogueClient";
-const catalogue = normaliseCatalogue(body);
+
+// Fixture values only: test data for a mocked server in `commercial-catalog.v1` shape, never product pricing.
+const plan = (code, amount, credits) => ({ plan_code: code, plan_version: 1, amount_minor: amount, currency: "GBP", billing_cadence: "month", tax: { presentation: "exclusive", jurisdiction: "Fixtureland", wording: "FIXTURE TAX WORDING" }, credit_grant_cadence: "month", included_credits: credits, policy_id: `pol-${code}`, entitlement_codes: ["generation"], effective_from: "2026-01-01T00:00:00.000Z", effective_to: null, terms: { version: "fx-t1", url: `https://example.test/terms-${code}`, cancellation_url: `https://example.test/cancel-${code}`, refund_url: `https://example.test/refund-${code}` }, approval: { decision: "DEC-FX", source: "https://example.test/decision", approved_at: "2026-01-02T00:00:00.000Z" } });
+const catalogue = normaliseCatalogue({ contract_version: "commercial-catalog.v1", plans: [plan("standard", 1111, 11), plan("pro", 2222, 22)] });
 const session = { status: "ready", accessToken: "tok", tenantId: "t1" };
 const on = { VITE_PLAN_CATALOGUE_API: "true", VITE_BILLING_MANAGEMENT_API: "true" };
 const off = {};
@@ -27,93 +20,98 @@ describe("PremiumBilling", () => {
     render(<PremiumBilling session={session} isOwner env={off} />);
     expect(await screen.findByText(/has not published plans, prices and terms/i)).toBeInTheDocument();
     expect(screen.getByText(/not available in BizGenie yet/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /cancel subscription|change plan|show invoices/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /cancel subscription|change plan/i })).toBeNull();
     expect(document.body.textContent).not.toMatch(/£\s?\d/);
   });
-  it("gates on: shows server prices, VAT, terms and support, and the owner can choose a plan via Stripe", async () => {
+  it("gates on: shows server prices, tax wording, term links and 'not published' for what the contract lacks; the owner can choose via Stripe", async () => {
     mockBilling(null);
     const redirect = vi.fn(); const startCheckout = vi.fn(async () => ({ url: "https://checkout.example.test/s" }));
     render(<PremiumBilling session={session} isOwner env={on} api={{ fetchPlanCatalogue: async () => catalogue, startCheckout }} onRedirect={redirect} />);
     expect(await screen.findByText("£11.11")).toBeInTheDocument();
     expect(screen.getByText("£22.22")).toBeInTheDocument();
-    expect(screen.getByText(/FIXTURE VAT TEXT/)).toBeInTheDocument();
-    expect(screen.getAllByText("help@example.test").length).toBeGreaterThan(0);
-    expect(screen.getByText(/7-day trial/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Choose Beta" }));
+    expect(screen.getAllByText(/FIXTURE TAX WORDING/).length).toBe(2);
+    expect(screen.getAllByRole("link", { name: "Refunds" })[0]).toHaveAttribute("href", "https://example.test/refund-standard");
+    expect(screen.getAllByText("Not published yet").length).toBeGreaterThanOrEqual(4);
+    expect(screen.getAllByText(/support contact .* has not been published/i).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Choose Pro" }));
     await waitFor(() => expect(redirect).toHaveBeenCalledWith("https://checkout.example.test/s"));
-    expect(startCheckout).toHaveBeenCalledWith(expect.objectContaining({ planCode: "beta" }));
+    expect(startCheckout).toHaveBeenCalledWith(expect.objectContaining({ planCode: "pro" }));
   });
   it("a member sees prices but cannot choose or manage", async () => {
     mockBilling(null);
     render(<PremiumBilling session={session} isOwner={false} env={on} api={{ fetchPlanCatalogue: async () => catalogue, startCheckout: vi.fn() }} />);
     expect(await screen.findByText("£11.11")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Choose Alpha" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Choose Standard" })).toBeDisabled();
     expect(screen.getByText(/only the workspace owner can change the plan/i)).toBeInTheDocument();
   });
-  it("catalogue failure is explained and retryable; no prices shown", async () => {
+  it("catalogue 503 (nothing approved yet) is explained and retryable; no prices shown", async () => {
     mockBilling(null);
-    const f = vi.fn().mockRejectedValueOnce(new Error("Prices and terms could not be loaded yet. Nothing is charged.")).mockResolvedValueOnce(catalogue);
+    const f = vi.fn().mockRejectedValueOnce(new Error("Approved plans and prices have not been published yet, so none are shown. Nothing is charged.")).mockResolvedValueOnce(catalogue);
     render(<PremiumBilling session={session} isOwner env={on} api={{ fetchPlanCatalogue: f }} />);
-    expect(await screen.findByText(/could not be loaded yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/have not been published yet/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/£\s?\d/);
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("£11.11")).toBeInTheDocument();
   });
+  it("marks the plan the subscription is on and offers no Choose button while entitled", async () => {
+    mockBilling({ plan_code: "standard", entitlement_status: "active" });
+    render(<PremiumBilling session={session} isOwner env={on} api={{ fetchPlanCatalogue: async () => catalogue }} />);
+    expect(await screen.findByText(/Your current plan/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Choose /i })).toBeNull();
+  });
 });
 
-describe("BillingManagement", () => {
-  const sub = { plan_code: "alpha", entitlement_status: "active" };
+describe("BillingManagement (opens Stripe-hosted pages; never reports a change as done)", () => {
+  const sub = { plan_code: "standard", entitlement_status: "active" };
   const setup = (api, extra = {}) => render(<BillingManagement enabled isOwner session={session} subscription={sub} catalogue={catalogue} api={api} onRedirect={extra.onRedirect || vi.fn()} onRecheck={extra.onRecheck} />);
-  it("cancellation shows the terms, sends once, reports 'requested' not 'cancelled', and reuses the id on retry", async () => {
-    const cancel = vi.fn().mockRejectedValueOnce(Object.assign(new Error("may or may not have been received"), { kind: "unconfirmed" })).mockResolvedValueOnce({ effectiveAt: "2026-12-01T00:00:00Z" });
-    setup({ requestCancellation: cancel });
-    fireEvent.click(screen.getByRole("button", { name: "Cancel subscription" }));
-    expect(screen.getByText(/FX CANCEL A/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Request cancellation" }));
-    expect(await screen.findByText(/may or may not have been received/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Request cancellation" }));
-    expect(await screen.findByText(/cancellation request was received/i)).toBeInTheDocument();
-    expect(screen.getByText(/1 December 2026/)).toBeInTheDocument();
-    expect(screen.queryByText(/has been cancelled/i)).toBeNull();
-    expect(cancel.mock.calls[0][0].id).toBe(cancel.mock.calls[1][0].id);
-  });
-  it("plan change lists only other plans and requires a choice", async () => {
-    const change = vi.fn(async () => ({ effectiveAt: null, url: "" }));
-    setup({ requestPlanChange: change });
-    fireEvent.click(screen.getByRole("button", { name: "Change plan" }));
-    expect(screen.getByRole("button", { name: "Request this change" })).toBeDisabled();
-    const select = screen.getByLabelText("Change to");
-    expect(Array.from(select.options).map((o) => o.value)).toEqual(["", "beta"]);
-    fireEvent.change(select, { target: { value: "beta" } });
-    fireEvent.click(screen.getByRole("button", { name: "Request this change" }));
-    expect(await screen.findByText(/change to Beta was received/i)).toBeInTheDocument();
-    expect(change).toHaveBeenCalledWith(expect.objectContaining({ planCode: "beta" }));
-  });
-  it("portal redirects only to the https URL returned; failure is shown", async () => {
+  it("cancellation shows the rules first, goes to Stripe, says nothing changes until confirmed, and reuses the request id on retry", async () => {
     const onRedirect = vi.fn();
-    setup({ openBillingPortal: vi.fn(async () => ({ url: "https://billing.example.test/p" })) }, { onRedirect });
-    fireEvent.click(screen.getByRole("button", { name: "Payment details and receipts" }));
-    await waitFor(() => expect(onRedirect).toHaveBeenCalledWith("https://billing.example.test/p"));
+    const cancel = vi.fn().mockRejectedValueOnce(Object.assign(new Error("may or may not have been received"), { kind: "unconfirmed" })).mockResolvedValueOnce({ url: "https://billing.stripe.com/p/s" });
+    setup({ requestCancellation: cancel }, { onRedirect });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel subscription" }));
+    expect(screen.getByRole("link", { name: "cancellation rules" })).toHaveAttribute("href", "https://example.test/cancel-standard");
+    fireEvent.click(screen.getByRole("button", { name: "Continue to Stripe" }));
+    expect(await screen.findByText(/may or may not have been received/)).toBeInTheDocument();
+    expect(onRedirect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Continue to Stripe" }));
+    await waitFor(() => expect(onRedirect).toHaveBeenCalledWith("https://billing.stripe.com/p/s"));
+    expect(cancel.mock.calls[0][0].id).toBe(cancel.mock.calls[1][0].id);
+    expect(screen.getByText(/Nothing changes until you confirm there/)).toBeInTheDocument();
+    expect(screen.queryByText(/has been cancelled|was cancelled/i)).toBeNull();
   });
-  it("invoices: lists them with Stripe status, empty and error states", async () => {
-    const inv = { id: "i1", number: "FX-1", issuedAt: "2026-02-01T00:00:00Z", amountMinor: 500, currency: "GBP", status: "paid", url: "https://x.test/i", receiptUrl: "" };
-    const f = vi.fn().mockResolvedValueOnce({ invoices: [inv], skipped: 1 }).mockResolvedValueOnce({ invoices: [], skipped: 0 }).mockRejectedValueOnce(new Error("Invoices could not be loaded yet."));
-    setup({ fetchInvoices: f });
-    const btn = () => screen.getByRole("button", { name: /show invoices|loading/i });
-    fireEvent.click(btn());
-    expect(await screen.findByText("FX-1")).toBeInTheDocument();
-    expect(screen.getByText(/status reported by Stripe: paid/)).toBeInTheDocument();
-    expect(screen.getByText(/1 invoice could not be shown/)).toBeInTheDocument();
-    fireEvent.click(btn()); expect(await screen.findByText(/no invoices yet/i)).toBeInTheDocument();
-    fireEvent.click(btn()); expect(await screen.findByRole("alert")).toHaveTextContent(/could not be loaded/);
+  it("plan change lists only other plans, requires a choice, and sends the plan code", async () => {
+    const onRedirect = vi.fn(); const change = vi.fn(async () => ({ url: "https://billing.stripe.com/p/c" }));
+    setup({ requestPlanChange: change }, { onRedirect });
+    fireEvent.click(screen.getByRole("button", { name: "Change plan" }));
+    expect(screen.getByRole("button", { name: "Continue to Stripe" })).toBeDisabled();
+    const select = screen.getByLabelText("Change to");
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(["", "pro"]);
+    fireEvent.change(select, { target: { value: "pro" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue to Stripe" }));
+    await waitFor(() => expect(onRedirect).toHaveBeenCalledWith("https://billing.stripe.com/p/c"));
+    expect(change).toHaveBeenCalledWith(expect.objectContaining({ planCode: "pro" }));
+  });
+  it("payment details and invoices open Stripe's portal", async () => {
+    const onRedirect = vi.fn();
+    setup({ openBillingPortal: vi.fn(async () => ({ url: "https://billing.stripe.com/p/portal" })) }, { onRedirect });
+    fireEvent.click(screen.getByRole("button", { name: "Payment details, invoices and receipts" }));
+    await waitFor(() => expect(onRedirect).toHaveBeenCalledWith("https://billing.stripe.com/p/portal"));
+  });
+  it("owner-only and 404 are explained; the recheck button calls back", async () => {
+    const recheck = vi.fn();
+    setup({ openBillingPortal: vi.fn().mockRejectedValue(Object.assign(new Error("Only the workspace owner can manage this subscription. Nothing was changed."), { kind: "forbidden" })) }, { onRecheck: recheck });
+    fireEvent.click(screen.getByRole("button", { name: "Payment details, invoices and receipts" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Only the workspace owner/);
+    fireEvent.click(screen.getByRole("button", { name: "Check my subscription" })); expect(recheck).toHaveBeenCalled();
   });
   it("ignores a second click while a request is in flight (duplicate-click guard)", async () => {
     let resolve; const cancel = vi.fn(() => new Promise((r) => { resolve = r; }));
     setup({ requestCancellation: cancel });
     fireEvent.click(screen.getByRole("button", { name: "Cancel subscription" }));
-    const go = screen.getByRole("button", { name: "Request cancellation" });
+    const go = screen.getByRole("button", { name: "Continue to Stripe" });
     fireEvent.click(go); fireEvent.click(go);
     expect(cancel).toHaveBeenCalledTimes(1);
-    resolve({ effectiveAt: null });
-    await screen.findByText(/cancellation request was received/i);
+    resolve({ url: "https://billing.stripe.com/p/x" });
+    await screen.findByText(/Nothing changes until you confirm there/);
   });
 });

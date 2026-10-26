@@ -47,7 +47,7 @@ export default function PremiumBilling({ session, isOwner, api = {}, onRedirect 
         <section className="ps-plans" aria-label="Plans and prices"><p className="error" role="alert">{cat.error}</p><button type="button" className="secondary" onClick={() => setTick((n) => n + 1)}>Try again</button></section>
       )}
       {!catalogueOn && <section className="ps-plans" aria-label="Plans and prices"><h3>Plans and prices</h3><p>BizGenie has not published plans, prices and terms in the app yet, so none are shown. Stripe shows the price before you pay.</p></section>}
-      {showCatalogue && <PlanCatalogue catalogue={cat.catalogue} canChoose={Boolean(isOwner) && !entitled} onChoose={entitled ? undefined : choose} choosing={choosing} notice={notice} />}
+      {showCatalogue && <PlanCatalogue catalogue={cat.catalogue} currentPlanCode={subscription ? subscription.plan_code : ""} canChoose={Boolean(isOwner) && !entitled} onChoose={entitled ? undefined : choose} choosing={choosing} notice={notice} />}
       <BillingManagement enabled={manageOn} isOwner={Boolean(isOwner)} session={session} subscription={subscription} catalogue={cat.catalogue} onRecheck={() => setTick((n) => n + 1)} api={api} onRedirect={onRedirect} />
     </div>
   );

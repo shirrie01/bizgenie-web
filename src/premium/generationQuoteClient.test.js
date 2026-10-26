@@ -79,3 +79,12 @@ describe("what the generate request carries and how refusals read", () => {
     expect(EXECUTION_CLASSES).toEqual(["text.standard", "image.normal", "image.premium", "video.normal", "video.premium"]);
   });
 });
+
+describe("quoteFields never sends quote fields for a read-only preview (the backend's generate body is strict)", () => {
+  it("adds nothing for a preview or no quote, and the ids for a real quote", async () => {
+    const { quoteFields } = await import("./generationQuoteClient");
+    expect(quoteFields(null)).toEqual({}); expect(quoteFields({ binding: false, quoteId: null, authorisedCredits: null })).toEqual({});
+    expect(quoteFields({ quoteId: "q1", authorisedCredits: 5 })).toEqual({ quote_id: "q1", max_credits: 5 });
+  });
+});
+
