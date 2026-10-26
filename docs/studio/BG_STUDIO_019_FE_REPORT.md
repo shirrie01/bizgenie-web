@@ -18,7 +18,7 @@ Searched, read-only: `bizgenie-web` (all remote branches, `£`/`$`/price literal
 |---|---|
 | Branch | `bg-studio-019-fe-launch-completion`, stacked on `bg-studio-018-fe-premium-completion` (head `0c3078c`) |
 | Commits | `ab1dd89` campaign management + calendar (E, B1); `2581a51` credit quote (D); `f5ec4b5` plans + subscription management (A, B2); `a863511` image/video/hybrid (C); `37e0896` gates-on browser QA, CI steps, a11y/overflow fixes; docs commit(s) after `37e0896` change only documentation |
-| CI, exact SHA `37e089619914f7a9f7100a38d103e390baebb41c` | dispatched on the branch with `expected_sha`; result recorded in the PR description and updated below when known |
+| CI, exact SHA `37e089619914f7a9f7100a38d103e390baebb41c` | [run 35](https://github.com/shirrie01/bizgenie-web/actions/runs/40257314371), dispatched with `expected_sha`: **13 of 13 jobs success** — unit-build, flag-off app a11y ×4 widths, preview browser ×4, Premium browser ×4 widths each including the new gates-on step [CI]. The docs commit after it is not re-run |
 | Draft PR | see PR description (base: `bg-studio-018-fe-premium-completion`) |
 
 ## 4. Status checklist (five mandatory directions)
@@ -74,7 +74,7 @@ Everything is mock. Real: nothing was sent to Stripe, Supabase, the backend or a
 | Bundle JS gzip | #49 146,150 → 018 155,749 → **175,965 B** (+20,216 vs 018; +20.4% vs #49; raw 638,967 B); CSS gzip 5,054 B. No lazy loading yet; Premium code ships to flag-off visitors. Recommend code-splitting Premium before launch |
 | Five industries × owner/member | the five-industry spec runs in the 52 at all widths; owner/member covered in unit and browser specs. Industry-specific **generation quality** needs the real backend [S] |
 | Reduced motion | calendar and new components add no animation; site-wide audit not done. Real assistive technology, real devices, network profiles: **NOT TESTED** |
-| GitHub CI on the exact SHA | see section 3 |
+| GitHub CI on the exact SHA | 13/13 success (section 3) [CI] |
 
 ## 10. Premium and flag behaviour
 
