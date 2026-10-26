@@ -5,6 +5,7 @@ import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
+import PremiumBilling from "./premium/PremiumBilling";
 import { fetchWorkspaceCalendar } from "./premium/workspaceCalendarClient";
 import { fetchWorkspaceCalendarFromApi, isWorkspaceCalendarApiEnabled } from "./premium/workspaceCalendarApiClient";
 import ScheduleControls from "./premium/ScheduleControls";
@@ -1339,7 +1340,7 @@ export default function App() {
           recommendation: recommendationSection,
           campaign: campaignSection,
           brand: brandSection,
-          account: <BillingPanel session={session} />,
+          account: <PremiumBilling session={session} isOwner={roleState.role === "owner"} />,
         }}
       />
       </PremiumErrorBoundary>

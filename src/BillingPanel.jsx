@@ -65,7 +65,7 @@ function BillingState({ state, onRecheck }) {
   );
 }
 
-export default function BillingPanel({ session, pathname = window.location.pathname, onCheckoutRedirect = defaultRedirect }) {
+export default function BillingPanel({ session, pathname = window.location.pathname, onCheckoutRedirect = defaultRedirect, showCheckout = true, showTermsNotice = true, onBillingChange, refreshKey = 0 }) {
   const [checkout, setCheckout] = useState({ status: "idle", error: "" });
   const [billing, setBilling] = useState({ status: "idle", data: null, error: "" });
   const [recheckTick, setRecheckTick] = useState(0);
@@ -89,7 +89,10 @@ export default function BillingPanel({ session, pathname = window.location.pathn
         if (active) setBilling({ status: "error", data: null, error: error.message });
       });
     return () => { active = false; };
-  }, [session.status, session.accessToken, isCancel, pathname, recheckTick]);
+  }, [session.status, session.accessToken, isCancel, pathname, recheckTick, refreshKey]);
+
+  // BG-STUDIO-019-FE: lets the premium billing suite use the same subscription answer instead of asking twice.
+  useEffect(() => { if (onBillingChange) onBillingChange(billing); }, [billing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeEntitlement =
     billing.status === "ready" &&
@@ -151,7 +154,7 @@ export default function BillingPanel({ session, pathname = window.location.pathn
         <div><p className="eyebrow">Paid beta</p><h2>Your BizGenie plan</h2></div>
         {!activeEntitlement && <span className="pill">Standard</span>}
       </div>
-      <p>Checkout is hosted securely by Stripe, which shows the price and billing terms before you pay. Your plan access starts only after BizGenie receives confirmation from Stripe.</p>
+      {showCheckout ? <p>Checkout is hosted securely by Stripe, which shows the price and billing terms before you pay. Your plan access starts only after BizGenie receives confirmation from Stripe.</p> : <p>Your plan access starts only after BizGenie receives confirmation from Stripe.</p>}
       {billing.status === "loading" && (
         <p role="status">Checking your existing subscription…</p>
       )}
@@ -162,13 +165,13 @@ export default function BillingPanel({ session, pathname = window.location.pathn
         </div>
       )}
       {billing.status === "ready" && billing.data?.subscription && <BillingState state={billing} />}
-      {billing.status === "ready" && !activeEntitlement ? (
+      {showCheckout && billing.status === "ready" && !activeEntitlement ? (
         <button type="button" onClick={beginCheckout} disabled={checkoutBlocked}>
           {checkout.status === "loading" ? "Starting checkout…" : checkout.status === "redirecting" ? "Opening checkout…" : "Continue to secure checkout"}
         </button>
       ) : null}
       {checkout.status === "error" && <p className="error" role="alert">{checkout.error}</p>}
-      <p className="notice"><strong>Terms:</strong> BizGenie has not yet published customer support, cancellation and refund terms in the app, so none are shown here.</p>
+      {showTermsNotice && <p className="notice"><strong>Terms:</strong> BizGenie has not yet published customer support, cancellation and refund terms in the app, so none are shown here.</p>}
     </section>
   );
 }
