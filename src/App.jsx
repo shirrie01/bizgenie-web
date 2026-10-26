@@ -9,6 +9,8 @@ import { fetchWorkspaceCalendar } from "./premium/workspaceCalendarClient";
 import { fetchWorkspaceCalendarFromApi, isWorkspaceCalendarApiEnabled } from "./premium/workspaceCalendarApiClient";
 import ScheduleControls from "./premium/ScheduleControls";
 import ManualPublicationPanel from "./premium/ManualPublicationPanel";
+import GenerateWithQuote from "./premium/GenerateWithQuote";
+import { describeGenerateRefusal, isGenerationQuoteApiEnabled, quoteFields, requestGenerationQuote } from "./premium/generationQuoteClient";
 import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived } from "./premium/campaignManagementClient";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
@@ -183,7 +185,7 @@ async function createCampaignFromRecommendation({ accessToken, session, recommen
   return created.campaign;
 }
 
-async function generateCampaignVariant({ accessToken, session, campaign, variant, executionMode = "ai", executionBrief = "" }) {
+async function generateCampaignVariant({ accessToken, session, campaign, variant, executionMode = "ai", executionBrief = "", quote = null, rich = false }) {
   if (session.status !== "ready" || !campaign?.campaign_id || !variant?.variant_id || variant.workflow !== "draft") {
     throw new Error("This draft is not ready to generate yet.");
   }
@@ -199,9 +201,16 @@ async function generateCampaignVariant({ accessToken, session, campaign, variant
       idempotency_key: `campaign:${campaign.campaign_id}:variant:${variant.variant_id}:version:${campaignVersion}:generate`,
       execution_mode: executionMode,
       ...(executionBrief.trim() ? { execution_brief: executionBrief.trim() } : {}),
+      ...quoteFields(quote),
     }),
   });
-  if (!response.ok) throw new Error("Content could not be generated yet. Your draft is still safe to retry.");
+  if (!response.ok) {
+    if (!rich) throw new Error("Content could not be generated yet. Your draft is still safe to retry.");
+    let code = ""; try { code = (await response.json())?.error?.code || ""; } catch { /* no body */ }
+    if (response.status === 401) throw Object.assign(new Error("Your session has ended. Sign in again to continue. Nothing was charged."), { kind: "auth", code: "AUTHENTICATION_REQUIRED" });
+    const refusal = describeGenerateRefusal(response.status, code);
+    throw Object.assign(new Error(refusal ? refusal.text : "Content could not be generated yet. Your draft is still safe to retry, and your credits are only used if it succeeds."), { status: response.status, code, refusal });
+  }
   const result = await response.json();
   if (!result?.campaign?.campaign_id) throw new Error("Generated content could not be confirmed yet.");
   return result.campaign;
@@ -575,6 +584,27 @@ export default function App() {
     }
   }
 
+  // BG-STUDIO-019-FE (Premium Studio): the cost is shown first when the backend can quote it; a refusal says why and that nothing was charged.
+  async function premiumQuote(variant) {
+    return requestGenerationQuote({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId }, campaign: campaignState.campaign, variant, executionClass: "text.standard", executionMode });
+  }
+  async function premiumGenerate(variant, quote) {
+    if (generationState.status === "loading" || !campaignState.campaign || variant.workflow !== "draft") return { ok: false, kind: "error", text: "This draft is not ready to generate yet." };
+    const scopeToken = scopeTokenRef.current;
+    setGenerationState({ status: "loading", error: "" });
+    try {
+      const campaign = await generateCampaignVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, executionMode, executionBrief, quote, rich: true });
+      if (scopeToken !== scopeTokenRef.current) return { ok: false, kind: "error", text: "Your workspace changed. Nothing is shown as generated here." };
+      setCampaignState({ status: "ready", campaign, error: "" });
+      setGenerationState({ status: "ready", error: "" });
+      return { ok: true };
+    } catch (error) {
+      if (isAuthRefusal(error)) setSessionEnded(true);
+      setGenerationState({ status: "error", error: error.message });
+      return { ok: false, kind: (error.refusal && error.refusal.kind) || "error", text: error.message };
+    }
+  }
+
   async function runReloadCampaign() {
     if (!campaignState.campaign || ["rendering", "acknowledging", "approving", "reloading"].includes(reviewState.status)) return;
     const variantId = reviewState.variantId;
@@ -899,11 +929,13 @@ export default function App() {
                     {!["review", "approved"].includes(variant.workflow) && <p>{creativeAsText(variant.current_content) || (variant.workflow === "draft" ? "Draft ready to generate." : variant.workflow)}</p>}
                     {variant.workflow === "approved" && <CreativePreviewCard variant={variant} />}
                     <small>{variant.destination_label}</small>
-                    {variant.workflow === "draft" && (
+                    {variant.workflow === "draft" && (premiumEnabled ? (
+                      <GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isGenerationQuoteApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} />
+                    ) : (
                       <button className="secondary" type="button" onClick={() => runGenerateVariant(variant)} disabled={generationState.status === "loading"}>
                         {generationState.status === "loading" ? "Generating…" : "Generate draft"}
                       </button>
-                    )}
+                    ))}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
                     {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <ScheduleControls campaign={campaignState.campaign} variant={variant} state={scheduleState} onSchedule={runSchedule} />}
                     {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <ManualPublicationPanel campaign={campaignState.campaign} variant={variant} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} />}
@@ -948,7 +980,7 @@ export default function App() {
               </article>
             ))}
           </div>
-          {generationState.status === "error" && <p className="error" role="alert">{generationState.error}</p>}
+          {!premiumEnabled && generationState.status === "error" && <p className="error" role="alert">{generationState.error}</p>}
           {!premiumEnabled && manualState.status === "error" && <p className="error" role="alert">{manualState.error}</p>}
           <div>
             <button className="secondary" type="button" onClick={loadResults} disabled={resultsState.status === "loading"}>{resultsState.status === "loading" ? "Loading results…" : "View campaign results"}</button>
