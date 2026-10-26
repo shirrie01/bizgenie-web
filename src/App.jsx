@@ -1,17 +1,19 @@
 import BrandBrainProfile from "./BrandBrainProfile";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { getCustomerSession, refreshCustomerSession } from "./session";
 import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
-import PremiumBilling from "./premium/PremiumBilling";
+const PremiumBilling = lazy(() => import("./premium/PremiumBilling"));
 import { fetchWorkspaceCalendar } from "./premium/workspaceCalendarClient";
 import { fetchWorkspaceCalendarFromApi, isWorkspaceCalendarApiEnabled } from "./premium/workspaceCalendarApiClient";
-import ScheduleControls from "./premium/ScheduleControls";
-import ManualPublicationPanel from "./premium/ManualPublicationPanel";
-import GenerateWithQuote from "./premium/GenerateWithQuote";
-import CreativeStudio from "./premium/CreativeStudio";
+const ScheduleControls = lazy(() => import("./premium/ScheduleControls"));
+const ManualPublicationPanel = lazy(() => import("./premium/ManualPublicationPanel"));
+const GenerateWithQuote = lazy(() => import("./premium/GenerateWithQuote"));
+const CreativeStudio = lazy(() => import("./premium/CreativeStudio"));
+import { isSocialApiEnabled } from "./premium/socialClient";
+import { isAnalyticsApiEnabled } from "./premium/insightsClient";
 import { isCustomerMediaApiEnabled } from "./premium/creativeProductionClient";
 import { isCreditPreviewApiEnabled } from "./premium/creditPreviewClient";
 import { requestCostCheck } from "./premium/costCheck";
@@ -20,7 +22,10 @@ import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampai
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import { operationKey } from "./operationKey";
-import PremiumStudio from "./premium/PremiumStudio";
+function Lazy({ children }) { return <Suspense fallback={<span className="visually-hidden" role="status">Loading…</span>}>{children}</Suspense>; }
+const PremiumConnections = lazy(() => import("./premium/PremiumConnections"));
+const PremiumInsights = lazy(() => import("./premium/PremiumInsights"));
+const PremiumStudio = lazy(() => import("./premium/PremiumStudio"));
 import PremiumErrorBoundary from "./premium/PremiumErrorBoundary";
 import { isPremiumStudioEnabled } from "./premium/flag";
 import { SAVE_NOT_CONFIRMED_RETRY, createSaveKeeper, fetchOnboarding, putOnboarding } from "./premium/onboardingClient";
@@ -306,6 +311,20 @@ async function approveCampaignVariant({ accessToken, session, campaign, variant,
 
 // Record (or change) the planned publication time of an approved variant. POST .../schedule or .../reschedule. Records a plan only.
 async function scheduleVariant({ accessToken, session, campaign, variant, payload, mode }) {
+  if (mode === "unschedule") {
+    // Existing backend command, exposed over HTTP in the PR #216 draft: the active schedule id makes a lost-response retry exact.
+    const scheduleId = variant.active_schedule_id;
+    if (!scheduleId || variant.workflow !== "scheduled") throw new Error("There is no planned time to remove.");
+    const res = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/unschedule`, {
+      method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
+      body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, schedule_id: scheduleId, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant) || "none", `unschedule-${scheduleId}`) }),
+    });
+    if (res.status === 401) throw Object.assign(new Error("Your session has ended. Sign in again to continue. The planned time was not removed."), { kind: "auth", code: "AUTHENTICATION_REQUIRED" });
+    if (!res.ok) throw await reviewRequestError(res, "The planned time could not be removed yet. It is still in place and nothing was published.");
+    const out = await res.json();
+    if (!out?.campaign?.campaign_id) throw new Error("The change could not be confirmed yet. Reload the latest campaign to check it.");
+    return out.campaign;
+  }
   const revisionId = currentRevisionFor(variant);
   if (!revisionId || !["approved", "scheduled"].includes(variant.workflow)) throw new Error("Only approved content can be scheduled.");
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/${mode}`, {
@@ -757,8 +776,8 @@ export default function App() {
       setCampaignState({ status: "ready", campaign, error: "" });
       setCalendarState({ status: "idle", entries: [], error: "" });
       setWorkspaceCalendarState(WS_CAL_IDLE);
-      if (campaignVariant(campaign, variant.variant_id)?.workflow !== "scheduled") throw new Error("The planned time could not be confirmed yet. Reload the latest campaign to check it.");
-      setScheduleState({ status: "saved", variantId: variant.variant_id, error: "" });
+      if (mode === "unschedule" ? campaignVariant(campaign, variant.variant_id)?.workflow === "scheduled" : campaignVariant(campaign, variant.variant_id)?.workflow !== "scheduled") throw new Error(mode === "unschedule" ? "The planned time could not be confirmed as removed. Reload the latest campaign to check it." : "The planned time could not be confirmed yet. Reload the latest campaign to check it.");
+      setScheduleState({ status: mode === "unschedule" ? "removed" : "saved", variantId: variant.variant_id, error: "" });
     } catch (error) {
       if (scopeToken !== scopeTokenRef.current) return;
       if (isAuthRefusal(error)) setSessionEnded(true);
@@ -936,16 +955,16 @@ export default function App() {
                     {variant.workflow === "approved" && <CreativePreviewCard variant={variant} />}
                     <small>{variant.destination_label}</small>
                     {variant.workflow === "draft" && (premiumEnabled ? (
-                      <GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isGenerationQuoteApiEnabled() || isCreditPreviewApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} />
+                      <Lazy><GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isGenerationQuoteApiEnabled() || isCreditPreviewApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} /></Lazy>
                     ) : (
                       <button className="secondary" type="button" onClick={() => runGenerateVariant(variant)} disabled={generationState.status === "loading"}>
                         {generationState.status === "loading" ? "Generating…" : "Generate draft"}
                       </button>
                     ))}
-                    {premiumEnabled && ["draft", "review", "approved"].includes(variant.workflow) && <CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} topic={item.name} contentItemId={item.content_item_id} readOnly={isReadOnlyRole(roleState.role)} onSessionEnded={() => setSessionEnded(true)} />}
+                    {premiumEnabled && ["draft", "review", "approved"].includes(variant.workflow) && <Lazy><CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} topic={item.name} contentItemId={item.content_item_id} readOnly={isReadOnlyRole(roleState.role)} onSessionEnded={() => setSessionEnded(true)} /></Lazy>}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
-                    {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <ScheduleControls campaign={campaignState.campaign} variant={variant} state={scheduleState} onSchedule={runSchedule} />}
-                    {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <ManualPublicationPanel campaign={campaignState.campaign} variant={variant} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} />}
+                    {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <Lazy><ScheduleControls campaign={campaignState.campaign} variant={variant} state={scheduleState} onSchedule={runSchedule} /></Lazy>}
+                    {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <Lazy><ManualPublicationPanel campaign={campaignState.campaign} variant={variant} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} /></Lazy>}
                     {!premiumEnabled && variant.workflow === "approved" && <div>
                       <p>Manual publication required. BizGenie will not claim this was published until you confirm it.</p>
                       <button className="secondary" type="button" onClick={() => runManualStart(variant)} disabled={manualState.status === "starting"}>{manualState.status === "starting" ? "Preparing handoff…" : "Prepare manual publication"}</button>
@@ -1301,7 +1320,7 @@ export default function App() {
           <p>Your previous workspace has been cleared from this screen. Nothing from it is shown while your sign-in switches. Nothing is created, scheduled or published.</p>
         </section>
       ) : (
-      <PremiumErrorBoundary key={premiumEpoch}>
+      <PremiumErrorBoundary key={premiumEpoch}><Lazy>
       <PremiumStudio
         key={premiumEpoch}
         session={session}
@@ -1346,10 +1365,12 @@ export default function App() {
           recommendation: recommendationSection,
           campaign: campaignSection,
           brand: brandSection,
-          account: <PremiumBilling session={session} isOwner={roleState.role === "owner"} />,
+          connections: <Lazy><PremiumConnections enabled={isSocialApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
+          insights: <Lazy><PremiumInsights enabled={isAnalyticsApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaignId={campaignState.campaign ? campaignState.campaign.campaign_id : ""} campaignName={campaignState.campaign ? campaignState.campaign.name : ""} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
+          account: <Lazy><PremiumBilling session={session} isOwner={roleState.role === "owner"} /></Lazy>,
         }}
       />
-      </PremiumErrorBoundary>
+      </Lazy></PremiumErrorBoundary>
       )}
     </main>
   ) : null;

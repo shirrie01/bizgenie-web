@@ -169,6 +169,8 @@ jobs:
           VITE_BILLING_MANAGEMENT_API: 'true'
           VITE_CREDIT_PREVIEW_API: 'true'
           VITE_WORKSPACE_CALENDAR_API: 'true'
+          VITE_SOCIAL_ACCOUNTS_API: 'true'
+          VITE_ANALYTICS_API: 'true'
           VITE_CUSTOMER_MEDIA_API: 'true'
           VITE_SUPABASE_URL: http://supabase.test
           VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key

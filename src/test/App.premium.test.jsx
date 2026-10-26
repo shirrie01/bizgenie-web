@@ -393,7 +393,7 @@ describe("recommendation, campaign and review safety inside the premium shell", 
     fireEvent.click(button(/continue in campaign studio/i));
     fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
     await screen.findByText(/saved to your workspace/i);
-    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /generate draft/i }))[0]);
     await screen.findByText("Server persisted review copy");
     expect(called("POST", "/preview-acknowledgements")).toHaveLength(0);
     expect(called("POST", "/approval")).toHaveLength(0);
@@ -401,7 +401,7 @@ describe("recommendation, campaign and review safety inside the premium shell", 
     fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^approve$/i }));
     await screen.findByText("Approved");
-    expect(screen.getByText(/manual publication required/i)).toBeInTheDocument();
+    expect(await screen.findByText(/manual publication required/i)).toBeInTheDocument();
     expect(calls.some((c) => /publish|schedule/i.test(c.path) && !/manual-publication/.test(c.path))).toBe(false);
     for (const c of calls.filter((x) => x.method === "POST" && /preview-renders|acknowledgements|approval/.test(x.path))) expect(JSON.parse(c.options.body).idempotency_key).toMatch(/^op:[a-z-]+:[0-9a-f]{64}$/);
   });
@@ -412,7 +412,7 @@ describe("recommendation, campaign and review safety inside the premium shell", 
     fireEvent.click(button(/continue in campaign studio/i));
     fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
     await screen.findByText(/saved to your workspace/i);
-    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /generate draft/i }))[0]);
     fireEvent.click(await screen.findByRole("button", { name: /^render preview$/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/isn't available for this destination and format/i);
     expect(screen.getByRole("button", { name: /^render preview$/i })).toBeDisabled();
@@ -1759,7 +1759,7 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
     fireEvent.click(button(/continue in campaign studio/i));
     fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
     await screen.findByText(/saved to your workspace/i);
-    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /generate draft/i }))[0]);
     await screen.findByText("Server persisted review copy");
     fireEvent.click(await screen.findByRole("button", { name: /^render preview$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
@@ -1772,7 +1772,7 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
     handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => ok({ result: { campaign_id: CID }, campaign: scheduledDoc("2099-01-15T10:00:00.000Z") });
     await toApproved();
     expect(screen.getByText(/this records the time you plan to publish\. it does not post anything or remind you/i)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/plan when to publish \(europe\/london\)/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.change(await screen.findByLabelText(/plan when to publish \(europe\/london\)/i), { target: { value: "2099-01-15T10:00" } });
     fireEvent.click(button(/save planned time/i));
     expect(await screen.findByText(/scheduled for .*15 january 2099 at 10:00 \(europe\/london\)/i)).toBeInTheDocument();
     const [post] = schedulePosts();
@@ -1786,9 +1786,23 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
     expect(screen.getByRole("button", { name: /prepare manual publication/i })).toBeInTheDocument(); // manual publication stays possible
   });
 
+  it("removes a planned time with the exact schedule id; approval is kept and nothing is described as published", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => ok({ result: { campaign_id: CID }, campaign: scheduledDoc("2099-01-15T10:00:00.000Z") });
+    handlers["POST /customer/campaigns/*/variants/*/unschedule"] = () => ok({ result: { campaign_id: CID }, campaign: campaignDoc(8, 1, "approved") });
+    await toApproved();
+    fireEvent.change(await screen.findByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    fireEvent.click(await screen.findByRole("button", { name: /remove the planned time/i }));
+    expect(await screen.findByText(/the planned time was removed\. your approval is kept/i)).toBeInTheDocument();
+    const [post] = calls.filter((c) => c.method === "POST" && /\/unschedule$/.test(c.path));
+    expect(JSON.parse(post.options.body)).toMatchObject({ tenant_id: "tenant-a", project_id: "project-a", expected_campaign_version: 7, schedule_id: "schedule-1" });
+    expect(JSON.parse(post.options.body).idempotency_key).toMatch(/^(?=.{1,128}$)[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+    expect(screen.getByText("Approved")).toBeInTheDocument(); expect(screen.queryByText(/scheduled for/i)).toBeNull();
+  });
+
   it("a time in the past is refused in words before anything is sent", async () => {
     await toApproved();
-    fireEvent.change(screen.getByLabelText(/plan when to publish/i), { target: { value: "2020-01-15T10:00" } });
+    fireEvent.change(await screen.findByLabelText(/plan when to publish/i), { target: { value: "2020-01-15T10:00" } });
     fireEvent.click(button(/save planned time/i));
     expect(await screen.findByRole("alert")).toHaveTextContent(/choose a time in the future/i);
     expect(schedulePosts()).toHaveLength(0);
@@ -1797,7 +1811,7 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
   it("a refused schedule says nothing was published and keeps the approval; a stale campaign tells the customer to reload", async () => {
     handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => fail(409, { error: { code: "CAMPAIGN_VERSION_CONFLICT" } });
     await toApproved();
-    fireEvent.change(screen.getByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.change(await screen.findByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
     fireEvent.click(button(/save planned time/i));
     expect(await screen.findByRole("alert")).toHaveTextContent(/./);
     expect(screen.getByText("Approved")).toBeInTheDocument();
@@ -1808,7 +1822,7 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
   it("an ended session during a schedule is reported as such, with 'Sign in again'", async () => {
     handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => fail(401, { error: { code: "AUTHENTICATION_REQUIRED" } });
     await toApproved();
-    fireEvent.change(screen.getByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.change(await screen.findByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
     fireEvent.click(button(/save planned time/i));
     expect(await screen.findByRole("button", { name: /^sign in again$/i })).toBeInTheDocument();
   });
@@ -1954,7 +1968,7 @@ describe("recording how a manual publication went (BG-STUDIO-019-FE, workstream 
     fireEvent.click(button(/continue in campaign studio/i));
     fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
     await screen.findByText(/saved to your workspace/i);
-    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: /generate draft/i }))[0]);
     await screen.findByText("Server persisted review copy");
     fireEvent.click(await screen.findByRole("button", { name: /^render preview$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));

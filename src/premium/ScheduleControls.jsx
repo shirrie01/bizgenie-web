@@ -28,7 +28,9 @@ export default function ScheduleControls({ campaign, variant, state, onSchedule,
       {problem && <p className="error" role="alert">{problem}</p>}
       {mine && state.status === "error" && <p className="error" role="alert">{state.error}</p>}
       {mine && state.status === "saved" && <p role="status">Planned time saved.</p>}
+      {mine && state.status === "removed" && <p role="status">The planned time was removed. Your approval is kept.</p>}
       <button className="secondary" type="button" onClick={submit} disabled={busy || !tz || !value}>{busy ? "Saving…" : scheduled ? "Change planned time" : "Save planned time"}</button>
+      {scheduled && current && <button className="secondary" type="button" onClick={() => onSchedule(variant, {}, "unschedule")} disabled={busy}>Remove the planned time</button>}
     </div>
   );
 }

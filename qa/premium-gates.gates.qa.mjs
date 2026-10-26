@@ -49,6 +49,10 @@ async function open(page, { role = 'owner', subscription = { status: 'not_subscr
     if (p === '/customer/billing/management/subscription/cancel' || p === '/customer/billing/management/portal-session' || p === '/customer/billing/management/subscription/change') return json(route, { status: 'confirmation_required', portal_url: 'https://billing.stripe.com/p/session/test_abc', entitlement_confirmed: false }, 201);
     if (p === '/customer/billing/credit-preview') { log.previewQuery = Object.fromEntries(u.searchParams); return json(route, { contract_version: 'execution-cost-preview.v1', tenant_id: u.searchParams.get('tenant_id'), project_id: u.searchParams.get('project_id'), brand_id: u.searchParams.get('brand_id'), execution_class: u.searchParams.get('execution_class'), credit_cost: 4, policy_id: 'pol', entitlement_id: 'ent', available_credits: 40, spend_cap: Number(u.searchParams.get('spend_cap')), affordability: 'within_limit', observed_at: new Date().toISOString(), expires_at: soon(), reserved: false, execution_authorized: false, confirmation_supported: false }); }
     if (p === '/customer/calendar') { log.calendarReqs.push(Object.fromEntries(u.searchParams)); const first = u.searchParams.get('from') === log.calendarReqs[0].from; return json(route, { contract_version: 'workspace-calendar.v1', window: { from: u.searchParams.get('from'), to: u.searchParams.get('to') }, display_timezone: 'UTC', entries: first ? [{ campaign_id: CID, campaign_name: log.name, content_item_id: 'i1', content_item_name: 'Lease offer post', format: 'text', variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow: 'scheduled', occurrence_at: new Date(Date.now() + 2 * 86400000).toISOString(), occurrence_kind: 'scheduled', schedule_id: 'sch1', publication_id: null }] : [], unscheduled: first ? [{ campaign_id: CID, campaign_name: log.name, content_item_id: 'i2', content_item_name: 'Undated post', format: 'text', variant_id: 'v2', platform: 'email', placement: 'feed', destination_label: 'Email', workflow: 'draft', occurrence_at: null, occurrence_kind: 'unscheduled', schedule_id: null, publication_id: null }] : [], next_cursor: null }); }
+    if (p === '/customer/social-accounts') return json(route, { contract_version: 'social-accounts.v1', accounts: [{ account_id: 'a1', provider: 'instagram', display_name: 'Test Account', status: 'connected', scopes_granted: ['publish'], connected_at: '2026-10-01T00:00:00Z', token_expires_at: '2026-12-01T00:00:00Z', last_verified_at: null }] });
+    if (p === '/customer/publishing-queue') return json(route, { contract_version: 'publishing-queue.v1', items: [{ publication_id: 'pub1', campaign_id: CID, variant_id: 'v1', account_id: 'a1', scheduled_for: '2026-11-01T10:00:00Z', status: 'failed', attempts: 2, last_error_code: 'TOKEN_EXPIRED', platform_post_url: null, verified_by: null }], next_cursor: null });
+    if (p === `/customer/campaigns/${CID}/results`) return json(route, { contract_version: 'campaign-results.v1', metrics: [{ metric: 'clicks', value: 12, unit: 'count', observed_at: '2026-10-20T00:00:00Z', source: 'customer_entered', method: null, fresh_as_of: '2026-10-21T00:00:00Z' }] });
+    if (p === '/customer/learning/insights') return json(route, { contract_version: 'learning-insights.v1', insights: [{ insight_id: 'i1', statement: 'TEST suggestion: shorter posts got more clicks.', confidence: 'low', status: 'proposed', generated_by: 'ai', created_at: '2026-10-22T00:00:00Z', evidence: [{ source: 'customer_entered', metric: 'clicks', period_from: '2026-10-01T00:00:00Z', period_to: '2026-10-20T00:00:00Z', sample_size: 3 }] }] });
     if (p === '/customer/generate-image') return json(route, { status: 'completed', execution_id: log.bodies[key].execution_id, generation_id: log.bodies[key].generation_id, media: { provider: 'mock', provider_job_id: 'j1', asset: { location: 'gs://private-bucket/a.png', mime_type: 'image/png' }, aspect_ratio: '1:1', approval_status: 'pending', created_at: '2026-10-26T10:00:00Z', completed_at: '2026-10-26T10:00:05Z' } });
     return json(route, { status: 'failed', error: { code: 'NOT_FOUND' } }, 404);
   });
@@ -196,5 +200,31 @@ test('campaign management: rename, then archive with a reason; the archived camp
   await page.getByRole('button', { name: /Show archived campaigns/ }).click();
   await expect(page.getByRole('list', { name: 'Archived campaigns' })).toContainText('Northgate autumn leasing');
   expect(log.bodies[`POST /customer/campaigns/${CID}/archive`]).toMatchObject({ reason: 'Replaced by the winter campaign' });
+  expect(log.errors).toEqual([]);
+});
+
+test('accounts and publishing: only what the server reports; a failed publication states its reason; no verified claim without the platform', async ({ page }) => {
+  const log = await open(page);
+  await page.goto('/'); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Accounts and publishing', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Connected accounts' })).toContainText('Connected');
+  await expect(page.getByRole('list', { name: 'Publishing queue' })).toContainText('Reason code TOKEN_EXPIRED. 2 attempts made.');
+  await expect(page.getByRole('button', { name: 'Connect LinkedIn' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect Instagram' })).toHaveCount(0);
+  await expect(page.locator('main')).not.toContainText('Confirmed by the platform');
+  await checks(page, 'accounts');
+  expect(log.errors).toEqual([]);
+});
+
+test('results and insights: every number carries its origin; a suggestion is labelled AI, shows evidence, and changes nothing by itself', async ({ page }) => {
+  const log = await open(page);
+  await page.goto('/'); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Results and insights', exact: true }).click();
+  await expect(page.getByRole('table')).toContainText('Entered by you');
+  await expect(page.getByText('TEST suggestion: shorter posts got more clicks.')).toBeVisible();
+  await expect(page.getByText('AI suggestion').first()).toBeVisible();
+  await page.getByText(/Evidence \(1\)/).click();
+  await expect(page.getByText(/Clicks, entered by you/)).toBeVisible();
+  await checks(page, 'insights');
   expect(log.errors).toEqual([]);
 });
