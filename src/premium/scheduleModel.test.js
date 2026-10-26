@@ -52,3 +52,13 @@ describe("reading a schedule back", () => {
     expect(isTimeZone("Europe/London")).toBe(true); expect(isTimeZone("nope")).toBe(false);
   });
 });
+
+describe("server-nested schedule facts (bizgenie-api #218)", () => {
+  it("reads current_schedule from the variant, and falls back to the older pointer form", async () => {
+    const { activeSchedule } = await import("./scheduleModel");
+    const nested = { current_schedule: { schedule_id: "s1", revision_id: "r1", scheduled_for: "2026-11-01T10:00:00.000Z", timezone: "Europe/London" } };
+    expect(activeSchedule({}, nested)).toEqual({ schedule_id: "s1", revision_id: "r1", scheduled_for: "2026-11-01T10:00:00.000Z", timezone: "Europe/London" });
+    expect(activeSchedule({ schedules: [{ schedule_id: "s2" }] }, { active_schedule_id: "s2" })).toEqual({ schedule_id: "s2" });
+    expect(activeSchedule({}, { current_schedule: { schedule_id: "s1" } })).toBeNull();
+  });
+});

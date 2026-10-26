@@ -6,6 +6,7 @@
 // screen may say. Rules carried over from the contract:
 //   * the only observation source is `platform_api`; a customer attestation is a different record and is rejected here;
 //   * `value: null` means retracted evidence: it is never shown as zero;
+//   * a persisted recommendation is only ACTIONABLE while the server says evidence_state is "current"; "unavailable" means its evidence was withdrawn or aged out;
 //   * an evidence-recommendation reports an OBSERVED change only: confidence `observed_change_only`, `causal_claim:false`,
 //     `requires_customer_acceptance:true`. Anything else is refused, so the app can never display "this caused that".
 export const OBSERVATION_VERSION = "performance-observation.v1";
@@ -28,10 +29,12 @@ export class EvidenceShapeError extends Error {
   constructor(code) { super("The evidence was not in the expected form, so nothing is shown from it."); this.name = "EvidenceShapeError"; this.code = code; }
 }
 
-// One observation row exactly as the registry returns it: { contract_version, observation, fingerprint, superseded_by }.
+// One observation row as the backend returns it inside performance-snapshot.v1: { observation, fingerprint, superseded_by }. The in-process reference
+// registry also stamps each row with contract_version; the PERSISTED snapshot (bizgenie-api #218) does not, so the row version is optional but, when
+// present, must be the expected one. The snapshot itself must carry performance-snapshot.v1 (checked in readSnapshot).
 export function readObservationRow(row) {
   const o = row && row.observation;
-  if (!row || row.contract_version !== OBSERVATION_VERSION || !o || !HASH.test(String(row.fingerprint || ""))) return null;
+  if (!row || (row.contract_version !== undefined && row.contract_version !== OBSERVATION_VERSION) || !o || !HASH.test(String(row.fingerprint || ""))) return null;
   const retracted = o.retracted === true;
   const okValue = retracted ? o.value === null : typeof o.value === "number" && Number.isFinite(o.value) && o.value >= 0;
   if (!okValue || !PLATFORMS.includes(o.platform) || !ATTRIBUTION.includes(o.attribution) || !METRICS.includes(o.metric) || !UNITS.includes(o.unit)) return null;
@@ -70,7 +73,10 @@ export function readRecommendation(body) {
   const direction = body.absolute_change > 0 ? "up" : body.absolute_change < 0 ? "down" : "flat";
   return {
     metric: body.metric, previous: body.previous_value, current: body.current_value, change: body.absolute_change, percent: body.percentage_change,
-    direction, evidence: body.evidence.slice(), // the hash BizGenie records a decision against
+    direction, evidence: body.evidence.slice(),
+    // present on persisted recommendations (bizgenie-api #218); absent on the in-process reference object
+    id: typeof body.recommendation_id === "string" ? body.recommendation_id : null,
+    evidenceState: body.evidence_state === "current" || body.evidence_state === "unavailable" ? body.evidence_state : null,
   };
 }
 
@@ -82,12 +88,13 @@ export function describeRecommendation(r) {
   return `${moved} This is an observed change only. It does not show what caused it, and it is not a forecast. Nothing changes unless you accept it.`;
 }
 
-// The Feedback body shape (recommendation_hash + decision). Tenant/project/actor/time are the server's to fill, not guessed here.
-// The reference contract defines the Feedback hash but NOT how a recommendation gets one (open question R12-Q1 in the handoff), so this builds a body
-// only from a hash the server supplied. Without one there is nothing safe to send and the decision stays on this device.
-export function buildFeedback(recommendationHash, decision) {
-  if (!HASH.test(String(recommendationHash || "")) || !["accepted", "rejected"].includes(decision)) return null;
-  return { recommendation_hash: recommendationHash, decision };
+// The feedback body the backend ACTUALLY accepts (bizgenie-api #218, POST /customer/insights/feedback): the recommendation's own id, the decision, the
+// feedback version the customer saw (0 for the first decision) and ONE idempotency key kept for every retry of that decision. The reference contract's
+// `recommendation_hash` is not part of the route (an extra hash is ignored); the backend owns recommendation identity, so no hash is derived here.
+export function buildFeedback(recommendationId, decision, { expectedVersion = 0, idempotencyKey } = {}) {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuid.test(String(recommendationId || "")) || !["accepted", "rejected"].includes(decision) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 0 || !isStr(idempotencyKey)) return null;
+  return { recommendation_id: recommendationId, decision, expected_version: expectedVersion, idempotency_key: idempotencyKey };
 }
 
 // Freshness and period facts for a snapshot, relative to `now`. Used to label how old evidence is.

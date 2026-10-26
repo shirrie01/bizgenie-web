@@ -102,4 +102,16 @@ describe("PremiumInsights (canonical performance-evidence models)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText(/Only the owner can decide/)).toBeInTheDocument(); expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
   });
+
+  it("with a persisted recommendation and a sender, Accept sends the backend's body once with a stable key and says it was saved; stale evidence cannot be decided", async () => {
+    const id = "00000000-0000-4000-8000-0000000000aa"; const send = vi.fn().mockRejectedValueOnce(new Error("Your decision could not be saved. It was not recorded; try again.")).mockResolvedValue({ ok: true });
+    const api = snapApi(snapshotAvailable(), { sendFeedback: send, fetchRecommendations: async () => [recommendation({ recommendation_id: id, evidence_state: "current" }), recommendation({ recommendation_id: "00000000-0000-4000-8000-0000000000bb", evidence_state: "unavailable", evidence: ["c".repeat(64), "d".repeat(64)] })] });
+    render(<PremiumInsights enabled session={session} scope={scope} isOwner api={api} />);
+    expect(await screen.findByText("No longer available")).toBeInTheDocument(); expect(screen.getAllByRole("button", { name: "Accept" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/not recorded/); fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(await screen.findByText(/Accepted by you and saved/)).toBeInTheDocument();
+    expect(send).toHaveBeenCalledTimes(2); const [a, b] = send.mock.calls.map((c) => c[0].body);
+    expect(a).toMatchObject({ recommendation_id: id, decision: "accepted", expected_version: 0 }); expect(a.idempotency_key).toBe(b.idempotency_key); expect(a).not.toHaveProperty("recommendation_hash");
+  });
 });

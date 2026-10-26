@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ATTRIBUTION_LABEL, METRIC_LABEL, PLATFORM_LABEL, describeRecommendation, freshness, readRecommendation, readSnapshot, summarise } from "../intel/performanceEvidence";
+import { ATTRIBUTION_LABEL, METRIC_LABEL, PLATFORM_LABEL, buildFeedback, describeRecommendation, freshness, readRecommendation, readSnapshot, summarise } from "../intel/performanceEvidence";
 
 // Results and the Learning Brain (BG-STUDIO-022-FE), rebuilt on the backend's canonical reference models: performance-observation.v1,
 // performance-snapshot.v1 and evidence-recommendation.v1 (bizgenie-api @ 23f4903). THERE IS NO BACKEND ROUTE FOR THEM YET (request R12), so this view
@@ -26,7 +26,7 @@ const DEFS = { reach: "People who saw the post at least once.", views: "Times th
 export default function PremiumInsights({ enabled, session, scope, campaignName = "", isOwner, api = {}, onSessionEnded, now = Date.now() }) {
   const [snap, setSnap] = useState({ status: "idle", data: null, error: "" });
   const [recs, setRecs] = useState({ status: "idle", items: [], skipped: 0, error: "" });
-  const [platform, setPlatform] = useState(""); const [decisions, setDecisions] = useState({});
+  const [platform, setPlatform] = useState(""); const [decisions, setDecisions] = useState({}); const [sending, setSending] = useState(""); const [decideError, setDecideError] = useState(""); const keys = useRef({});
   const live = useRef(true); const token = useRef(0);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const wired = Boolean(api.fetchSnapshot);
@@ -43,6 +43,18 @@ export default function PremiumInsights({ enabled, session, scope, campaignName 
   }, [api, session.accessToken, scope.tenantId, scope.projectId, scope.brandId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (enabled && wired) load(); }, [enabled, wired, load]);
 
+  // A decision is sent to the backend only when the recommendation is a persisted one (has its id), its evidence is still current, and a sender was supplied.
+  // The idempotency key is made once per decision and reused for every retry, so a lost answer can never record two decisions.
+  async function decide(r, decision) {
+    const k = r.evidence.join(); setDecideError("");
+    if (!(api.sendFeedback && r.id && r.evidenceState === "current")) { setDecisions((d) => ({ ...d, [k]: decision })); return; }
+    const slot = `${r.id}:${decision}`; keys.current[slot] = keys.current[slot] || (globalThis.crypto?.randomUUID?.() || `fb-${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
+    const body = buildFeedback(r.id, decision, { expectedVersion: 0, idempotencyKey: keys.current[slot] }); if (!body) return;
+    setSending(k);
+    try { await api.sendFeedback({ accessToken: session.accessToken, scope, body }); if (live.current) setDecisions((d) => ({ ...d, [k]: `${decision}:saved` })); }
+    catch (e) { if (e && e.kind === "auth" && onSessionEnded) onSessionEnded(); if (live.current) setDecideError((e && e.message) || "Your decision could not be saved. It was not recorded; try again."); }
+    finally { if (live.current) setSending(""); }
+  }
   const rows = useMemo(() => (snap.data && snap.data.state === "available" ? summarise(snap.data.observations).filter((r) => !platform || r.platform === platform) : []), [snap.data, platform]);
   const platforms = useMemo(() => (snap.data ? [...new Set(snap.data.observations.map((o) => o.platform))] : []), [snap.data]);
   const fresh = snap.data && snap.data.state === "available" ? freshness(snap.data.observations, now) : null;
@@ -88,12 +100,15 @@ export default function PremiumInsights({ enabled, session, scope, campaignName 
           {recs.status === "error" && <p className="error" role="alert">{recs.error}</p>}
           {recs.status === "ready" && recs.items.length === 0 && <p>Nothing to review yet. A change is suggested only when two comparable periods of platform results exist.</p>}
           {recs.status === "ready" && recs.skipped > 0 && <p className="ps-hint">{recs.skipped} suggestion{recs.skipped === 1 ? " was" : "s were"} left out because {recs.skipped === 1 ? "it" : "they"} did not say clearly that it was an observed change only.</p>}
-          {recs.items.length > 0 && <ul className="ps-conn-list" aria-label="Changes worth reviewing">{recs.items.map((r) => { const k = r.evidence.join(); const d = decisions[k]; return (
-            <li key={k}><span className="ps-tag">Observed change</span> <span>{d ? (d === "accepted" ? "Accepted by you on this device" : "Rejected by you on this device") : "Waiting for your decision"}</span>
+          {decideError && <p className="error" role="alert">{decideError}</p>}
+          {recs.items.length > 0 && <ul className="ps-conn-list" aria-label="Changes worth reviewing">{recs.items.map((r) => { const k = r.evidence.join(); const d = decisions[k]; const saved = d && d.endsWith(":saved"); const word = d ? d.split(":")[0] : ""; const stale = r.evidenceState === "unavailable"; return (
+            <li key={k}><span className="ps-tag">Observed change</span> <span>{d ? (saved ? `${word === "accepted" ? "Accepted" : "Rejected"} by you and saved` : `${word === "accepted" ? "Accepted" : "Rejected"} by you on this device`) : stale ? "No longer available" : "Waiting for your decision"}</span>
               <p>{describeRecommendation(r)}</p>
+              {stale && <p className="ps-hint">The platform results behind this were withdrawn or are out of date, so it can no longer be accepted.</p>}
               <details><summary>Evidence (2 records)</summary><p className="ps-hint">Based on two platform records. Record references: {r.evidence.map((h) => h.slice(0, 8)).join(", ")}.</p></details>
-              {!d && (isOwner ? <div className="ps-camp-actions"><button type="button" className="secondary" onClick={() => setDecisions({ ...decisions, [k]: "accepted" })}>Accept</button><button type="button" className="secondary" onClick={() => setDecisions({ ...decisions, [k]: "rejected" })}>Reject</button></div> : <p className="ps-hint">Only the owner can decide.</p>)}
-              {d && <p className="ps-hint">Your decision is kept on this device only. It is not sent to BizGenie yet and changes nothing.</p>}
+              {!d && !stale && (isOwner ? <div className="ps-camp-actions"><button type="button" className="secondary" disabled={Boolean(sending)} onClick={() => decide(r, "accepted")}>Accept</button><button type="button" className="secondary" disabled={Boolean(sending)} onClick={() => decide(r, "rejected")}>Reject</button></div> : <p className="ps-hint">Only the owner can decide.</p>)}
+              {d && !saved && <p className="ps-hint">Your decision is kept on this device only. It is not sent to BizGenie yet and changes nothing.</p>}
+              {saved && <p className="ps-hint">Saved. It does not change your Brand Brain or any campaign by itself.</p>}
             </li>); })}</ul>}
         </>) : <p>No suggestions are connected yet. BizGenie suggests something only when it has platform results to base it on, and never changes anything without your approval.</p>}
       </>)}
