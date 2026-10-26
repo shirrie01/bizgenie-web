@@ -10,7 +10,7 @@
 //        aspect_ratio, approval_status: pending|approved|rejected, created_at, completed_at } }
 //   POST /customer/generate-video   { ...same context, video_purpose, quality: normal|premium, aspect_ratio: 16:9|9:16, duration_seconds: 4|6|8,
 //        input_image?: {asset_id} | reference_assets?: 1-3 [{asset_id}] (needs 8 s) }  -> 202 { status, execution_id, generation_id, video: {...} }
-//   GET  /customer/generate-video/:generationId  and  POST .../:generationId/poll   -> { status: queued|submitted|processing|completed|failed, ... }
+//   GET  /customer/generate-video/:generationId (read the stored state) and POST .../:generationId/poll (ask the provider and settle)  -> { status: queued|submitted|processing|completed|failed, ... }
 //   Errors: 401 AUTHENTICATION_REQUIRED, 404 RESOURCE_NOT_AVAILABLE, 503 AUTHORIZATION_UNAVAILABLE / GENERATION_JOB_UNAVAILABLE,
 //   402 GENERATION_CREDITS_UNAVAILABLE, 503 GENERATION_BILLING_UNAVAILABLE, 400 validation. Billing is applied per execution class
 //   (image.normal, video.normal, video.premium) by the server; the browser never sends a price.
@@ -104,6 +104,11 @@ export async function startVideo({ apiBaseUrl, accessToken, scope, campaign, con
   if (!str(topic)) throw new CreativeError("This item needs a name before a video can be made for it.", { kind: "invalid-input" });
   const body = { ...context({ scope, campaign, contentItemId, topic, platform }), execution_id: ids.executionId, generation_id: ids.generationId, video_purpose: brief.text.trim(), quality: brief.quality, aspect_ratio: brief.aspectRatio, duration_seconds: brief.duration };
   return normaliseRecord("video", await send(fetchImpl, `${apiBaseUrl}/customer/generate-video`, { method: "POST", headers: headers(accessToken), body: JSON.stringify(body) }, { paid: true }));
+}
+// GET only READS the stored state. It does not ask the provider anything, so a video never finishes by being read: POST .../poll is what resumes the
+// accepted operation, asks the provider and settles the credits (found by running this client against the real route; one debit per job, not per poll).
+export async function pollVideo({ apiBaseUrl, accessToken, generationId, fetchImpl = (...a) => fetch(...a) }) {
+  return normaliseRecord("video", await send(fetchImpl, `${apiBaseUrl}/customer/generate-video/${encodeURIComponent(generationId)}/poll`, { method: "POST", headers: { authorization: `Bearer ${accessToken}` } }));
 }
 export async function fetchVideo({ apiBaseUrl, accessToken, generationId, fetchImpl = (...a) => fetch(...a) }) {
   return normaliseRecord("video", await send(fetchImpl, `${apiBaseUrl}/customer/generate-video/${encodeURIComponent(generationId)}`, { headers: { authorization: `Bearer ${accessToken}` } }));

@@ -73,13 +73,13 @@ describe("CreativeStudio", () => {
     expect(start.mock.calls[0][0].ids).toEqual(start.mock.calls[1][0].ids);
   });
   it("video: follows progress to completion and says credits are used only on success", async () => {
-    const seq = [rec("video", "processing"), rec("video", "processing"), rec("video", "completed")];
-    const start = vi.fn(async () => rec("video", "submitted")); const read = vi.fn(async () => (seq.length > 1 ? seq.shift() : seq[0]));
-    mount({ startVideo: start, fetchVideo: read, requestCostCheck: async () => preview({ executionClass: "video.normal" }) }); open();
+    const seq = [rec("video", "processing"), rec("video", "completed")];
+    const start = vi.fn(async () => rec("video", "submitted")); const read = vi.fn(async () => rec("video", "submitted")); const poll = vi.fn(async () => (seq.length > 1 ? seq.shift() : seq[0]));
+    mount({ startVideo: start, fetchVideo: read, pollVideo: poll, requestCostCheck: async () => preview({ executionClass: "video.normal" }) }); open();
     fireEvent.click(screen.getByLabelText("Video")); fireEvent.change(screen.getByLabelText("Shape"), { target: { value: "9:16" } }); fireEvent.change(screen.getByLabelText("Brief"), { target: { value: "A short reveal" } });
     await confirm();
     expect(await screen.findByText(/Being made\. Credits are used only if it succeeds/)).toBeInTheDocument();
-    expect(await screen.findByText("Video created")).toBeInTheDocument(); expect(read.mock.calls[0][0]).toMatchObject({ generationId: expect.stringMatching(/^gen_/) });
+    expect(await screen.findByText("Video created")).toBeInTheDocument(); expect(poll.mock.calls[0][0]).toMatchObject({ generationId: expect.stringMatching(/^gen_/) }); expect(poll.mock.calls.length).toBeGreaterThanOrEqual(2); // only polling moves a video on
   });
   it("reload: a remembered video is read again by its id", async () => {
     window.localStorage.setItem("bg:creative:t:v1", JSON.stringify({ kind: "video", ids: { executionId: "exec_9", generationId: "gen_9" } }));

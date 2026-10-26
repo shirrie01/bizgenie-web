@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { HYBRID_BLOCKER, IMAGE_RATIOS, PREVIEW_BLOCKER, VIDEO_DURATIONS, executionClassFor, fetchVideo, isCustomerMediaApiEnabled, normaliseRecord, startImage, startVideo, validateBrief } from "./creativeProductionClient";
+import { HYBRID_BLOCKER, IMAGE_RATIOS, PREVIEW_BLOCKER, VIDEO_DURATIONS, executionClassFor, fetchVideo, isCustomerMediaApiEnabled, normaliseRecord, pollVideo, startImage, startVideo, validateBrief } from "./creativeProductionClient";
 
 // MOCKED CONTRACT TESTS against the real route schemas in bizgenie-api PR #216 (f8d81bf): src/image-generation, src/video-generation. No provider is called.
 const scope = { tenantId: "t1", projectId: "p1", brandId: "b1" }; const campaign = { campaign_id: "c1", version: 3 };
@@ -54,6 +54,11 @@ describe("startVideo and fetchVideo", () => {
     const f = reply(200, videoBody({ status: "completed", video: { approval_status: "pending", asset: { location: "gs://x/y.mp4" }, completed_at: "2026-10-26T10:05:00Z" } }));
     const r = await fetchVideo({ apiBaseUrl: "http://api.test", accessToken: "tok", generationId: "gen 1", fetchImpl: f });
     expect(f.mock.calls[0][0]).toBe("http://api.test/customer/generate-video/gen%201"); expect(r).toMatchObject({ status: "completed", stored: true }); expect(JSON.stringify(r)).not.toMatch(/gs:\/\//);
+  });
+  it("polling is a POST to .../poll with only the bearer token, and is what moves a video on", async () => {
+    const f = reply(200, videoBody({ status: "completed", video: { approval_status: "pending", asset: { location: "gs://x/y.mp4" } } }));
+    const r = await pollVideo({ apiBaseUrl: "http://api.test", accessToken: "tok", generationId: "gen_1", fetchImpl: f });
+    expect(f.mock.calls[0][0]).toBe("http://api.test/customer/generate-video/gen_1/poll"); expect(f.mock.calls[0][1].method).toBe("POST"); expect(r).toMatchObject({ status: "completed", stored: true });
   });
   it("unknown statuses are refused", () => { expect(() => normaliseRecord("video", videoBody({ status: "rendering" }))).toThrow(); expect(() => normaliseRecord("image", { status: "submitted", execution_id: "e", generation_id: "g" })).toThrow(); });
   it("a failed record carries no result", () => { expect(normaliseRecord("video", videoBody({ status: "failed" }))).toMatchObject({ status: "failed", stored: false }); });

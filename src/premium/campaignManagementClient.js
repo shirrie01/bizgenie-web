@@ -82,6 +82,17 @@ export async function setCampaignArchived({ apiBaseUrl, accessToken, scope, camp
   return send(fetchImpl, `${apiBaseUrl}/customer/campaigns/${campaign.campaign_id}/${path}`, { method: "POST", headers: headers(accessToken), body: JSON.stringify({ ...scopeOf(scope), idempotency_key: await campaignKey(campaign, path, why), expected_campaign_version: campaign.version, reason: why }) }, archive ? "Archiving" : "Restoring");
 }
 
+// Remove the planned time of a scheduled variant. The route is the existing `unschedule` command exposed over HTTP in the backend draft (PR #216,
+// docs/studio/BG_STUDIO_019_CAMPAIGN_MANAGEMENT.md). The ACTIVE schedule id (variant.active_schedule_id, or schedule_id from the workspace calendar) makes
+// a lost-response retry exact. Approval and history are kept by the server; nothing is published or un-published.
+export async function unscheduleVariant({ apiBaseUrl, accessToken, scope, campaign, variant, scheduleId: knownScheduleId, fetchImpl = (...a) => fetch(...a) }) {
+  // The real campaign detail does not carry the schedule id (see rememberedFacts.js); the caller supplies the one it was given when the time was set
+  // or the one the workspace calendar reports, and the server refuses any that is not the active schedule.
+  const scheduleId = knownScheduleId || (variant && variant.active_schedule_id);
+  if (!scheduleId || variant.workflow !== "scheduled") throw new CampaignApiError("There is no planned time to remove.", { kind: "invalid", code: "VALIDATION_ERROR" });
+  return send(fetchImpl, `${apiBaseUrl}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/unschedule`, { method: "POST", headers: headers(accessToken), body: JSON.stringify({ ...scopeOf(scope), idempotency_key: await campaignKey(campaign, "unschedule", `${variant.variant_id}:${scheduleId}`), expected_campaign_version: campaign.version, schedule_id: scheduleId }) }, "Removing the planned time");
+}
+
 // outcome: "confirm" (the customer says they published), "fail" (they tried and it did not publish), "cancel" (they did not go ahead).
 export async function recordManualPublication({ apiBaseUrl, accessToken, scope, campaign, variant, outcome, attemptId, publishedAt, publicationUrl, externalReference, note, reason, fetchImpl = (...a) => fetch(...a) }) {
   if (!["confirm", "fail", "cancel"].includes(outcome)) throw new CampaignApiError("Unknown outcome.", { kind: "invalid" });

@@ -3,7 +3,7 @@ import React, { useState } from "react";
 // Manual publication (BG-STUDIO-019-FE, workstream E). BizGenie does not publish: the customer publishes elsewhere and tells BizGenie
 // how it went. Three outcomes exist in the backend and all are offered: published, failed, cancelled. Whatever the customer enters is
 // kept as THEIR statement ("customer attestation"); the platform has not been asked, and the page says so. The waiting handoff is read
-// from the saved campaign (variant.pending_attempt_id), so it survives a reload.
+// from the saved campaign when it carries one (variant.pending_attempt_id), else from the id this browser was given when it was prepared.
 const localNow = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 const OUTCOMES = [
   { id: "confirm", label: "I published it" },
@@ -16,8 +16,9 @@ export function publicationFor(campaign, variant) {
   return campaign.publications.find((p) => p.publication_id === variant.publication_id) || null;
 }
 
-export default function ManualPublicationPanel({ campaign, variant, state, contentText, onStart, onRecord }) {
-  const pending = variant.pending_attempt_id || "";
+export default function ManualPublicationPanel({ campaign, variant, pendingAttemptId = "", state, contentText, onStart, onRecord }) {
+  // The real campaign detail does not carry the waiting attempt, so the caller supplies the id it was given when the handoff was prepared.
+  const pending = pendingAttemptId || variant.pending_attempt_id || "";
   const mine = state.variantId === variant.variant_id;
   const busy = mine && (state.status === "starting" || state.status === "recording");
   const [outcome, setOutcome] = useState("confirm");

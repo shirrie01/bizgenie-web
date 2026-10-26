@@ -18,7 +18,9 @@ import { isCustomerMediaApiEnabled } from "./premium/creativeProductionClient";
 import { isCreditPreviewApiEnabled } from "./premium/creditPreviewClient";
 import { requestCostCheck } from "./premium/costCheck";
 import { describeGenerateRefusal, isGenerationQuoteApiEnabled, quoteFields } from "./premium/generationQuoteClient";
-import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived } from "./premium/campaignManagementClient";
+import { activeSchedule } from "./premium/scheduleModel";
+import { forget, recall, remember } from "./premium/rememberedFacts";
+import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived, unscheduleVariant } from "./premium/campaignManagementClient";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import { operationKey } from "./operationKey";
@@ -310,21 +312,8 @@ async function approveCampaignVariant({ accessToken, session, campaign, variant,
 }
 
 // Record (or change) the planned publication time of an approved variant. POST .../schedule or .../reschedule. Records a plan only.
-async function scheduleVariant({ accessToken, session, campaign, variant, payload, mode }) {
-  if (mode === "unschedule") {
-    // Existing backend command, exposed over HTTP in the PR #216 draft: the active schedule id makes a lost-response retry exact.
-    const scheduleId = variant.active_schedule_id;
-    if (!scheduleId || variant.workflow !== "scheduled") throw new Error("There is no planned time to remove.");
-    const res = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/unschedule`, {
-      method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
-      body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, schedule_id: scheduleId, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant) || "none", `unschedule-${scheduleId}`) }),
-    });
-    if (res.status === 401) throw Object.assign(new Error("Your session has ended. Sign in again to continue. The planned time was not removed."), { kind: "auth", code: "AUTHENTICATION_REQUIRED" });
-    if (!res.ok) throw await reviewRequestError(res, "The planned time could not be removed yet. It is still in place and nothing was published.");
-    const out = await res.json();
-    if (!out?.campaign?.campaign_id) throw new Error("The change could not be confirmed yet. Reload the latest campaign to check it.");
-    return out.campaign;
-  }
+async function scheduleVariant({ accessToken, session, campaign, variant, payload, mode, scheduleId: knownScheduleId = "" }) {
+  if (mode === "unschedule") return { campaign: await unscheduleVariant({ apiBaseUrl: API_BASE_URL, accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId }, campaign, variant, scheduleId: knownScheduleId }), scheduleId: "" };
   const revisionId = currentRevisionFor(variant);
   if (!revisionId || !["approved", "scheduled"].includes(variant.workflow)) throw new Error("Only approved content can be scheduled.");
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/${mode}`, {
@@ -335,7 +324,7 @@ async function scheduleVariant({ accessToken, session, campaign, variant, payloa
   if (!response.ok) throw await reviewRequestError(response, "That time could not be saved yet. Nothing was published and your approval is still safe.");
   const result = await response.json();
   if (!result?.campaign?.campaign_id) throw new Error("The planned time could not be confirmed yet. Reload the latest campaign to check it.");
-  return result.campaign;
+  return { campaign: result.campaign, scheduleId: result?.result?.created_ids?.schedule_ids?.[0] || "" };
 }
 
 async function beginManualPublication({ accessToken, session, campaign, variant }) {
@@ -752,6 +741,7 @@ export default function App() {
       const campaign = await recordManualPublication({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaign: campaignState.campaign, variant, outcome, attemptId: fields.attemptId, publishedAt: fields.publishedAt, publicationUrl: fields.url, externalReference: fields.reference, note: fields.note, reason: fields.reason });
       if (scopeToken !== scopeTokenRef.current) return;
       setCampaignState({ status: "ready", campaign, error: "" });
+      forget({ tenantId: session.tenantId, projectId: session.projectId }, "attempt", campaign.campaign_id, variant.variant_id); forget({ tenantId: session.tenantId, projectId: session.projectId }, "schedule", campaign.campaign_id, variant.variant_id);
       setCalendarState({ status: "idle", entries: [], error: "" }); setWorkspaceCalendarState(WS_CAL_IDLE);
       const notice = outcome === "confirm" ? "Recorded as published, as your own statement. BizGenie has not checked the platform." : outcome === "fail" ? "Recorded as not published. Your approval is kept; you can prepare the handoff again." : "Handoff closed. Nothing was published and your approval is kept.";
       setManualState({ status: "done", variantId: variant.variant_id, attemptId: "", url: "", error: "", notice });
@@ -765,14 +755,35 @@ export default function App() {
     }
   }
 
+  // The planned time of a scheduled variant: the server's own record when the detail carries it, else what this browser was told when it was set,
+  // else what the workspace calendar API reports. Null when none is known (the page then says the time cannot be shown here).
+  function scheduleFor(variant) {
+    const campaign = campaignState.campaign; if (!campaign || variant.workflow !== "scheduled") return null;
+    const own = activeSchedule(campaign, variant); if (own) return own;
+    const mem = recall({ tenantId: session.tenantId, projectId: session.projectId }, "schedule", campaign.campaign_id, variant.variant_id); if (mem && mem.schedule_id) return mem;
+    const row = (workspaceCalendarState.items || []).find((i) => i.variantId === variant.variant_id && i.scheduleId && i.occurrenceAt);
+    return row ? { schedule_id: row.scheduleId, scheduled_for: row.occurrenceAt, timezone: campaign.display_timezone || "UTC" } : null;
+  }
+  const pendingAttemptFor = (variant) => {
+    const campaign = campaignState.campaign; if (!campaign) return "";
+    if (variant.pending_attempt_id) return variant.pending_attempt_id;
+    if (manualState.variantId === variant.variant_id && ["prepared", "recording", "error"].includes(manualState.status) && manualState.attemptId) return manualState.attemptId;
+    const mem = recall({ tenantId: session.tenantId, projectId: session.projectId }, "attempt", campaign.campaign_id, variant.variant_id); return mem && mem.attempt_id ? mem.attempt_id : "";
+  };
+
   // BG-STUDIO-018-FE (Premium Studio only): record or change the planned publication time. Nothing is published.
   async function runSchedule(variant, payload, mode) {
     if (!campaignState.campaign || scheduleState.status === "saving") return;
     const scopeToken = scopeTokenRef.current;
     setScheduleState({ status: "saving", variantId: variant.variant_id, error: "" });
     try {
-      const campaign = await scheduleVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, payload, mode });
+      const known = scheduleFor(variant);
+      const { campaign, scheduleId } = await scheduleVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, payload, mode, scheduleId: known ? known.schedule_id : "" });
       if (scopeToken !== scopeTokenRef.current) return;
+      // The real campaign detail does not repeat the schedule id or time, so the browser keeps what the command returned (see rememberedFacts.js).
+      const fscope = { tenantId: session.tenantId, projectId: session.projectId };
+      if (mode === "unschedule") forget(fscope, "schedule", campaign.campaign_id, variant.variant_id);
+      else if (scheduleId) remember(fscope, "schedule", campaign.campaign_id, variant.variant_id, { schedule_id: scheduleId, scheduled_for: payload.scheduled_for, timezone: payload.timezone });
       setCampaignState({ status: "ready", campaign, error: "" });
       setCalendarState({ status: "idle", entries: [], error: "" });
       setWorkspaceCalendarState(WS_CAL_IDLE);
@@ -792,6 +803,7 @@ export default function App() {
       const result = await beginManualPublication({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant });
       setCampaignState({ status: "ready", campaign: result.campaign, error: "" });
       setManualState({ status: "prepared", variantId: variant.variant_id, attemptId: result.attemptId, url: "", error: "" });
+      remember({ tenantId: session.tenantId, projectId: session.projectId }, "attempt", result.campaign.campaign_id, variant.variant_id, { attempt_id: result.attemptId });
     } catch (error) { setManualState((current) => ({ ...current, status: "error", variantId: variant.variant_id, error: error.message })); }
   }
 
@@ -963,8 +975,8 @@ export default function App() {
                     ))}
                     {premiumEnabled && ["draft", "review", "approved"].includes(variant.workflow) && <Lazy><CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} topic={item.name} contentItemId={item.content_item_id} readOnly={isReadOnlyRole(roleState.role)} onSessionEnded={() => setSessionEnded(true)} /></Lazy>}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
-                    {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <Lazy><ScheduleControls campaign={campaignState.campaign} variant={variant} state={scheduleState} onSchedule={runSchedule} /></Lazy>}
-                    {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <Lazy><ManualPublicationPanel campaign={campaignState.campaign} variant={variant} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} /></Lazy>}
+                    {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <Lazy><ScheduleControls campaign={campaignState.campaign} variant={variant} schedule={scheduleFor(variant)} state={scheduleState} onSchedule={runSchedule} /></Lazy>}
+                    {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <Lazy><ManualPublicationPanel campaign={campaignState.campaign} variant={variant} pendingAttemptId={pendingAttemptFor(variant)} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} /></Lazy>}
                     {!premiumEnabled && variant.workflow === "approved" && <div>
                       <p>Manual publication required. BizGenie will not claim this was published until you confirm it.</p>
                       <button className="secondary" type="button" onClick={() => runManualStart(variant)} disabled={manualState.status === "starting"}>{manualState.status === "starting" ? "Preparing handoff…" : "Prepare manual publication"}</button>

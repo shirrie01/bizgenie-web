@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import GenerateWithQuote from "./GenerateWithQuote";
-import { HYBRID_BLOCKER, IMAGE_RATIOS, KIND_LABEL, PREVIEW_BLOCKER, VIDEO_DURATIONS, VIDEO_QUALITIES, VIDEO_RATIOS, executionClassFor, fetchVideo, newKey, startImage, startVideo, validateBrief } from "./creativeProductionClient";
+import { HYBRID_BLOCKER, IMAGE_RATIOS, KIND_LABEL, PREVIEW_BLOCKER, VIDEO_DURATIONS, VIDEO_QUALITIES, VIDEO_RATIOS, executionClassFor, fetchVideo, newKey, pollVideo, startImage, startVideo, validateBrief } from "./creativeProductionClient";
 import { costCheckAvailable, requestCostCheck } from "./costCheck";
 
 // Image and video for one post (BG-STUDIO-020-FE), built on the REAL backend routes (see creativeProductionClient.js). The cost is checked first
@@ -23,13 +23,14 @@ export default function CreativeStudio({ enabled, session, scope, campaign, vari
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const base = { apiBaseUrl: API(), accessToken: session.accessToken };
   const fail = useCallback((e) => { if (e && e.kind === "auth" && onSessionEnded) onSessionEnded(); }, [onSessionEnded]);
-  const image = api.startImage || startImage; const video = api.startVideo || startVideo; const read = api.fetchVideo || fetchVideo; const cost = api.requestCostCheck || requestCostCheck;
+  const image = api.startImage || startImage; const video = api.startVideo || startVideo; const read = api.fetchVideo || fetchVideo; const poll = api.pollVideo || pollVideo; const cost = api.requestCostCheck || requestCostCheck;
   const save = (next) => { setAttempt(next); memory(memKey, next ? JSON.stringify(next) : null); };
 
   // Follow a video until it finishes. Polling stops for any finished state and when this component goes away or the workspace changes.
   const refresh = useCallback(async (a) => {
     const mine = ++token.current;
-    try { const record = await read({ ...base, generationId: a.ids.generationId }); if (live.current && mine === token.current) { const next = { ...a, record }; setAttempt(next); memory(memKey, JSON.stringify(next)); setError(""); } }
+    // Reading shows what is stored; only polling moves a video on.
+    try { const inProgress = a.record && !TERMINAL.includes(a.record.status); const record = await (inProgress ? poll : read)({ ...base, generationId: a.ids.generationId }); if (live.current && mine === token.current) { const next = { ...a, record }; setAttempt(next); memory(memKey, JSON.stringify(next)); setError(""); } }
     catch (e) { fail(e); if (live.current && mine === token.current) setError(e.message); }
   }, [session.accessToken, memKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (enabled && open && attempt && attempt.kind === "video" && !attempt.record) refresh(attempt); }, [enabled, open, attempt && attempt.ids.generationId]); // eslint-disable-line react-hooks/exhaustive-deps

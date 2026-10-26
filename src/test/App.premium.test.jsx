@@ -1800,6 +1800,29 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
     expect(screen.getByText("Approved")).toBeInTheDocument(); expect(screen.queryByText(/scheduled for/i)).toBeNull();
   });
 
+  // The REAL customer campaign detail (bizgenie-api safeCampaign) omits active_schedule_id, schedules, pending_attempt_id, publication_id and publications.
+  const realShape = (doc) => { const d = JSON.parse(JSON.stringify(doc)); delete d.schedules; delete d.publications; for (const i of d.items) for (const v of i.variants) { delete v.active_schedule_id; delete v.pending_attempt_id; delete v.publication_id; delete v.active_approval_id; } return d; };
+  it("against the REAL detail shape (no schedule id or time in it), the plan is remembered from the command's answer, shown, and removable by its exact id", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => ok({ result: { campaign_id: CID, created_ids: { schedule_ids: ["schedule-real-1"] } }, campaign: realShape(scheduledDoc("2099-01-15T10:00:00.000Z")) });
+    handlers["POST /customer/campaigns/*/variants/*/unschedule"] = () => ok({ result: { campaign_id: CID }, campaign: realShape(campaignDoc(8, 1, "approved")) });
+    await toApproved();
+    fireEvent.change(await screen.findByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByText(/scheduled for .*15 january 2099 at 10:00 \(europe\/london\)/i)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /remove the planned time/i }));
+    expect(await screen.findByText(/the planned time was removed/i)).toBeInTheDocument();
+    const [post] = calls.filter((c) => c.method === "POST" && /\/unschedule$/.test(c.path));
+    expect(JSON.parse(post.options.body).schedule_id).toBe("schedule-real-1");
+  });
+  it("when the browser has no memory of the plan (new device), it says the time cannot be shown here, offers no removal it cannot do exactly, and never invents a time", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => ok({ result: { campaign_id: CID, created_ids: { schedule_ids: [] } }, campaign: realShape(scheduledDoc("2099-01-15T10:00:00.000Z")) });
+    await toApproved();
+    fireEvent.change(await screen.findByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByText(/a planned time is set, but this view cannot show it/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove the planned time/i })).toBeNull();
+  });
+
   it("a time in the past is refused in words before anything is sent", async () => {
     await toApproved();
     fireEvent.change(await screen.findByLabelText(/plan when to publish/i), { target: { value: "2020-01-15T10:00" } });
@@ -1955,6 +1978,13 @@ describe("recording how a manual publication went (BG-STUDIO-019-FE, workstream 
   const ATTEMPT = "99999999-9999-4999-8999-999999999999";
   const withPending = (doc) => { doc.items[0].variants[0].pending_attempt_id = ATTEMPT; return doc; };
   const published = () => { const d = campaignDoc(9, 1, "published"); d.items[0].variants[0].publication_id = "pub-1"; d.publications = [{ publication_id: "pub-1", published_at: "2026-10-26T09:30:00.000Z", publication_url: "https://instagram.com/p/abc", evidence_kind: "customer_attestation" }]; return d; };
+  it("against the REAL detail shape (no pending_attempt_id), preparing the handoff still opens the record form, and a reload keeps it", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/manual-publication"] = () => ok({ result: { created_ids: { attempt_ids: [ATTEMPT] } }, campaign: JSON.parse(JSON.stringify(campaignDoc(7, 1, "approved"))) }, 201);
+    handlers["GET /customer/campaigns/*"] = () => ok({ campaign: campaignDoc(7, 1, "approved") });
+    await toPrepared();
+    expect(await screen.findByRole("form", { name: /record the manual publication/i })).toBeInTheDocument();
+  });
+
   async function toPrepared() {
     handlers["POST /customer/campaigns/*/variants/*/manual-publication"] = () => ok({ result: { created_ids: { attempt_ids: [ATTEMPT] } }, campaign: withPending(campaignDoc(7, 1, "approved")) }, 201);
     render(<App />);
