@@ -306,3 +306,15 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-plans-table th, .ps-plans-table td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--ps-line, #d9d4cc); overflow-wrap: anywhere; }
 .ps-invoices { padding-left: 18px; display: grid; gap: 6px; }
 .ps-warn { color: #7a4b00; }
+
+/* Credit-cost disclosure and creative production (BG-STUDIO-019-FE) */
+.ps-quote { display: grid; gap: 8px; margin-top: 8px; }
+.ps-quote-card { border: 1px solid var(--ps-line, #d9d4cc); border-radius: 8px; padding: 12px; display: grid; gap: 6px; }
+.ps-creative { margin-top: 12px; border: 1px solid var(--ps-line, #d9d4cc); border-radius: 8px; padding: 8px 12px; }
+.ps-creative > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
+.ps-creative-form, .ps-creative-job { display: grid; gap: 8px; margin-top: 8px; }
+.ps-creative-form fieldset { border: 1px solid var(--ps-line, #d9d4cc); border-radius: 8px; min-width: 0; }
+.ps-radio { display: flex; gap: 8px; align-items: flex-start; overflow-wrap: anywhere; }
+.ps-creative-output { margin: 0; max-width: 100%; }
+.ps-creative-output img, .ps-creative-output video { max-width: 100%; height: auto; border-radius: 8px; }
+.ps-creative input[type="file"] { max-width: 100%; }

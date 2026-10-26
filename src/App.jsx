@@ -11,6 +11,8 @@ import { fetchWorkspaceCalendarFromApi, isWorkspaceCalendarApiEnabled } from "./
 import ScheduleControls from "./premium/ScheduleControls";
 import ManualPublicationPanel from "./premium/ManualPublicationPanel";
 import GenerateWithQuote from "./premium/GenerateWithQuote";
+import CreativeStudio from "./premium/CreativeStudio";
+import { isCustomerMediaApiEnabled } from "./premium/creativeProductionClient";
 import { describeGenerateRefusal, isGenerationQuoteApiEnabled, quoteFields, requestGenerationQuote } from "./premium/generationQuoteClient";
 import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived } from "./premium/campaignManagementClient";
 import CreativeReview from "./CreativeReview";
@@ -914,7 +916,7 @@ export default function App() {
             <label htmlFor="execution-mode">Execution mode</label>
             <select id="execution-mode" value={executionMode} onChange={(event) => setExecutionMode(event.target.value)}>
               <option value="ai">AI — create from Brand Brain and your brief</option>
-              <option value="hybrid" disabled>Hybrid — use your media + AI (add-media picker coming next)</option>
+              <option value="hybrid" disabled>{premiumEnabled ? "Hybrid — your media with AI is under “Create an image or video” below" : "Hybrid — use your media + AI (add-media picker coming next)"}</option>
             </select>
             <label htmlFor="execution-brief">Execution brief (optional)</label>
             <textarea id="execution-brief" maxLength={4000} value={executionBrief} onChange={(event) => setExecutionBrief(event.target.value)} placeholder="Temporary direction for this execution, e.g. focus on the founder story and keep the opening conversational." />
@@ -937,6 +939,7 @@ export default function App() {
                         {generationState.status === "loading" ? "Generating…" : "Generate draft"}
                       </button>
                     ))}
+                    {premiumEnabled && ["draft", "review", "approved"].includes(variant.workflow) && <CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} quotesEnabled={isGenerationQuoteApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} readOnly={isReadOnlyRole(roleState.role)} onSessionEnded={() => setSessionEnded(true)} />}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
                     {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <ScheduleControls campaign={campaignState.campaign} variant={variant} state={scheduleState} onSchedule={runSchedule} />}
                     {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <ManualPublicationPanel campaign={campaignState.campaign} variant={variant} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} />}
