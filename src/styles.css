@@ -325,3 +325,18 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-creative-form { grid-template-columns: minmax(0, 1fr); }
 .ps-creative-form > * { min-width: 0; }
 .ps-creative-form input:not([type="radio"]):not([type="checkbox"]):not([type="file"]), .ps-creative-form select, .ps-creative-form textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+
+/* Growth Control Centre (BG-STUDIO-022-FE) */
+.ps-check { display: flex; gap: 8px; align-items: flex-start; }
+.ps-check input[type="checkbox"] { flex: none; width: 24px; height: 24px; margin: 0; }
+.ps-growth > header h2 { margin: 0 0 12px; }
+.ps-growth-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; margin-top: 12px; }
+.ps-growth-grid > section { border: 1px solid var(--line, #d9dfe3); border-radius: 8px; padding: 12px 14px; min-width: 0; overflow-wrap: anywhere; }
+.ps-growth-grid h3 { margin-top: 0; }
+.ps-strategy { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: 12px; }
+.ps-strategy dt { font-weight: 600; margin-top: 8px; }
+.ps-strategy dd { margin: 0; overflow-wrap: anywhere; }
+.ps-exp-list { list-style: none; padding: 0; display: grid; gap: 12px; }
+.ps-exp-list li { border: 1px solid var(--line, #d9dfe3); border-radius: 8px; padding: 10px 12px; }
+.ps-exp-list textarea, .ps-growth textarea, .ps-growth input:not([type="checkbox"]), .ps-growth select { max-width: 100%; box-sizing: border-box; width: 100%; }
+.ps-fact { margin: 8px 0; }
