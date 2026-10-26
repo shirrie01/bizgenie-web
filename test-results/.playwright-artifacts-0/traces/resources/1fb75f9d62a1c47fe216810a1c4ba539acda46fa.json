@@ -1,0 +1,1 @@
+{"status":"failed","error":{"code":"ONBOARDING_INCOMPLETE","message":"x","details":[{"path":"business_name","code":"required","message":"Required"},{"path":"description","code":"required","message":"Required"}]}}
