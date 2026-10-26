@@ -47,3 +47,23 @@ describe("errors say what happened, and never imply success", () => {
   it("a dropped connection is unconfirmed, not 'not done'", async () => { await expect(requestCancellation({ ...base, fetchImpl: vi.fn().mockRejectedValue(new Error("x")) })).rejects.toMatchObject({ kind: "unconfirmed" }); });
   it("errors are typed", async () => { await expect(openBillingPortal({ ...base, fetchImpl: reply(401, {}) })).rejects.toBeInstanceOf(BillingManagementError); });
 });
+
+import { fetchInvoices } from "./billingManagementClient";
+describe("invoices (billing-invoices.v1 draft, unmounted)", () => {
+  const inv = (o = {}) => ({ invoice_id: "in_abc1", number: "FX-0001", issued_at: "2026-10-01T00:00:00Z", amount_minor: 500, currency: "GBP", status: "paid", hosted_invoice_url: "https://invoice.stripe.com/i/abc", receipt_url: null, ...o });
+  const page = (invoices, next = null) => reply(200, { contract_version: "billing-invoices.v1", invoices, next_cursor: next });
+  it("asks for one bounded page with the owner's token and follows the cursor on request", async () => {
+    const f = page([inv()], "in_abc1"); const r = await fetchInvoices({ ...base, cursor: "in_prev", limit: 500, fetchImpl: f });
+    const u = new URL(f.mock.calls[0][0]); expect(u.pathname).toBe("/customer/billing/invoices"); expect(Object.fromEntries(u.searchParams)).toEqual({ tenant_id: "t1", limit: "50", cursor: "in_prev" }); expect(f.mock.calls[0][1].headers.authorization).toBe("Bearer tok");
+    expect(r.nextCursor).toBe("in_abc1");
+  });
+  it("shows a missing number or link as missing, never invents either, and refuses non-Stripe links", async () => {
+    const r = await fetchInvoices({ ...base, fetchImpl: page([inv({ number: null, hosted_invoice_url: null }), inv({ invoice_id: "in_abc2", hosted_invoice_url: "https://evil.test/i" }), inv({ invoice_id: "in_abc3", status: "weird" }), inv({ invoice_id: "x" })]) });
+    expect(r.invoices.map((i) => [i.id, i.number, i.url])).toEqual([["in_abc1", "", ""], ["in_abc2", "FX-0001", ""]]); expect(r.skipped).toBe(2);
+  });
+  it.each([[401, "auth"], [404, "forbidden"], [503, "unavailable"], [500, "error"]])("status %s", async (s, kind) => { await expect(fetchInvoices({ ...base, fetchImpl: reply(s, {}) })).rejects.toMatchObject({ kind }); });
+  it("a wrong contract or a dropped connection is an error, not an empty list", async () => {
+    await expect(fetchInvoices({ ...base, fetchImpl: reply(200, { invoices: [] }) })).rejects.toMatchObject({ kind: "invalid" });
+    await expect(fetchInvoices({ ...base, fetchImpl: vi.fn().mockRejectedValue(new Error("x")) })).rejects.toMatchObject({ kind: "network" });
+  });
+});

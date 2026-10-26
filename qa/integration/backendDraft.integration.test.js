@@ -12,7 +12,7 @@ import { fetchWorkspaceCalendarFromApi } from "../../src/premium/workspaceCalend
 import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived, unscheduleVariant } from "../../src/premium/campaignManagementClient";
 import { fetchPlanCatalogue } from "../../src/premium/planCatalogueClient";
 import { requestCreditPreview } from "../../src/premium/creditPreviewClient";
-import { openBillingPortal, requestCancellation, requestPlanChange } from "../../src/premium/billingManagementClient";
+import { fetchInvoices, openBillingPortal, requestCancellation, requestPlanChange } from "../../src/premium/billingManagementClient";
 
 const DIR = process.env.BIZGENIE_API_DIR;
 const run = DIR ? describe : describe.skip;
@@ -31,7 +31,7 @@ run("frontend adapters against the real backend draft routes", () => {
     const { scenario, previewReceipt, context, NOW } = req("./test/helpers/campaign-regressions");
     const { CommercialCatalog } = req("./src/billing/commercialCatalog");
     const { createCustomerBillingRouter } = req("./src/billing/customerRouter");
-    const { createDraftBillingManagementRouter } = req("./src/billing/stripe/managementDraft");
+    const { createDraftBillingManagementRouter } = req("./src/billing/stripe/managementDraft"); const { createDraftInvoiceRouter } = req("./src/billing/stripe/invoicesDraft");
 
     // ---- campaigns, calendar, unschedule, manual publication: the backend's own regression scenario, served by the backend's own createApp ----
     let role = "owner";
@@ -52,7 +52,9 @@ run("frontend adapters against the real backend draft routes", () => {
     const mgmtApp = express();
     mgmtApp.use("/customer/billing/management", createDraftBillingManagementRouter({ enabled: true, configurationId: "bpc_synthetic", returnUrl: "https://example.test/billing", authorizeTenantRequest: async () => ({ actor: { kind: "customer", auth_user_id: "owner" }, tenant_id: "tenant_a", membership_role: "owner", action: "billing:checkout" }), repository: { getStripeCustomerByTenant: async () => ({ stripe_customer_id: "cus_a", livemode: false }), getActiveEntitlement: async () => ({ stripe_subscription_ref: "sub_a" }) }, stripe: { subscriptions: { retrieve: async () => ({ id: "sub_a", customer: "cus_a", livemode: false, items: { data: [{ id: "si_a" }] } }) }, billingPortal: { sessions: { create: async (p, o) => { sessions.push({ p, o }); return { url: "https://billing.stripe.com/p/session/synthetic" }; } } } }, catalog: { mode: "test", stripeMapping: () => ({ priceId: "price_test", policyId: "synthetic" }) } }));
 
-    urls = { campaign: await listen(campaignApp), billing: await listen(billing(new CommercialCatalog({ plans: [plan], policies: [policy], mode: "test", now }))), billingOff: await listen(billing(null)), mgmt: await listen(mgmtApp) };
+    const invApp = express(); const mk = (n, extra = {}) => ({ id: `in_${n}`, customer: "cus_a", livemode: false, created: 1790000000 + n, total: 500 + n, currency: "gbp", status: "paid", number: n === 2 ? null : `FX-${n}`, hosted_invoice_url: n === 2 ? null : `https://invoice.stripe.com/i/${n}`, ...extra });
+    invApp.use("/customer/billing/invoices", createDraftInvoiceRouter({ enabled: true, authorizeTenantRequest: async () => ({ actor: { kind: "customer", auth_user_id: "owner" }, tenant_id: "tenant_a", membership_role: "owner", action: "billing:checkout" }), repository: { getStripeCustomerByTenant: async () => ({ stripe_customer_id: "cus_a", livemode: false }) }, stripe: { invoices: { list: async ({ limit, starting_after }) => { const all = [1, 2, 3].map((n) => mk(n)).reverse(); const from = starting_after ? all.findIndex((i) => i.id === starting_after) + 1 : 0; const data = all.slice(from, from + limit); return { data, has_more: from + limit < all.length }; } } } }));
+    urls = { invoices: await listen(invApp), campaign: await listen(campaignApp), billing: await listen(billing(new CommercialCatalog({ plans: [plan], policies: [policy], mode: "test", now }))), billingOff: await listen(billing(null)), mgmt: await listen(mgmtApp) };
     fx = { scenario, repository, s, scheduled, approved, context, NOW, setRole: (r) => { role = r; }, sessions };
   });
   afterAll(() => Promise.all(servers.map((sv) => new Promise((r) => sv.close(r)))));
@@ -157,6 +159,16 @@ run("frontend adapters against the real backend draft routes", () => {
       const base = { apiBaseUrl: urls.mgmt, accessToken: "ok", tenantId: "tenant_a" };
       await openBillingPortal({ ...base, id: "req_same" }); await openBillingPortal({ ...base, id: "req_same" });
       expect(fx.sessions[before].o.idempotencyKey).toBe(fx.sessions[before + 1].o.idempotencyKey);
+    });
+  });
+
+  describe("invoices (draft owner-only router, mock Stripe)", () => {
+    it("pages through the real route, shows a missing number or link as missing, and exposes no receipt", async () => {
+      const first = await fetchInvoices({ apiBaseUrl: urls.invoices, accessToken: "ok", tenantId: "tenant_a", limit: 2 });
+      expect(first.invoices).toHaveLength(2); expect(first.nextCursor).toMatch(/^in_/);
+      const second = await fetchInvoices({ apiBaseUrl: urls.invoices, accessToken: "ok", tenantId: "tenant_a", limit: 2, cursor: first.nextCursor });
+      expect(second.nextCursor).toBeNull(); const all = [...first.invoices, ...second.invoices]; expect(all).toHaveLength(3);
+      const missing = all.find((i) => i.id === "in_2"); expect(missing.number).toBe(""); expect(missing.url).toBe(""); expect(all.find((i) => i.id === "in_1").url).toMatch(/^https:\/\/invoice\.stripe\.com\//);
     });
   });
 });
