@@ -15,10 +15,10 @@
 | Item | Value |
 |---|---|
 | Branch | `bg-studio-022-fe-intelligence`, stacked on `bg-studio-021-fe-integration` (PR #54, head `7816777`) |
-| Tested code SHA | `3137ae52d99b69e4c6460311b55eb7d5d6e0e7c0` |
+| Tested code SHA | `62b111130f3074d64d344337c847af2358d26585` (code at `3137ae5` plus one test correction; docs commits after it change only `docs/`) |
 | Draft PR | [#55](https://github.com/shirrie01/bizgenie-web/pull/55) |
 | Backend read | bizgenie-api #217 `23f49038f36acf8414a079e27a8d5ffc8d302f2b` |
-| Hosted CI | run 39 on `3137ae5` found a real test defect (below) and was cancelled; the fixed SHA is re-run and recorded in section 6 |
+| Hosted CI | [run 40](https://github.com/shirrie01/bizgenie-web/actions/runs/40408312171) at the exact SHA (`ref` and `expected_sha` both `62b1111…`; SHA guard passed): **13 of 13 jobs success on attempt 1**. Run 39 on `3137ae5` had found a real test defect (section 6) and was cancelled |
 
 ## 3. Competitor action matrix and findings
 
@@ -59,7 +59,8 @@ R1, R3, R4/R5, R8, R11 remain open exactly as in the 021 handoff. R12 is now spe
 | Flag-off DOM equivalence vs the 018 snapshots | **identical** (7 captures) |
 | Initial JS (gzip), flag off | **149,522 B** (021: 150,151 B; 018: 150,151 B) |
 | Growth Centre lazy chunk | 12,842 B gz (loads only when the view opens); PremiumStudio 20,098; PremiumInsights 3,340; CSS 5,254 |
-| Hosted CI run 39, `3137ae5` | **premium-browser 1440 FAILED (real, not infrastructure)**: a 021-era gates-on assertion said there is no invoice list, but the 021 invoice feature added a "Show invoices" button. It passed locally only because it raced the lazily loaded panel. The assertion was corrected (button visible, nothing fetched until pressed); run cancelled while other jobs were still running |
+| Hosted CI run 40, `62b1111` | 13/13 green, attempt 1, including the gates-on matrix at 5 widths and gates-off premium matrix at 4 CI widths |
+| Hosted CI run 39, `3137ae5` (superseded) | **premium-browser 1440 FAILED (real, not infrastructure)**: a 021-era gates-on assertion said there is no invoice list, but the 021 invoice feature added a "Show invoices" button. It passed locally only because it raced the lazily loaded panel. The assertion was corrected (button visible, nothing fetched until pressed); run cancelled while other jobs were still running |
 | Not tested | real assistive technology, real devices/networks, first-navigation timing, staging |
 
 ## 7. Journey acceptance matrix (honest)
