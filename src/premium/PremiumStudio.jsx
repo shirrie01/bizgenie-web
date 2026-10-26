@@ -4,6 +4,7 @@ import PremiumWorkspace from "./PremiumWorkspace";
 import PremiumWorkspaces from "./PremiumWorkspaces";
 import PremiumBrandBrain from "./PremiumBrandBrain";
 import PremiumWorkspaceCalendar from "./PremiumWorkspaceCalendar";
+import PremiumCampaigns from "./PremiumCampaigns";
 import { todayKey, windowFor } from "./workspaceCalendarModel";
 import { brainFormValues, rebaseDraft } from "./brainClient";
 import { buildWorkspaceModel } from "./workspaceModel";
@@ -23,6 +24,7 @@ const VIEWS = [
   ["overview", "Overview"],
   ["onboarding", "Set up"],
   ["studio", "Campaign Studio"],
+  ["campaigns", "Campaigns"],
   ["calendar", "Calendar"],
   ["brand", "Brand"],
   ["account", "Plan and billing"],
@@ -38,7 +40,7 @@ const windowText = ({ from, to }) => {
 
 const EMPTY_DRAFT = { businessName: "", website: "", challenge: "", industryText: "", sectorChoice: "", description: "", audience: "", cta: "", goal: "" };
 
-export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, membershipRole, readOnly = false, workspaceState, onLoadWorkspaces, onSelectWorkspace, sessionEnded = false, onSignOut, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, workspaceCalendarState, onLoadWorkspaceCalendar, sections }) {
+export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, membershipRole, readOnly = false, workspaceState, onLoadWorkspaces, onSelectWorkspace, sessionEnded = false, onSignOut, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, workspaceCalendarState, onLoadWorkspaceCalendar, campaignAdmin, onAdminOpen, onAdminRename, onAdminSetArchived, sections }) {
   const [view, setView] = useState(null); // null until the starting point has been decided
   const [stage, setStage] = useState(0);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -202,6 +204,9 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
         <button type="button" className="ps-primary" onClick={() => go({ view: "onboarding", stage: draft.goal.trim() ? STAGES.length - 1 : 3 })}>{draft.goal.trim() ? "Get my recommendation" : "Tell us your goal"}</button>
       </section>
     );
+  } else if (view === "campaigns") {
+    content = <PremiumCampaigns list={campaignList} currentId={campaign ? campaign.campaign_id : ""} admin={campaignAdmin || { status: "idle" }} onRefresh={onLoadCampaigns}
+      onOpen={async (id) => { const r = await onAdminOpen(id); if (r && r.ok) go({ view: "studio" }); }} onRename={onAdminRename} onSetArchived={onAdminSetArchived} />;
   } else if (view === "calendar") {
     const campaignCalendar = (
       <section className="ps-empty" aria-label="Campaign calendar">
@@ -226,7 +231,7 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
           <button type="button" className={calScope === "all" ? "on" : ""} aria-pressed={calScope === "all"} onClick={() => setCalScope("all")}>All campaigns</button>
           <button type="button" className={calScope === "campaign" ? "on" : ""} aria-pressed={calScope === "campaign"} onClick={() => setCalScope("campaign")}>This campaign{campaign ? `: ${campaign.name}` : ""}</button>
         </div>
-        {calScope === "all" ? <PremiumWorkspaceCalendar state={workspaceCalendarState} onLoad={onLoadWorkspaceCalendar} /> : campaignCalendar}
+        {calScope === "all" ? <PremiumWorkspaceCalendar state={workspaceCalendarState} onLoad={onLoadWorkspaceCalendar} onOpenCampaign={async (id) => { const r = await onAdminOpen(id); if (r && r.ok) go({ view: "studio" }); }} /> : campaignCalendar}
       </div>
     );
   } else if (view === "workspaces") {

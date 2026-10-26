@@ -5,8 +5,16 @@ import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
+import PremiumBilling from "./premium/PremiumBilling";
 import { fetchWorkspaceCalendar } from "./premium/workspaceCalendarClient";
+import { fetchWorkspaceCalendarFromApi, isWorkspaceCalendarApiEnabled } from "./premium/workspaceCalendarApiClient";
 import ScheduleControls from "./premium/ScheduleControls";
+import ManualPublicationPanel from "./premium/ManualPublicationPanel";
+import GenerateWithQuote from "./premium/GenerateWithQuote";
+import CreativeStudio from "./premium/CreativeStudio";
+import { isCustomerMediaApiEnabled } from "./premium/creativeProductionClient";
+import { describeGenerateRefusal, isGenerationQuoteApiEnabled, quoteFields, requestGenerationQuote } from "./premium/generationQuoteClient";
+import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived } from "./premium/campaignManagementClient";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import { operationKey } from "./operationKey";
@@ -180,7 +188,7 @@ async function createCampaignFromRecommendation({ accessToken, session, recommen
   return created.campaign;
 }
 
-async function generateCampaignVariant({ accessToken, session, campaign, variant, executionMode = "ai", executionBrief = "" }) {
+async function generateCampaignVariant({ accessToken, session, campaign, variant, executionMode = "ai", executionBrief = "", quote = null, rich = false }) {
   if (session.status !== "ready" || !campaign?.campaign_id || !variant?.variant_id || variant.workflow !== "draft") {
     throw new Error("This draft is not ready to generate yet.");
   }
@@ -196,9 +204,16 @@ async function generateCampaignVariant({ accessToken, session, campaign, variant
       idempotency_key: `campaign:${campaign.campaign_id}:variant:${variant.variant_id}:version:${campaignVersion}:generate`,
       execution_mode: executionMode,
       ...(executionBrief.trim() ? { execution_brief: executionBrief.trim() } : {}),
+      ...quoteFields(quote),
     }),
   });
-  if (!response.ok) throw new Error("Content could not be generated yet. Your draft is still safe to retry.");
+  if (!response.ok) {
+    if (!rich) throw new Error("Content could not be generated yet. Your draft is still safe to retry.");
+    let code = ""; try { code = (await response.json())?.error?.code || ""; } catch { /* no body */ }
+    if (response.status === 401) throw Object.assign(new Error("Your session has ended. Sign in again to continue. Nothing was charged."), { kind: "auth", code: "AUTHENTICATION_REQUIRED" });
+    const refusal = describeGenerateRefusal(response.status, code);
+    throw Object.assign(new Error(refusal ? refusal.text : "Content could not be generated yet. Your draft is still safe to retry, and your credits are only used if it succeeds."), { status: response.status, code, refusal });
+  }
   const result = await response.json();
   if (!result?.campaign?.campaign_id) throw new Error("Generated content could not be confirmed yet.");
   return result.campaign;
@@ -377,6 +392,7 @@ export default function App() {
   const [calendarState, setCalendarState] = useState({ status: "idle", entries: [], error: "" });
   const [workspaceCalendarState, setWorkspaceCalendarState] = useState(WS_CAL_IDLE); // BG-STUDIO-018-FE
   const [scheduleState, setScheduleState] = useState({ status: "idle", variantId: "", error: "" });
+  const [campaignAdmin, setCampaignAdmin] = useState({ status: "idle", id: "", kind: "", message: "", error: "" }); // BG-STUDIO-019-FE
   const [resultsState, setResultsState] = useState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
   const [session, setSession] = useState({ status: "loading" });
   const [pendingSubmit, setPendingSubmit] = useState(false);
@@ -412,6 +428,7 @@ export default function App() {
     setCalendarState({ status: "idle", entries: [], error: "" });
     setWorkspaceCalendarState(WS_CAL_IDLE);
     setScheduleState({ status: "idle", variantId: "", error: "" });
+    setCampaignAdmin({ status: "idle", id: "", kind: "", message: "", error: "" });
     setResultsState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
     setBrandBrainState({ status: "idle", brain: null, draft: "", error: "" });
     setCampaignList({ status: "idle", campaigns: [], error: "" });
@@ -570,6 +587,27 @@ export default function App() {
     }
   }
 
+  // BG-STUDIO-019-FE (Premium Studio): the cost is shown first when the backend can quote it; a refusal says why and that nothing was charged.
+  async function premiumQuote(variant) {
+    return requestGenerationQuote({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId }, campaign: campaignState.campaign, variant, executionClass: "text.standard", executionMode });
+  }
+  async function premiumGenerate(variant, quote) {
+    if (generationState.status === "loading" || !campaignState.campaign || variant.workflow !== "draft") return { ok: false, kind: "error", text: "This draft is not ready to generate yet." };
+    const scopeToken = scopeTokenRef.current;
+    setGenerationState({ status: "loading", error: "" });
+    try {
+      const campaign = await generateCampaignVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, executionMode, executionBrief, quote, rich: true });
+      if (scopeToken !== scopeTokenRef.current) return { ok: false, kind: "error", text: "Your workspace changed. Nothing is shown as generated here." };
+      setCampaignState({ status: "ready", campaign, error: "" });
+      setGenerationState({ status: "ready", error: "" });
+      return { ok: true };
+    } catch (error) {
+      if (isAuthRefusal(error)) setSessionEnded(true);
+      setGenerationState({ status: "error", error: error.message });
+      return { ok: false, kind: (error.refusal && error.refusal.kind) || "error", text: error.message };
+    }
+  }
+
   async function runReloadCampaign() {
     if (!campaignState.campaign || ["rendering", "acknowledging", "approving", "reloading"].includes(reviewState.status)) return;
     const variantId = reviewState.variantId;
@@ -620,6 +658,91 @@ export default function App() {
     } catch (error) { setReviewState((current) => ({ ...current, status: "error", error: error.message, stale: Boolean(error.stale), unavailable: Boolean(error.unavailable) })); }
   }
 
+  // ---- BG-STUDIO-019-FE, workstream E: campaign management (Premium Studio only). Every result shown is the backend's answer. ----
+  const adminScope = () => ({ tenantId: session.tenantId, projectId: session.projectId });
+  const resetCampaignViews = () => {
+    setCalendarState({ status: "idle", entries: [], error: "" });
+    setWorkspaceCalendarState(WS_CAL_IDLE);
+    setReviewState({ status: "idle", variantId: "", receipt: null, previewId: "", error: "", stale: false });
+    setManualState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
+    setScheduleState({ status: "idle", variantId: "", error: "" });
+    setGenerationState({ status: "idle", error: "" });
+  };
+  const refreshList = async (current) => {
+    try { const campaigns = await getCampaignList({ accessToken: session.accessToken, session }); if (current()) setCampaignList({ status: "ready", campaigns, error: "" }); } catch { /* the list keeps what it had */ }
+  };
+  async function adminRun(id, kind, work, doneMessage) {
+    if (session.status !== "ready" || campaignAdmin.status === "working") return { ok: false };
+    const scopeToken = scopeTokenRef.current; const current = () => scopeToken === scopeTokenRef.current;
+    setCampaignAdmin({ status: "working", id, kind, message: "", error: "" });
+    try {
+      const detail = await fetchCampaignDetail({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaignId: id });
+      if (!current()) return { ok: false };
+      const updated = await work(detail);
+      if (!current()) return { ok: false };
+      setCampaignAdmin({ status: "done", id, kind, message: doneMessage(updated), error: "" });
+      return { ok: true, campaign: updated };
+    } catch (error) {
+      if (!current()) return { ok: false };
+      if (error.kind === "auth") setSessionEnded(true);
+      if (error.kind === "conflict" || error.kind === "unconfirmed") {
+        // Show the truth: the latest stored version replaces whatever was on screen for this campaign.
+        try { const latest = await fetchCampaignDetail({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaignId: id }); if (current()) setCampaignState((c) => (c.campaign && c.campaign.campaign_id === id ? { status: "ready", campaign: latest, error: "" } : c)); } catch { /* leave it */ }
+        await refreshList(current);
+      }
+      if (error.kind === "unavailable") await refreshList(current);
+      if (current()) setCampaignAdmin({ status: "error", id, kind, message: "", error: error.message || "That could not be done yet. Nothing was changed." });
+      return { ok: false };
+    }
+  }
+  async function premiumOpenCampaign(id) {
+    const result = await adminRun(id, "open", async (detail) => detail, (c) => `Opened ${c.name}.`);
+    if (result.ok) { setCampaignState({ status: "ready", campaign: result.campaign, error: "" }); resetCampaignViews(); }
+    return result;
+  }
+  async function premiumRenameCampaign(id, name) {
+    const result = await adminRun(id, "rename", (detail) => renameCampaign({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaign: detail, name }), (c) => `Renamed to ${c.name}.`);
+    if (result.ok) {
+      const scopeToken = scopeTokenRef.current;
+      setCampaignList((cur) => ({ ...cur, campaigns: cur.campaigns.map((c) => (c.campaign_id === id ? { ...c, name: result.campaign.name, updated_at: result.campaign.updated_at || c.updated_at } : c)) }));
+      setCampaignState((cur) => (cur.campaign && cur.campaign.campaign_id === id ? { status: "ready", campaign: result.campaign, error: "" } : cur));
+      setCalendarState({ status: "idle", entries: [], error: "" }); setWorkspaceCalendarState(WS_CAL_IDLE);
+      await refreshList(() => scopeToken === scopeTokenRef.current);
+    }
+    return result;
+  }
+  async function premiumSetArchived(id, archive, reason) {
+    const result = await adminRun(id, archive ? "archive" : "restore", (detail) => setCampaignArchived({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaign: detail, archive, reason }), (c) => (archive ? `Archived ${c.name}. It is hidden from your campaigns and calendar, not deleted.` : `Restored ${c.name}.`));
+    if (result.ok) {
+      const scopeToken = scopeTokenRef.current;
+      if (archive) setCampaignState((cur) => (cur.campaign && cur.campaign.campaign_id === id ? { status: "idle", campaign: null, error: "" } : cur));
+      resetCampaignViews();
+      await refreshList(() => scopeToken === scopeTokenRef.current);
+    }
+    return result;
+  }
+  // Record how a manual publication went. The saved campaign is the source of truth: the response replaces it.
+  async function premiumRecordPublication(variant, outcome, fields) {
+    if (!campaignState.campaign || manualState.status === "recording") return;
+    const scopeToken = scopeTokenRef.current;
+    setManualState({ status: "recording", variantId: variant.variant_id, attemptId: fields.attemptId, url: "", error: "", notice: "" });
+    try {
+      const campaign = await recordManualPublication({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaign: campaignState.campaign, variant, outcome, attemptId: fields.attemptId, publishedAt: fields.publishedAt, publicationUrl: fields.url, externalReference: fields.reference, note: fields.note, reason: fields.reason });
+      if (scopeToken !== scopeTokenRef.current) return;
+      setCampaignState({ status: "ready", campaign, error: "" });
+      setCalendarState({ status: "idle", entries: [], error: "" }); setWorkspaceCalendarState(WS_CAL_IDLE);
+      const notice = outcome === "confirm" ? "Recorded as published, as your own statement. BizGenie has not checked the platform." : outcome === "fail" ? "Recorded as not published. Your approval is kept; you can prepare the handoff again." : "Handoff closed. Nothing was published and your approval is kept.";
+      setManualState({ status: "done", variantId: variant.variant_id, attemptId: "", url: "", error: "", notice });
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
+      if (error.kind === "auth") setSessionEnded(true);
+      if (error.kind === "conflict" || error.kind === "unconfirmed") {
+        try { const latest = await fetchCampaignDetail({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaignId: campaignState.campaign.campaign_id }); if (scopeToken === scopeTokenRef.current) setCampaignState({ status: "ready", campaign: latest, error: "" }); } catch { /* leave it */ }
+      }
+      setManualState({ status: "error", variantId: variant.variant_id, attemptId: fields.attemptId, url: "", error: error.message || "That could not be recorded yet. Nothing was changed.", notice: "" });
+    }
+  }
+
   // BG-STUDIO-018-FE (Premium Studio only): record or change the planned publication time. Nothing is published.
   async function runSchedule(variant, payload, mode) {
     if (!campaignState.campaign || scheduleState.status === "saving") return;
@@ -647,7 +770,7 @@ export default function App() {
       const result = await beginManualPublication({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant });
       setCampaignState({ status: "ready", campaign: result.campaign, error: "" });
       setManualState({ status: "prepared", variantId: variant.variant_id, attemptId: result.attemptId, url: "", error: "" });
-    } catch (error) { setManualState((current) => ({ ...current, status: "error", error: error.message })); }
+    } catch (error) { setManualState((current) => ({ ...current, status: "error", variantId: variant.variant_id, error: error.message })); }
   }
 
   async function loadResults() {
@@ -693,21 +816,33 @@ export default function App() {
   }
 
   // BG-STUDIO-018-FE: the workspace-wide calendar, assembled from existing read endpoints (no workspace endpoint exists yet).
-  async function runWorkspaceCalendar(win) {
-    if (session.status !== "ready" || workspaceCalendarState.status === "loading") return;
+  async function runWorkspaceCalendar(win, opts = {}) {
+    if (session.status !== "ready") return;
+    const more = Boolean(opts.more) && workspaceCalendarState.status === "ready" && workspaceCalendarState.nextOffset != null;
+    if (workspaceCalendarState.status === "loading" || (more && workspaceCalendarState.loadingMore)) return;
     const scopeToken = scopeTokenRef.current;
     const current = () => scopeToken === scopeTokenRef.current;
-    setWorkspaceCalendarState({ ...WS_CAL_IDLE, status: "loading", window: win });
+    const prev = more ? workspaceCalendarState : null;
+    const window = more ? prev.window : win;
+    setWorkspaceCalendarState(more ? { ...prev, loadingMore: true } : { ...WS_CAL_IDLE, status: "loading", window });
     try {
-      const campaigns = await getCampaignList({ accessToken: session.accessToken, session });
+      const scope = { tenantId: session.tenantId, projectId: session.projectId };
+      let result;
+      if (isWorkspaceCalendarApiEnabled()) {
+        result = await fetchWorkspaceCalendarFromApi({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope, from: window.from, to: window.to, isCurrent: current });
+      } else {
+        const campaigns = await getCampaignList({ accessToken: session.accessToken, session });
+        if (!current()) return;
+        result = await fetchWorkspaceCalendar({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope, from: window.from, to: window.to, campaigns, offset: more ? prev.nextOffset : 0, isCurrent: current });
+      }
       if (!current()) return;
-      const result = await fetchWorkspaceCalendar({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId }, from: win.from, to: win.to, campaigns, isCurrent: current });
-      if (!current()) return;
-      setWorkspaceCalendarState({ ...WS_CAL_IDLE, status: "ready", window: win, ...result });
+      const merged = more ? { ...result, items: [...prev.items, ...result.items], failures: [...prev.failures, ...result.failures], campaignsRead: prev.campaignsRead + result.campaignsRead, campaignsChosen: prev.campaignsChosen + result.campaignsChosen } : result;
+      setWorkspaceCalendarState({ ...WS_CAL_IDLE, status: "ready", window, ...merged, loadingMore: false });
     } catch (error) {
       if (!current()) return;
       if (isAuthRefusal(error)) setSessionEnded(true);
-      setWorkspaceCalendarState({ ...WS_CAL_IDLE, status: "error", window: win, error: isAuthRefusal(error) ? "Your session has ended. Sign in again to continue." : "The calendar could not be loaded yet." });
+      const message = isAuthRefusal(error) ? "Your session has ended. Sign in again to continue." : (error && error.kind && error.kind !== "network" && error.message) || "The calendar could not be loaded yet.";
+      setWorkspaceCalendarState(more ? { ...prev, loadingMore: false, moreError: message } : { ...WS_CAL_IDLE, status: "error", window, error: message });
     }
   }
 
@@ -781,7 +916,7 @@ export default function App() {
             <label htmlFor="execution-mode">Execution mode</label>
             <select id="execution-mode" value={executionMode} onChange={(event) => setExecutionMode(event.target.value)}>
               <option value="ai">AI — create from Brand Brain and your brief</option>
-              <option value="hybrid" disabled>Hybrid — use your media + AI (add-media picker coming next)</option>
+              <option value="hybrid" disabled>{premiumEnabled ? "Hybrid — your media with AI is under “Create an image or video” below" : "Hybrid — use your media + AI (add-media picker coming next)"}</option>
             </select>
             <label htmlFor="execution-brief">Execution brief (optional)</label>
             <textarea id="execution-brief" maxLength={4000} value={executionBrief} onChange={(event) => setExecutionBrief(event.target.value)} placeholder="Temporary direction for this execution, e.g. focus on the founder story and keep the opening conversational." />
@@ -797,18 +932,22 @@ export default function App() {
                     {!["review", "approved"].includes(variant.workflow) && <p>{creativeAsText(variant.current_content) || (variant.workflow === "draft" ? "Draft ready to generate." : variant.workflow)}</p>}
                     {variant.workflow === "approved" && <CreativePreviewCard variant={variant} />}
                     <small>{variant.destination_label}</small>
-                    {variant.workflow === "draft" && (
+                    {variant.workflow === "draft" && (premiumEnabled ? (
+                      <GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isGenerationQuoteApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} />
+                    ) : (
                       <button className="secondary" type="button" onClick={() => runGenerateVariant(variant)} disabled={generationState.status === "loading"}>
                         {generationState.status === "loading" ? "Generating…" : "Generate draft"}
                       </button>
-                    )}
+                    ))}
+                    {premiumEnabled && ["draft", "review", "approved"].includes(variant.workflow) && <CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} quotesEnabled={isGenerationQuoteApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} readOnly={isReadOnlyRole(roleState.role)} onSessionEnded={() => setSessionEnded(true)} />}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
                     {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <ScheduleControls campaign={campaignState.campaign} variant={variant} state={scheduleState} onSchedule={runSchedule} />}
-                    {(variant.workflow === "approved" || (premiumEnabled && variant.workflow === "scheduled")) && <div>
+                    {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <ManualPublicationPanel campaign={campaignState.campaign} variant={variant} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} />}
+                    {!premiumEnabled && variant.workflow === "approved" && <div>
                       <p>Manual publication required. BizGenie will not claim this was published until you confirm it.</p>
                       <button className="secondary" type="button" onClick={() => runManualStart(variant)} disabled={manualState.status === "starting"}>{manualState.status === "starting" ? "Preparing handoff…" : "Prepare manual publication"}</button>
                     </div>}
-                    {manualState.variantId === variant.variant_id && ["prepared", "confirming"].includes(manualState.status) && <div>
+                    {!premiumEnabled && manualState.variantId === variant.variant_id && ["prepared", "confirming"].includes(manualState.status) && <div>
                       <p>Approved content is ready to copy and publish to <strong>{variant.destination_label}</strong>.</p>
                       <textarea aria-label="Approved content" readOnly value={creativeAsText(variant.current_content)} />
                       <label htmlFor={`publication-url-${variant.variant_id}`}>Public URL after publishing</label>
@@ -845,8 +984,8 @@ export default function App() {
               </article>
             ))}
           </div>
-          {generationState.status === "error" && <p className="error" role="alert">{generationState.error}</p>}
-          {manualState.status === "error" && <p className="error" role="alert">{manualState.error}</p>}
+          {!premiumEnabled && generationState.status === "error" && <p className="error" role="alert">{generationState.error}</p>}
+          {!premiumEnabled && manualState.status === "error" && <p className="error" role="alert">{manualState.error}</p>}
           <div>
             <button className="secondary" type="button" onClick={loadResults} disabled={resultsState.status === "loading"}>{resultsState.status === "loading" ? "Loading results…" : "View campaign results"}</button>
             {["ready","saving"].includes(resultsState.status) && (
@@ -1186,6 +1325,10 @@ export default function App() {
         onLoadCalendar={runCalendar}
         workspaceCalendarState={workspaceCalendarState}
         onLoadWorkspaceCalendar={runWorkspaceCalendar}
+        campaignAdmin={campaignAdmin}
+        onAdminOpen={premiumOpenCampaign}
+        onAdminRename={premiumRenameCampaign}
+        onAdminSetArchived={premiumSetArchived}
         sections={{
           auth: (
             <section className="recommendation ps-auth" aria-label="Account access">
@@ -1200,7 +1343,7 @@ export default function App() {
           recommendation: recommendationSection,
           campaign: campaignSection,
           brand: brandSection,
-          account: <BillingPanel session={session} />,
+          account: <PremiumBilling session={session} isOwner={roleState.role === "owner"} />,
         }}
       />
       </PremiumErrorBoundary>

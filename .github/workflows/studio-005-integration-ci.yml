@@ -161,3 +161,21 @@ jobs:
       - if: steps.has.outputs.run == 'true'
         env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
         run: npx playwright test --config qa/premium.playwright.config.mjs
+      - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
+        name: Build with the BG-STUDIO-019 capability gates ON (plan catalogue, billing management, quotes, customer media; all mocked in the browser)
+        env:
+          VITE_PREMIUM_STUDIO_ENABLED: 'true'
+          VITE_PLAN_CATALOGUE_API: 'true'
+          VITE_BILLING_MANAGEMENT_API: 'true'
+          VITE_GENERATION_QUOTE_API: 'true'
+          VITE_CUSTOMER_MEDIA_API: 'true'
+          VITE_SUPABASE_URL: http://supabase.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
+          VITE_BIZGENIE_API_URL: http://api.test
+        run: npx vite build --outDir dist-gates
+      - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
+        run: npx vite preview --outDir dist-gates --port 4181 --strictPort --host 127.0.0.1 &
+      - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
+        name: Premium browser checks with the capability gates ON
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
+        run: npx playwright test --config qa/premium-gates.playwright.config.mjs

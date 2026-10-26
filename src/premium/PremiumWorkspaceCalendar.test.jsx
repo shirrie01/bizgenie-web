@@ -90,11 +90,38 @@ describe("workspace calendar", () => {
     expect(onLoad).toHaveBeenCalledWith(READY.window);
   });
 
-  it("says plainly when it was cut short or a campaign could not be read, never implying full coverage", () => {
-    show({ ...READY, truncated: true, campaignsChosen: 8, campaignsTotal: 15, campaignsRead: 7, failures: [{ campaignId: "c9", campaignName: "Broken campaign", status: 500 }] });
-    expect(screen.getByText(/only the 8 most recently updated are shown/i)).toBeInTheDocument();
+  it("says plainly that more campaigns have not been read and offers the next batch; a failed campaign is named", () => {
+    const onLoad = show({ ...READY, truncated: true, campaignsChosen: 8, campaignsTotal: 15, campaignsRead: 7, nextOffset: 8, failures: [{ campaignId: "c9", campaignName: "Broken campaign", status: 500 }] });
+    expect(screen.getByText(/7 more campaigns have not been read yet/i)).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(/could not read: broken campaign/i);
+    fireEvent.click(screen.getByRole("button", { name: /load the next 7 campaigns/i }));
+    expect(onLoad).toHaveBeenCalledWith(READY.window, { more: true });
   });
+
+  it("when everything has been read there is no 'load more', and a failed extra batch keeps what is shown and says so", () => {
+    show();
+    expect(screen.queryByRole("button", { name: /load the next/i })).toBeNull();
+    cleanup();
+    show({ ...READY, truncated: true, campaignsChosen: 8, campaignsTotal: 12, nextOffset: 8, moreError: "The calendar could not be loaded yet." });
+    expect(screen.getByText(/campaigns already shown are unchanged/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem").length).toBeGreaterThan(0);
+  });
+
+  it("each item can be opened in its campaign, by name, and nothing is offered when no handler exists", () => {
+    const onOpenCampaign = vi.fn();
+    render(<PremiumWorkspaceCalendar state={READY} onLoad={vi.fn()} onOpenCampaign={onOpenCampaign} tz="UTC" now={NOW} />);
+    fireEvent.click(screen.getByRole("button", { name: /open campaign autumn offer: clash twin/i }));
+    expect(onOpenCampaign).toHaveBeenCalledWith("c2");
+    cleanup();
+    show();
+    expect(screen.queryByRole("button", { name: /open campaign/i })).toBeNull();
+  });
+
+  it("an API-sourced calendar says it covers all campaigns", () => {
+    show({ ...READY, source: "api" });
+    expect(screen.getByText(/from all your campaigns/i)).toBeInTheDocument();
+  });
+
 
   it("no campaigns: says so and offers no invented activity", () => {
     show({ ...READY, items: [], campaignsRead: 0, campaignsChosen: 0, campaignsTotal: 0 });

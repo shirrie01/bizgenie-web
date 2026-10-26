@@ -5,7 +5,7 @@ import { VIEWS, dayKey, dayLabel, dowShort, filterItems, findClashes, groupByDay
 // anything. Its data is assembled from the most recently updated campaigns (see workspaceCalendarClient.js) and says so.
 const VIEW_LABEL = { month: "Month", week: "Week", day: "Day" };
 
-function Entry({ item, tz, clash, showDay }) {
+function Entry({ item, tz, clash, showDay, onOpen }) {
   return (
     <li className={`ps-wcal-entry st-${item.workflow || "unknown"}`}>
       {item.occurrenceAt && <strong>{showDay ? `${dayLabel(dayKey(item.occurrenceAt, tz), false)}, ` : ""}{timeLabel(item.occurrenceAt, tz)}</strong>}
@@ -13,11 +13,12 @@ function Entry({ item, tz, clash, showDay }) {
       <span className="ps-wcal-meta">{item.campaignName} · {platformLabel(item)}</span>
       <span className="ps-wcal-status">{statusLabel(item.workflow)}</span>
       {clash && <span className="ps-wcal-clash">Possible clash: another scheduled item has the same destination and time.</span>}
+      {onOpen && <button type="button" className="secondary ps-wcal-open" onClick={() => onOpen(item.campaignId)} aria-label={`Open campaign ${item.campaignName}: ${item.contentName}`}>Open campaign</button>}
     </li>
   );
 }
 
-export default function PremiumWorkspaceCalendar({ state, onLoad, tz = viewerTimeZone(), now = new Date() }) {
+export default function PremiumWorkspaceCalendar({ state, onLoad, onOpenCampaign, tz = viewerTimeZone(), now = new Date() }) {
   const [view, setView] = useState("month");
   const [anchor, setAnchor] = useState(() => todayKey(now, tz));
   const [filters, setFilters] = useState({ campaignId: "", platform: "", status: "" });
@@ -40,7 +41,7 @@ export default function PremiumWorkspaceCalendar({ state, onLoad, tz = viewerTim
     return (
       <td key={key} className={`${key === today ? "is-today " : ""}${view === "month" && key.slice(0, 7) !== anchor.slice(0, 7) ? "is-outside " : ""}${list.length ? "has-items" : ""}`}>
         <span className="ps-wcal-date"><span className="ps-wcal-dow" aria-hidden="true">{dowShort(key)} </span><time dateTime={key}>{Number(key.slice(8))}</time><span className="visually-hidden"> {dayLabel(key)}{key === today ? ", today" : ""}</span></span>
-        {list.length > 0 && <ul>{list.map((item) => <Entry key={item.key} item={item} tz={tz} clash={clashes.has(item.key)} />)}</ul>}
+        {list.length > 0 && <ul>{list.map((item) => <Entry key={item.key} item={item} tz={tz} clash={clashes.has(item.key)} onOpen={onOpenCampaign} />)}</ul>}
       </td>
     );
   };
@@ -48,7 +49,7 @@ export default function PremiumWorkspaceCalendar({ state, onLoad, tz = viewerTim
   return (
     <section className="ps-wcal" aria-labelledby="ps-wcal-h">
       <h2 id="ps-wcal-h">Calendar · all campaigns</h2>
-      <p className="ps-hint">Scheduled and published activity from your most recently updated campaigns. BizGenie records schedules and what you confirm; it does not publish for you. Times are shown in {tz}.</p>
+      <p className="ps-hint">{state.source === "api" ? "Scheduled and published activity from all your campaigns." : "Scheduled and published activity from your campaigns, most recently updated first."} BizGenie records schedules and what you confirm; it does not publish for you. Times are shown in {tz}, with clock changes applied.</p>
 
       <div className="ps-wcal-bar">
         <div role="group" aria-label="Calendar view" className="ps-wcal-views">
@@ -77,8 +78,10 @@ export default function PremiumWorkspaceCalendar({ state, onLoad, tz = viewerTim
         <>
           <p className="ps-hint" role="status">
             Read {state.campaignsRead} of {state.campaignsTotal} {state.campaignsTotal === 1 ? "campaign" : "campaigns"} for {windowText(state.window, tz)}.
-            {state.truncated && ` Only the ${state.campaignsChosen} most recently updated are shown; a calendar that covers every campaign needs a backend endpoint that does not exist yet.`}
+            {state.truncated && ` ${state.campaignsTotal - state.campaignsChosen} more ${state.campaignsTotal - state.campaignsChosen === 1 ? "campaign has" : "campaigns have"} not been read yet.`}
           </p>
+          {state.nextOffset != null && <p><button type="button" className="secondary" onClick={() => onLoad(state.window, { more: true })} disabled={state.loadingMore}>{state.loadingMore ? "Loading more campaigns…" : `Load the next ${Math.min(8, state.campaignsTotal - state.campaignsChosen)} campaigns`}</button></p>}
+          {state.moreError && <p className="error" role="alert">{state.moreError} The campaigns already shown are unchanged.</p>}
           {state.failures.length > 0 && <p className="error" role="alert">Could not read: {state.failures.map((f) => f.campaignName).join(", ")}. Their activity is missing below. Press Refresh to try again.</p>}
           {state.campaignsTotal === 0 && <p>Create a campaign to see its calendar. Only activity recorded for a real campaign appears here.</p>}
 
@@ -88,7 +91,7 @@ export default function PremiumWorkspaceCalendar({ state, onLoad, tz = viewerTim
               {!covered && <p className="ps-banner"><span>This period has not been loaded, so an empty day here does not mean nothing is planned.</span> <button type="button" className="secondary" onClick={() => onLoad(windowFor(anchor))}>Load this period</button></p>}
               {covered && inView === 0 && <p>No scheduled or published activity in this {view}{shown.length < all.length ? " for these filters" : ""}.</p>}
               {view === "day" ? (
-                <ul className="ps-wcal-daylist" aria-label={dayLabel(anchor)}>{(byDay.get(anchor) || []).map((item) => <Entry key={item.key} item={item} tz={tz} clash={clashes.has(item.key)} />)}</ul>
+                <ul className="ps-wcal-daylist" aria-label={dayLabel(anchor)}>{(byDay.get(anchor) || []).map((item) => <Entry key={item.key} item={item} tz={tz} clash={clashes.has(item.key)} onOpen={onOpenCampaign} />)}</ul>
               ) : (
                 <table className={`ps-wcal-grid v-${view}`}>
                   <caption className="visually-hidden">{rangeTitle(view, anchor)}</caption>
@@ -100,7 +103,7 @@ export default function PremiumWorkspaceCalendar({ state, onLoad, tz = viewerTim
                 <summary>Not yet scheduled ({notScheduled.length})</summary>
                 {notScheduled.length === 0 ? <p>Everything you have is scheduled or published.</p> : (
                   <><p className="ps-hint">Drafts, items in review and approved items without a schedule. They have no date, so they are not placed on a day.</p>
-                    <ul>{notScheduled.map((item) => <Entry key={item.key} item={item} tz={tz} clash={false} />)}</ul></>
+                    <ul>{notScheduled.map((item) => <Entry key={item.key} item={item} tz={tz} clash={false} onOpen={onOpenCampaign} />)}</ul></>
                 )}
               </details>
             </>
