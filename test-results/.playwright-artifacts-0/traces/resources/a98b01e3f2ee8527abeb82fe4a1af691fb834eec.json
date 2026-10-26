@@ -1,1 +1,0 @@
-{"tenant_id":"t","project_id":"p","expected_campaign_version":3,"revision_id":"rev-1","render_receipt_id":"receipt-1","acknowledged":true,"idempotency_key":"op:preview-acknowledgement:a124624339754b2ba5a2b49d75ea7b639c026f9e175f03a523aa0b63049a1785"}

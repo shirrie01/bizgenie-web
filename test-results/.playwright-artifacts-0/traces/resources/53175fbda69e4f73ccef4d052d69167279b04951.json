@@ -1,1 +1,0 @@
-{"tenant_id":"t1","project_id":"pa","expected_campaign_version":6,"revision_id":"rev-1","scheduled_for":"2026-10-29T10:00:00.000Z","timezone":"Europe/London","local_datetime":"2026-10-29T10:00:00.000","utc_offset_minutes":0,"idempotency_key":"op:schedule-2026-10-29T10:00:00.000Z:2a7a7ebcf8ee80559c55d4da160e0a9776404b84660272a16cf2a0325adb6742"}
