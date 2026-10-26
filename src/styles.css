@@ -300,7 +300,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-manual fieldset { border: 1px solid #d5dbd6; border-radius: 10px; padding: 8px 12px; min-width: 0; }
 
 /* Plan catalogue and subscription management (BG-STUDIO-019-FE) */
-.ps-billing { display: grid; gap: 20px; }
+.ps-billing { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.ps-billing > * { min-width: 0; }
 .ps-plans-scroll { overflow-x: auto; max-width: 100%; }
 .ps-plans-table { border-collapse: collapse; width: 100%; min-width: 560px; }
 .ps-plans-table th, .ps-plans-table td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--ps-line, #d9d4cc); overflow-wrap: anywhere; }
@@ -318,3 +319,4 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-creative-output { margin: 0; max-width: 100%; }
 .ps-creative-output img, .ps-creative-output video { max-width: 100%; height: auto; border-radius: 8px; }
 .ps-creative input[type="file"] { max-width: 100%; }
+.ps-tag { display: inline-block; background: #e6eee8; color: #14261b; border: 1px solid #9db3a4; padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: .85rem; }

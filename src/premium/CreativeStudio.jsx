@@ -89,7 +89,7 @@ export default function CreativeStudio({ enabled, quotesEnabled, session, scope,
       {caps.status === "error" && <div><p className="error" role="alert">{caps.error}</p><button type="button" className="secondary" onClick={() => setCaps({ status: "idle", value: null, error: "" })}>Try again</button></div>}
       {c && c.kinds.length === 0 && <p>No image or video options are available for this workspace yet.</p>}
       {c && c.kinds.length > 0 && !job.id && !readOnly && (
-        <form className="ps-creative-form" onSubmit={(e) => e.preventDefault()} aria-label="Creative brief">
+        <form className="ps-creative-form" onSubmit={(e) => e.preventDefault()} aria-label="New creative">
           <fieldset><legend>What to create</legend>
             {c.kinds.map((k) => <label key={k} className="ps-radio"><input type="radio" name={`kind-${variant.variant_id}`} checked={brief.kind === k} onChange={() => set({ kind: k, assetIds: k === "hybrid" ? brief.assetIds : [] })} /> {KIND_LABEL[k]}</label>)}
             {!c.kinds.includes("hybrid") && <p className="ps-hint">Hybrid (your own media with AI) is not offered for this workspace yet.</p>}
@@ -137,7 +137,7 @@ export default function CreativeStudio({ enabled, quotesEnabled, session, scope,
               {d.outputs.map((o) => (
                 <figure key={o.id} className="ps-creative-output">
                   {o.kind === "image" ? <img src={o.url} alt={`${KIND_LABEL[d.kind]} created for this post`} width={o.width || undefined} height={o.height || undefined} loading="lazy" /> : <video src={o.url} controls preload="metadata" aria-label="Video created for this post" />}
-                  <figcaption><span className="ps-chip">{PROVENANCE_LABEL[o.origin]}</span>{o.suppliedAssetIds.length > 0 && ` Uses ${o.suppliedAssetIds.length} of your file${o.suppliedAssetIds.length === 1 ? "" : "s"}.`}</figcaption>
+                  <figcaption><span className="ps-tag">{PROVENANCE_LABEL[o.origin]}</span>{o.suppliedAssetIds.length > 0 && ` Uses ${o.suppliedAssetIds.length} of your file${o.suppliedAssetIds.length === 1 ? "" : "s"}.`}</figcaption>
                 </figure>
               ))}
               <p className="ps-hint">{creditsLine} The preview above is what BizGenie created. Check it carefully before approving.</p>

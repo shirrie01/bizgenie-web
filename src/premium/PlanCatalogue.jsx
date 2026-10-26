@@ -20,7 +20,7 @@ export default function PlanCatalogue({ catalogue, canChoose = false, onChoose, 
       <div className="ps-plans-scroll" role="region" aria-label="Compare plans" tabIndex={0}>
         <table className="ps-plans-table">
           <caption className="visually-hidden">Compare plans</caption>
-          <thead><tr><td />{plans.map((p) => <th key={p.planCode} scope="col">{p.name}{p.current && <span className="ps-chip"> Your current plan</span>}</th>)}</tr></thead>
+          <thead><tr><td />{plans.map((p) => <th key={p.planCode} scope="col">{p.name}{p.current && <span className="ps-tag"> Your current plan</span>}</th>)}</tr></thead>
           <tbody>
             <tr><th scope="row">Price</th>{plans.map((p) => <td key={p.planCode}><strong>{formatMoney(p.priceMinor, p.currency)}</strong> {per[p.interval]}</td>)}</tr>
             <tr><th scope="row">Included credits</th>{plans.map((p) => <td key={p.planCode}>{credits(p.includedCredits)} each {p.interval}</td>)}</tr>
