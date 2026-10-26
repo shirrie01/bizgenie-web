@@ -320,3 +320,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-creative-output img, .ps-creative-output video { max-width: 100%; height: auto; border-radius: 8px; }
 .ps-creative input[type="file"] { max-width: 100%; }
 .ps-tag { display: inline-block; background: #e6eee8; color: #14261b; border: 1px solid #9db3a4; padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: .85rem; }
+.ps-radio { min-height: 24px; align-items: center; }
+.ps-radio input[type="radio"], .ps-radio input[type="checkbox"] { width: 24px; height: 24px; min-width: 24px; margin: 0; flex: none; }
+.ps-creative-form { grid-template-columns: minmax(0, 1fr); }
+.ps-creative-form > * { min-width: 0; }
+.ps-creative-form input:not([type="radio"]):not([type="checkbox"]):not([type="file"]), .ps-creative-form select, .ps-creative-form textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
