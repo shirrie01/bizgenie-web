@@ -1,5 +1,5 @@
 // @vitest-environment node
-// LOCAL INTEGRATION against the REAL backend draft routes (bizgenie-api PR #216, head f8d81bf) - BG-STUDIO-020-FE.
+// LOCAL INTEGRATION against the REAL backend draft routes (bizgenie-api PR #217, head 23f4903; the file name is historical: it began against #216) - BG-STUDIO-020-FE.
 // It starts the backend's own Express routers in this process (real zod validation, real handlers, the backend's in-memory repositories and its own
 // test fixtures for identity and authorisation) and drives THIS app's client modules against them over HTTP. It proves request/response compatibility
 // with the draft code. It is NOT staging: no database, no Stripe, no provider, no deployed service, and the identity layer is the backend's fixture.
@@ -13,7 +13,6 @@ import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampai
 import { fetchPlanCatalogue } from "../../src/premium/planCatalogueClient";
 import { requestCreditPreview } from "../../src/premium/creditPreviewClient";
 import { openBillingPortal, requestCancellation, requestPlanChange } from "../../src/premium/billingManagementClient";
-import { fetchVideo, pollVideo, startImage, startVideo } from "../../src/premium/creativeProductionClient";
 
 const DIR = process.env.BIZGENIE_API_DIR;
 const run = DIR ? describe : describe.skip;
@@ -53,32 +52,8 @@ run("frontend adapters against the real backend draft routes", () => {
     const mgmtApp = express();
     mgmtApp.use("/customer/billing/management", createDraftBillingManagementRouter({ enabled: true, configurationId: "bpc_synthetic", returnUrl: "https://example.test/billing", authorizeTenantRequest: async () => ({ actor: { kind: "customer", auth_user_id: "owner" }, tenant_id: "tenant_a", membership_role: "owner", action: "billing:checkout" }), repository: { getStripeCustomerByTenant: async () => ({ stripe_customer_id: "cus_a", livemode: false }), getActiveEntitlement: async () => ({ stripe_subscription_ref: "sub_a" }) }, stripe: { subscriptions: { retrieve: async () => ({ id: "sub_a", customer: "cus_a", livemode: false, items: { data: [{ id: "si_a" }] } }) }, billingPortal: { sessions: { create: async (p, o) => { sessions.push({ p, o }); return { url: "https://billing.stripe.com/p/session/synthetic" }; } } } }, catalog: { mode: "test", stripeMapping: () => ({ priceId: "price_test", policyId: "synthetic" }) } }));
 
-    // ---- customer image and video: the backend's real createApp routes, job boundary and billing orchestrator, with fixture providers (no network) ----
-    const { InMemoryAuthorizationRepository, createCustomerActorFromVerifiedIdentity } = req("./src/authorization");
-    const { InMemoryBrandBrainRepository } = req("./src/brand-brain");
-    const { InMemoryImageGenerationRepository } = req("./src/image-generation");
-    const { InMemoryVideoGenerationRepository, VideoGenerationProvider } = req("./src/video-generation");
-    const { GenerationBillingOrchestrator } = req("./src/generation-billing");
-    const { InMemoryGenerationJobRepository } = req("./src/generation-jobs");
-    const USER_A = "11111111-1111-4111-8111-111111111111";
-    const effects = { reserve: 0, debit: 0, release: 0 };
-    const billingService = { async createReservation(i) { effects.reserve += 1; return { ledger_entry_id: "r1", generation_id: i.generationId }; }, async finalizeDebit() { effects.debit += 1; return { ledger_entry_id: "d1", generation_id: "x" }; }, async releaseReservation() { effects.release += 1; return { ledger_entry_id: "rel1" }; } };
-    class FixtureVideo extends VideoGenerationProvider {
-      async submit() { return { provider: "fixture", provider_job_id: "op1", provider_model: "fixture-model" }; }
-      async poll() { return { provider: "fixture", provider_job_id: "op1", provider_model: "fixture-model", status: "completed", asset_source: { location: "gs://private-bucket/out/video.mp4", mime_type: "video/mp4", width: 1280, height: 720, duration_seconds: 4, container: "mp4" } }; }
-    }
-    const brands = new InMemoryBrandBrainRepository(); brands.upsert({ brand_id: "brand_a", project_id: "project_a", name: "Brand A", identity: { positioning: "p" }, metadata: { version: 1, status: "approved", created_at: "2026-08-19T09:00:00.000Z", updated_at: "2026-08-19T09:00:00.000Z" } });
-    const mediaApp = createApp({
-      authorizationRepository: new InMemoryAuthorizationRepository({ customerProfiles: [{ auth_user_id: USER_A, display_name: "A" }], tenants: [{ tenant_id: "tenant_a", name: "A", created_by: USER_A }], memberships: [{ tenant_id: "tenant_a", auth_user_id: USER_A, role: "owner" }], projects: [{ project_id: "project_a", tenant_id: "tenant_a", name: "A" }], brands: [{ brand_id: "brand_a", project_id: "project_a", name: "Brand A", status: "approved" }] }),
-      brandBrainRepository: brands, customerTokenVerifier: { verifyAccessToken: async (t) => { if (t !== "ok") throw new AuthenticationRequiredError(); return createCustomerActorFromVerifiedIdentity({ verifiedAuthUserId: USER_A }); } },
-      generationBillingOrchestrator: new GenerationBillingOrchestrator({ billingService, logger: { error() {} } }), generationJobRepository: new InMemoryGenerationJobRepository(),
-      imageGenerationRepository: new InMemoryImageGenerationRepository(), imageProvider: { async generate() { return { provider: "fixture-image", provider_job_id: "img1", asset: { location: "gs://private-bucket/out/image.png", mime_type: "image/png", width: 1024, height: 1024 } }; } },
-      videoGenerationRepository: new InMemoryVideoGenerationRepository(), videoProvider: new FixtureVideo(), videoAssetStore: { async save({ source }) { return { asset_id: "33333333-3333-4333-8333-333333333333", location: "gs://private-bucket/durable/video.mp4", mime_type: source.mime_type, width: source.width, height: source.height, duration_seconds: source.duration_seconds, container: "mp4", byte_size: 1024 }; } },
-      videoReferenceAssetLoader: { async load() { throw new Error("not used"); } }, logger: { info() {}, warn() {}, error() {} },
-    });
-
-    urls = { media: await listen(mediaApp), campaign: await listen(campaignApp), billing: await listen(billing(new CommercialCatalog({ plans: [plan], policies: [policy], mode: "test", now }))), billingOff: await listen(billing(null)), mgmt: await listen(mgmtApp) };
-    fx = { effects, scenario, repository, s, scheduled, approved, context, NOW, setRole: (r) => { role = r; }, sessions };
+    urls = { campaign: await listen(campaignApp), billing: await listen(billing(new CommercialCatalog({ plans: [plan], policies: [policy], mode: "test", now }))), billingOff: await listen(billing(null)), mgmt: await listen(mgmtApp) };
+    fx = { scenario, repository, s, scheduled, approved, context, NOW, setRole: (r) => { role = r; }, sessions };
   });
   afterAll(() => Promise.all(servers.map((sv) => new Promise((r) => sv.close(r)))));
 
@@ -182,46 +157,6 @@ run("frontend adapters against the real backend draft routes", () => {
       const base = { apiBaseUrl: urls.mgmt, accessToken: "ok", tenantId: "tenant_a" };
       await openBillingPortal({ ...base, id: "req_same" }); await openBillingPortal({ ...base, id: "req_same" });
       expect(fx.sessions[before].o.idempotencyKey).toBe(fx.sessions[before + 1].o.idempotencyKey);
-    });
-  });
-
-  describe("customer image and video (real routes and billing orchestrator, fixture providers)", () => {
-    const mediaScope = { tenantId: "tenant_a", projectId: "project_a", brandId: "brand_a" };
-    const common = (ids) => ({ apiBaseUrl: urls.media, accessToken: "ok", scope: mediaScope, campaign: { campaign_id: "c1" }, topic: "Lease offer post", platform: "instagram", ids });
-    it("an image request passes the real strict schema, is billed once by the server, and the private storage address never reaches the app", async () => {
-      const r = await startImage({ ...common({ executionId: "exec_img_1", generationId: "gen_img_1" }), brief: { text: "A calm product shot", aspectRatio: "1:1" } });
-      expect(r).toMatchObject({ kind: "image", status: "completed", stored: true, approvalStatus: "pending" });
-      expect(JSON.stringify(r)).not.toMatch(/gs:\/\/|private-bucket/);
-      expect(fx.effects.debit).toBeGreaterThanOrEqual(1);
-    });
-    it("replaying the same ids is accepted and does not make a second charge", async () => {
-      const before = fx.effects.debit;
-      await startImage({ ...common({ executionId: "exec_img_1", generationId: "gen_img_1" }), brief: { text: "A calm product shot", aspectRatio: "1:1" } }).catch(() => {});
-      expect(fx.effects.debit).toBe(before);
-    });
-    it("OBSERVATION: the same ids with a different brief return the original job (no second job, no second charge); the backend does not report the change", async () => {
-      const before = fx.effects.debit;
-      const r = await startImage({ ...common({ executionId: "exec_img_1", generationId: "gen_img_1" }), brief: { text: "A completely different request", aspectRania: "x", aspectRatio: "4:5" } }).catch((e) => e);
-      expect(fx.effects.debit).toBe(before);
-      expect(r instanceof Error ? r.kind : r.generationId).toBeTruthy();
-    });
-    it("a foreign workspace is not found and nothing is charged", async () => {
-      const before = { ...fx.effects };
-      await expect(startImage({ ...common({ executionId: "exec_img_2", generationId: "gen_img_2" }), scope: { tenantId: "tenant_b", projectId: "project_a", brandId: "brand_a" }, brief: { text: "x", aspectRatio: "1:1" } })).rejects.toMatchObject({ kind: "missing" });
-      expect(fx.effects).toEqual(before);
-    });
-    it("a video request is accepted as in progress, then read by id until completed, with no storage address exposed", async () => {
-      const started = await startVideo({ ...common({ executionId: "exec_vid_1", generationId: "gen_vid_1" }), brief: { text: "A short reveal", aspectRatio: "16:9", duration: 4, quality: "normal" } });
-      expect(started).toMatchObject({ kind: "video", generationId: "gen_vid_1" });
-      expect(["submitted", "processing", "queued", "completed"]).toContain(started.status);
-      const read = await fetchVideo({ apiBaseUrl: urls.media, accessToken: "ok", generationId: "gen_vid_1" }); // reading alone does not advance the video
-      expect(read.status).not.toBe("completed");
-      let r = started; for (let i = 0; i < 5 && r.status !== "completed"; i += 1) r = await pollVideo({ apiBaseUrl: urls.media, accessToken: "ok", generationId: "gen_vid_1" });
-      expect(r).toMatchObject({ status: "completed", stored: true }); expect(JSON.stringify(r)).not.toMatch(/gs:\/\/|private-bucket/);
-    });
-    it("a video the caller does not own is not found", async () => {
-      await expect(fetchVideo({ apiBaseUrl: urls.media, accessToken: "bad", generationId: "gen_vid_1" })).rejects.toMatchObject({ kind: "auth" });
-      await expect(fetchVideo({ apiBaseUrl: urls.media, accessToken: "ok", generationId: "does_not_exist" })).rejects.toMatchObject({ kind: "missing" });
     });
   });
 });

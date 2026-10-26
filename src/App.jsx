@@ -17,14 +17,15 @@ import { isAnalyticsApiEnabled } from "./premium/insightsClient";
 import { isCustomerMediaApiEnabled } from "./premium/creativeProductionClient";
 import { isCreditPreviewApiEnabled } from "./premium/creditPreviewClient";
 import { requestCostCheck } from "./premium/costCheck";
-import { describeGenerateRefusal, isGenerationQuoteApiEnabled, quoteFields } from "./premium/generationQuoteClient";
+import { describeGenerateRefusal } from "./premium/generationQuoteClient";
 import { activeSchedule } from "./premium/scheduleModel";
 import { forget, recall, remember } from "./premium/rememberedFacts";
-import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived, unscheduleVariant } from "./premium/campaignManagementClient";
+import { addContentItem, fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived, unscheduleVariant } from "./premium/campaignManagementClient";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import { operationKey } from "./operationKey";
 function Lazy({ children }) { return <Suspense fallback={<span className="visually-hidden" role="status">Loading…</span>}>{children}</Suspense>; }
+const AddCreativeItem = lazy(() => import("./premium/AddCreativeItem"));
 const PremiumConnections = lazy(() => import("./premium/PremiumConnections"));
 const PremiumInsights = lazy(() => import("./premium/PremiumInsights"));
 const PremiumStudio = lazy(() => import("./premium/PremiumStudio"));
@@ -197,7 +198,7 @@ async function createCampaignFromRecommendation({ accessToken, session, recommen
   return created.campaign;
 }
 
-async function generateCampaignVariant({ accessToken, session, campaign, variant, executionMode = "ai", executionBrief = "", quote = null, rich = false }) {
+async function generateCampaignVariant({ accessToken, session, campaign, variant, executionMode = "ai", executionBrief = "", rich = false }) {
   if (session.status !== "ready" || !campaign?.campaign_id || !variant?.variant_id || variant.workflow !== "draft") {
     throw new Error("This draft is not ready to generate yet.");
   }
@@ -213,7 +214,6 @@ async function generateCampaignVariant({ accessToken, session, campaign, variant
       idempotency_key: `campaign:${campaign.campaign_id}:variant:${variant.variant_id}:version:${campaignVersion}:generate`,
       execution_mode: executionMode,
       ...(executionBrief.trim() ? { execution_brief: executionBrief.trim() } : {}),
-      ...quoteFields(quote),
     }),
   });
   if (!response.ok) {
@@ -607,7 +607,7 @@ export default function App() {
     const scopeToken = scopeTokenRef.current;
     setGenerationState({ status: "loading", error: "" });
     try {
-      const campaign = await generateCampaignVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, executionMode, executionBrief, quote, rich: true });
+      const campaign = await generateCampaignVariant({ accessToken: session.accessToken, session, campaign: campaignState.campaign, variant, executionMode, executionBrief, rich: true });
       if (scopeToken !== scopeTokenRef.current) return { ok: false, kind: "error", text: "Your workspace changed. Nothing is shown as generated here." };
       setCampaignState({ status: "ready", campaign, error: "" });
       setGenerationState({ status: "ready", error: "" });
@@ -710,6 +710,28 @@ export default function App() {
     const result = await adminRun(id, "open", async (detail) => detail, (c) => `Opened ${c.name}.`);
     if (result.ok) { setCampaignState({ status: "ready", campaign: result.campaign, error: "" }); resetCampaignViews(); }
     return result;
+  }
+  // Add an image or video item, and re-read the campaign after a creative job finishes (the server, not this screen, says what the campaign now holds).
+  const [addItemState, setAddItemState] = useState({ status: "idle", error: "", notice: "" });
+  async function premiumAddItem(fields) {
+    if (!campaignState.campaign || addItemState.status === "working") return { ok: false };
+    const scopeToken = scopeTokenRef.current; setAddItemState({ status: "working", error: "", notice: "" });
+    try {
+      const detail = await fetchCampaignDetail({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaignId: campaignState.campaign.campaign_id });
+      const updated = await addContentItem({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaign: detail, name: fields.name, format: fields.format, platform: fields.platform, placement: fields.placement, destinationLabel: fields.destinationLabel });
+      if (scopeToken !== scopeTokenRef.current) return { ok: false };
+      setCampaignState({ status: "ready", campaign: updated, error: "" }); setCalendarState({ status: "idle", entries: [], error: "" }); setWorkspaceCalendarState(WS_CAL_IDLE);
+      setAddItemState({ status: "done", error: "", notice: `Added ${fields.name.trim()}. Get a price below when you are ready.` }); return { ok: true };
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return { ok: false };
+      if (error.kind === "auth") setSessionEnded(true);
+      setAddItemState({ status: "error", error: error.message || "That could not be added yet. Nothing was changed.", notice: "" }); return { ok: false };
+    }
+  }
+  async function premiumReloadCampaign() {
+    if (!campaignState.campaign) return; const scopeToken = scopeTokenRef.current;
+    try { const latest = await fetchCampaignDetail({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaignId: campaignState.campaign.campaign_id }); if (scopeToken === scopeTokenRef.current) setCampaignState({ status: "ready", campaign: latest, error: "" }); }
+    catch (error) { if (error.kind === "auth") setSessionEnded(true); }
   }
   async function premiumRenameCampaign(id, name) {
     const result = await adminRun(id, "rename", (detail) => renameCampaign({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaign: detail, name }), (c) => `Renamed to ${c.name}.`);
@@ -956,6 +978,7 @@ export default function App() {
             <textarea id="execution-brief" maxLength={4000} value={executionBrief} onChange={(event) => setExecutionBrief(event.target.value)} placeholder="Temporary direction for this execution, e.g. focus on the founder story and keep the opening conversational." />
             <small>This brief applies only to this generation. It does not change your approved Brand Brain.</small>
           </div>
+          {premiumEnabled && !isReadOnlyRole(roleState.role) && <Lazy><AddCreativeItem busy={addItemState.status === "working"} error={addItemState.error} notice={addItemState.notice} onAdd={premiumAddItem} /></Lazy>}
           <div className="item-grid">
             {campaignState.campaign.items.map((item) => (
               <article className={item.variants.some((v) => v.workflow === "review") ? "item item-review" : "item"} key={item.content_item_id}>
@@ -967,13 +990,16 @@ export default function App() {
                     {variant.workflow === "approved" && <CreativePreviewCard variant={variant} />}
                     <small>{variant.destination_label}</small>
                     {variant.workflow === "draft" && (premiumEnabled ? (
-                      <Lazy><GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isGenerationQuoteApiEnabled() || isCreditPreviewApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} /></Lazy>
+                      item.format === "text" ? (
+                        <Lazy><GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isCreditPreviewApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} /></Lazy>
+                      ) : (
+                        <Lazy><CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} format={item.format} readOnly={isReadOnlyRole(roleState.role)} attached={Boolean(variant.current_content && Array.isArray(variant.current_content.asset_refs) && variant.current_content.asset_refs.length)} onSessionEnded={() => setSessionEnded(true)} onFinished={premiumReloadCampaign} /></Lazy>
+                      )
                     ) : (
                       <button className="secondary" type="button" onClick={() => runGenerateVariant(variant)} disabled={generationState.status === "loading"}>
                         {generationState.status === "loading" ? "Generating…" : "Generate draft"}
                       </button>
                     ))}
-                    {premiumEnabled && ["draft", "review", "approved"].includes(variant.workflow) && <Lazy><CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} topic={item.name} contentItemId={item.content_item_id} readOnly={isReadOnlyRole(roleState.role)} onSessionEnded={() => setSessionEnded(true)} /></Lazy>}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
                     {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <Lazy><ScheduleControls campaign={campaignState.campaign} variant={variant} schedule={scheduleFor(variant)} state={scheduleState} onSchedule={runSchedule} /></Lazy>}
                     {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <Lazy><ManualPublicationPanel campaign={campaignState.campaign} variant={variant} pendingAttemptId={pendingAttemptFor(variant)} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} /></Lazy>}
