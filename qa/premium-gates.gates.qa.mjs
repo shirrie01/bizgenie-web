@@ -53,8 +53,6 @@ async function open(page, { role = 'owner', subscription = { status: 'not_subscr
     if (p === '/customer/calendar') { log.calendarReqs.push(Object.fromEntries(u.searchParams)); const first = u.searchParams.get('from') === log.calendarReqs[0].from; return json(route, { contract_version: 'workspace-calendar.v1', window: { from: u.searchParams.get('from'), to: u.searchParams.get('to') }, display_timezone: 'UTC', entries: first ? [{ campaign_id: CID, campaign_name: log.name, content_item_id: 'i1', content_item_name: 'Lease offer post', format: 'text', variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow: 'scheduled', occurrence_at: new Date(Date.now() + 2 * 86400000).toISOString(), occurrence_kind: 'scheduled', schedule_id: 'sch1', publication_id: null }] : [], unscheduled: first ? [{ campaign_id: CID, campaign_name: log.name, content_item_id: 'i2', content_item_name: 'Undated post', format: 'text', variant_id: 'v2', platform: 'email', placement: 'feed', destination_label: 'Email', workflow: 'draft', occurrence_at: null, occurrence_kind: 'unscheduled', schedule_id: null, publication_id: null }] : [], next_cursor: null }); }
     if (p === '/customer/social-accounts') return json(route, { contract_version: 'social-accounts.v1', accounts: [{ account_id: 'a1', provider: 'instagram', display_name: 'Test Account', status: 'connected', scopes_granted: ['publish'], connected_at: '2026-10-01T00:00:00Z', token_expires_at: '2026-12-01T00:00:00Z', last_verified_at: null }] });
     if (p === '/customer/publishing-queue') return json(route, { contract_version: 'publishing-queue.v1', items: [{ publication_id: 'pub1', campaign_id: CID, variant_id: 'v1', account_id: 'a1', scheduled_for: '2026-11-01T10:00:00Z', status: 'failed', attempts: 2, last_error_code: 'TOKEN_EXPIRED', platform_post_url: null, verified_by: null }], next_cursor: null });
-    if (p === `/customer/campaigns/${CID}/results`) return json(route, { contract_version: 'campaign-results.v1', metrics: [{ metric: 'clicks', value: 12, unit: 'count', observed_at: '2026-10-20T00:00:00Z', source: 'customer_entered', method: null, fresh_as_of: '2026-10-21T00:00:00Z' }] });
-    if (p === '/customer/learning/insights') return json(route, { contract_version: 'learning-insights.v1', insights: [{ insight_id: 'i1', statement: 'TEST suggestion: shorter posts got more clicks.', confidence: 'low', status: 'proposed', generated_by: 'ai', created_at: '2026-10-22T00:00:00Z', evidence: [{ source: 'customer_entered', metric: 'clicks', period_from: '2026-10-01T00:00:00Z', period_to: '2026-10-20T00:00:00Z', sample_size: 3 }] }] });
     if (p === `/customer/campaigns/${CID}/content-items` && m === 'POST') { const b = log.bodies[key]; log.version += 1; log.extraItems.push({ content_item_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', name: b.name, format: b.format, variants: [{ variant_id: VID, platform: b.platform, placement: b.placement, destination_label: b.destination_label, workflow: 'draft', current_revision_id: 'rev-img', current_content: { title: null, body: '', caption: null, alt_text: null, asset_refs: [] } }] }); return json(route, { result: { campaign_id: CID, campaign_version: log.version }, campaign: campaign('draft') }, 201); }
     if (p === '/customer/generation-quotes' && m === 'POST') { const b = log.bodies[key]; log.quoteRequests = (log.quoteRequests || 0) + 1; log.quoteState = { state: 'quoted' }; return json(route, { contract_version: 'generation-quote.v1', quote_id: QID, execution_class: b.execution_class, credits: 3, kind: 'fixed', max_credits: 3, available_credits: 40, sufficient: true, expires_at: new Date(Date.now() + 120000).toISOString(), policy_version: 'pol:1', state: 'quoted' }, 201); }
     if (p === `/customer/generation-quotes/${QID}/confirm`) { log.quoteState = { state: 'confirmed', polls: 0 }; return json(route, { status: 'queued', job_id: 'quoted:job1', quote_id: QID, reserved_credits: 3, replay: false }, 202); }
@@ -115,11 +113,13 @@ test('manage: cancelling goes to a Stripe-hosted page, with the rules shown firs
   expect(log.errors).toEqual([]);
 });
 
-test('manage: payment details and invoices open the Stripe portal; there is no invoice list of our own', async ({ page }) => {
-  await open(page, { subscription: { status: 'ready', subscription: { plan_code: 'standard', entitlement_status: 'active' }, available_credits: 9 } });
+test('manage: payment details open the Stripe portal; the owner can also ask for the invoice list, which is Stripe-sourced and never shown unasked', async ({ page }) => {
+  const log = await open(page, { subscription: { status: 'ready', subscription: { plan_code: 'standard', entitlement_status: 'active' }, available_credits: 9 } });
   await page.goto('/'); await welcome(page);
   await nav(page).getByRole('button', { name: 'Plan and billing', exact: true }).click();
-  await expect(page.getByRole('button', { name: /show invoices/i })).toHaveCount(0);
+  // The invoice list (billing-invoices.v1 draft) is an owner action behind a button: nothing is fetched or shown until it is pressed.
+  await expect(page.getByRole('button', { name: /show invoices/i })).toBeVisible();
+  expect(log.calls.some((c) => c.includes('/customer/billing/invoices'))).toBe(false);
   await page.getByRole('button', { name: 'Payment details, invoices and receipts' }).click();
   await expect(page).toHaveURL(/billing\.stripe\.com/);
 });
@@ -228,15 +228,71 @@ test('accounts and publishing: only what the server reports; a failed publicatio
   expect(log.errors).toEqual([]);
 });
 
-test('results and insights: every number carries its origin; a suggestion is labelled AI, shows evidence, and changes nothing by itself', async ({ page }) => {
+test('results and insights: with the gate on but no backend route, nothing is invented and entered results are not presented as measured', async ({ page }) => {
   const log = await open(page);
   await page.goto('/'); await welcome(page);
   await nav(page).getByRole('button', { name: 'Results and insights', exact: true }).click();
-  await expect(page.getByRole('table')).toContainText('Entered by you');
-  await expect(page.getByText('TEST suggestion: shorter posts got more clicks.')).toBeVisible();
-  await expect(page.getByText('AI suggestion').first()).toBeVisible();
-  await page.getByText(/Evidence \(1\)/).click();
-  await expect(page.getByText(/Clicks, entered by you/)).toBeVisible();
+  await expect(page.getByText(/Platform results are not connected yet/)).toBeVisible();
+  await expect(page.getByRole('table')).toHaveCount(0);
+  await expect(page.locator('main')).not.toContainText('Measured by the platform</');
   await checks(page, 'insights');
+  expect(log.errors).toEqual([]);
+});
+
+test('growth centre: one operating view with objective, performance, pipeline, experiments and actions; no invented figures', async ({ page }) => {
+  const log = await open(page);
+  await page.goto('/'); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Growth centre', exact: true }).click();
+  for (const h of [/1\. Your objective/, /2\. Current performance/, /3\. Content pipeline/, /4\. Experiments/, /5\. Recommended next actions/]) await expect(page.getByRole('heading', { name: h })).toBeVisible();
+  await expect(page.getByText(/BizGenie shows no performance figures it has not received|No platform results are available yet/).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Northgate spring leasing' })).toBeVisible();
+  await checks(page, 'growth-overview');
+  expect(log.errors).toEqual([]);
+});
+
+test('growth centre: strategy reads the goal, an experiment is planned (device only), product details need the owner to approve, and reference ideas drop brand names', async ({ page }) => {
+  const log = await open(page);
+  await page.goto('/'); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Growth centre', exact: true }).click();
+  const tabs = page.getByRole('group', { name: 'Growth sections' });
+  await tabs.getByRole('button', { name: 'Strategy', exact: true }).click();
+  await page.getByLabel('Objective').selectOption('leads');
+  await expect(page.getByText('BizGenie does not forecast results.')).toBeVisible();
+  await checks(page, 'growth-strategy');
+  await tabs.getByRole('button', { name: 'Experiments', exact: true }).click();
+  await page.getByLabel(/What do you expect/).fill('A question hook will get more clicks than a statement');
+  await page.getByLabel(/Variant A/).fill('Tired of slow quotes?'); await page.getByLabel(/Variant B/).fill('Quotes in a day.');
+  await page.getByRole('button', { name: 'Add experiment' }).click();
+  await expect(page.getByText('Experiment planned').first()).toBeVisible();
+  await expect(page.getByText(/Saved on this device only/).first()).toBeVisible();
+  await checks(page, 'growth-experiments');
+  await tabs.getByRole('button', { name: 'Product details', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Read my website' })).toBeDisabled();
+  await page.getByLabel('What you sell and what you are offering').fill('Free fitting'); await page.getByLabel('Website address').click();
+  await page.getByRole('button', { name: 'Approve' }).click(); await expect(page.getByText('Approved by you')).toBeVisible();
+  await checks(page, 'growth-product');
+  await tabs.getByRole('button', { name: 'Creative ideas', exact: true }).click();
+  await page.getByLabel('Describe the style or idea').fill('A quick question then a demonstration, in the style of Acme Fizz');
+  await page.getByRole('checkbox').check(); await page.getByRole('button', { name: 'Create original directions' }).click();
+  await expect(page.getByText(/BizGenie has not seen the ad itself/)).toBeVisible();
+  await expect(page.getByLabel(/Brief for Direction A/)).not.toHaveValue(/Acme Fizz/);
+  await checks(page, 'growth-ideas');
+  // none of this touched the backend: it is all device-only
+  expect(log.calls.filter((c) => /experiment|product-context|reference/i.test(c))).toEqual([]);
+  expect(log.errors).toEqual([]);
+});
+
+test('growth centre: a member can read but cannot plan, approve or generate ideas', async ({ page }) => {
+  const log = await open(page, { role: 'member' });
+  await page.goto('/'); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Growth centre', exact: true }).click();
+  const tabs = page.getByRole('group', { name: 'Growth sections' });
+  await tabs.getByRole('button', { name: 'Experiments', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Add experiment' })).toHaveCount(0);
+  await tabs.getByRole('button', { name: 'Product details', exact: true }).click();
+  await expect(page.getByLabel('Website address')).toBeDisabled();
+  await tabs.getByRole('button', { name: 'Creative ideas', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Create original directions' })).toBeDisabled();
+  await checks(page, 'growth-member');
   expect(log.errors).toEqual([]);
 });

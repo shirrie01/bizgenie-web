@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import PremiumConnections from "./PremiumConnections";
 import PremiumInsights from "./PremiumInsights";
 import { normaliseAccounts, normaliseQueue, SocialError } from "./socialClient";
-import { normaliseInsights, normaliseResults } from "./insightsClient";
+import { observationRow, recommendation, snapshotAvailable, snapshotStale } from "../intel/fixtures";
 
 // FIXTURE-DRIVEN tests for proposed contracts: they prove what the screens say, not that any backend exists.
 afterEach(cleanup);
@@ -55,34 +55,51 @@ describe("PremiumConnections", () => {
   });
 });
 
-describe("PremiumInsights", () => {
-  const res = (m) => normaliseResults({ contract_version: "campaign-results.v1", metrics: m });
-  const M = (o = {}) => ({ metric: "clicks", value: 12, unit: "count", observed_at: "2026-10-20T00:00:00Z", source: "customer_entered", fresh_as_of: "2026-10-21T00:00:00Z", ...o });
-  const ins = (list) => normaliseInsights({ contract_version: "learning-insights.v1", insights: list });
-  const IN = (o = {}) => ({ insight_id: "i1", statement: "FIXTURE suggestion text", confidence: "low", status: "proposed", generated_by: "ai", created_at: "2026-10-22T00:00:00Z", evidence: [{ source: "customer_entered", metric: "clicks", period_from: "2026-10-01T00:00:00Z", period_to: "2026-10-20T00:00:00Z", sample_size: 3 }], ...o });
-  it("gate off: says nothing was measured or learned, defines the four labels, calls nothing", () => {
-    const f = vi.fn(); render(<PremiumInsights enabled={false} session={session} scope={scope} isOwner api={{ fetchInsights: f, fetchResults: f }} />);
+describe("PremiumInsights (canonical performance-evidence models)", () => {
+  const snapApi = (body, extra = {}) => ({ fetchSnapshot: async () => body, ...extra });
+  it("gate off: says nothing was measured or learned, defines the labels, calls nothing", () => {
+    const f = vi.fn(); render(<PremiumInsights enabled={false} session={session} scope={scope} isOwner api={{ fetchSnapshot: f, fetchRecommendations: f }} />);
     expect(screen.getByText(/has not measured anything for you, and it has not learned from your performance/i)).toBeInTheDocument();
-    for (const l of ["Entered by you", "Measured by the platform", "Estimate", "AI suggestion"]) expect(screen.getByText(l)).toBeInTheDocument();
+    for (const l of ["Entered by you", "Measured by the platform", "Observed change", "Sample data"]) expect(screen.getByText(l)).toBeInTheDocument();
     expect(f).not.toHaveBeenCalled(); expect(screen.queryByRole("button")).toBeNull();
   });
-  it("every result row carries its origin; an unlabelled one is reported as left out", async () => {
-    render(<PremiumInsights enabled session={session} scope={scope} campaignId="c1" campaignName="Spring" isOwner api={{ fetchResults: async () => res([M(), M({ metric: "reach", source: "platform_measured", value: 900 }), M({ metric: "views", source: undefined })]), fetchInsights: async () => ins([]) }} />);
-    const table = await screen.findByRole("table"); expect(table).toHaveTextContent("Entered by you"); expect(table).toHaveTextContent("Measured by the platform");
-    expect(screen.getByText(/1 result could not be shown because its origin was missing/)).toBeInTheDocument(); expect(screen.getByText(/There are no suggestions yet/)).toBeInTheDocument();
+  it("gate on but no fetcher (no backend route): says it is not connected and shows nothing", () => {
+    render(<PremiumInsights enabled session={session} scope={scope} isOwner />);
+    expect(screen.getByText(/Platform results are not connected yet/)).toBeInTheDocument(); expect(screen.queryByRole("table")).toBeNull();
   });
-  it("suggestions are labelled AI, show evidence, and the owner can accept once; the wording says it changes nothing by itself", async () => {
-    const decide = vi.fn(async () => ({ insightId: "i1", status: "accepted" }));
-    render(<PremiumInsights enabled session={session} scope={scope} campaignId="c1" isOwner api={{ fetchResults: async () => res([]), fetchInsights: async () => ins([IN(), IN({ insight_id: "i2", evidence: [] })]), decideInsight: decide }} />);
-    expect(await screen.findByText("FIXTURE suggestion text")).toBeInTheDocument(); expect(screen.getAllByText("AI suggestion").length).toBeGreaterThan(0); expect(screen.getByText(/1 suggestion were left out because they came without evidence/)).toBeInTheDocument();
-    fireEvent.click(screen.getByText(/Evidence \(1\)/)); expect(screen.getByText(/Clicks, entered by you/)).toBeInTheDocument();
+  it("shows platform rows with provenance, freshness and period; a customer attestation is left out and counted", async () => {
+    const snap = snapshotAvailable(); snap.observations.push(observationRow(4, { source: { kind: "customer_attestation", source_id: "s", account_id: "a", record_id: "r" } }));
+    render(<PremiumInsights enabled session={session} scope={scope} campaignName="Spring" isOwner now={Date.parse("2026-10-12T00:00:00Z")} api={snapApi(snap)} />);
+    const table = await screen.findByRole("table"); expect(table).toHaveTextContent("Measured by the platform"); expect(table).toHaveTextContent("TikTok · Organic");
+    expect(screen.getByText(/Last updated 3 days ago/)).toBeInTheDocument(); expect(screen.getByText(/1 row could not be shown/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("What each measure means")); expect(screen.getByText(/Taps or clicks on a link/)).toBeInTheDocument();
+  });
+  it("filters by platform", async () => {
+    render(<PremiumInsights enabled session={session} scope={scope} isOwner api={snapApi(snapshotAvailable())} />);
+    await screen.findByRole("table"); fireEvent.change(screen.getByLabelText("Platform"), { target: { value: "tiktok" } });
+    expect(screen.queryByText(/Instagram · Organic/)).toBeNull(); expect(screen.getByText(/TikTok · Organic/)).toBeInTheDocument();
+  });
+  it("stale or withdrawn data shows words, not zeros; sample data is labelled; a malformed body is an error", async () => {
+    const { unmount } = render(<PremiumInsights enabled session={session} scope={scope} isOwner api={snapApi(snapshotStale())} />);
+    expect(await screen.findByText(/too old to show/)).toBeInTheDocument(); unmount();
+    const r2 = render(<PremiumInsights enabled session={session} scope={scope} isOwner api={{ ...snapApi(snapshotAvailable()), synthetic: true }} />);
+    expect(await screen.findByText(/made up to test the screen/)).toBeInTheDocument(); expect((await screen.findByRole("table")).textContent).toMatch(/Sample data/); expect(r2.container.textContent).not.toMatch(/Measured by the platform<\/span>/); r2.unmount();
+    render(<PremiumInsights enabled session={session} scope={scope} isOwner api={snapApi({ contract_version: "x" })} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/not in the expected form/);
+  });
+  it("recommendations are observed changes; unsafe ones are left out; the owner's decision is kept on this device and changes nothing", async () => {
+    const api = snapApi(snapshotAvailable(), { fetchRecommendations: async () => [recommendation(), recommendation({ causal_claim: true })] });
+    render(<PremiumInsights enabled session={session} scope={scope} isOwner api={api} />);
+    expect(await screen.findByText(/This is an observed change only/)).toBeInTheDocument();
+    expect(screen.getByText(/1 suggestion was left out/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
-    expect(await screen.findByText(/does not change your Brand Brain or any campaign by itself/)).toBeInTheDocument(); expect(decide).toHaveBeenCalledTimes(1); expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+    expect(screen.getByText(/kept on this device only. It is not sent to BizGenie yet and changes nothing/)).toBeInTheDocument(); expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
   });
-  it("members cannot decide; errors are retryable", async () => {
-    const f = vi.fn().mockRejectedValueOnce(new Error("Your insights could not be loaded yet.")).mockResolvedValue(ins([IN()]));
-    render(<PremiumInsights enabled session={session} scope={scope} isOwner={false} api={{ fetchInsights: f }} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be loaded/); fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText(/Only the workspace owner can accept or reject/)).toBeInTheDocument(); expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+  it("members cannot decide; errors are retryable; 401 ends the session", async () => {
+    const ended = vi.fn(); const f = vi.fn().mockRejectedValueOnce(Object.assign(new Error("Your results could not be loaded yet."), { kind: "auth" })).mockResolvedValue(snapshotAvailable());
+    render(<PremiumInsights enabled session={session} scope={scope} isOwner={false} onSessionEnded={ended} api={{ fetchSnapshot: f, fetchRecommendations: async () => [recommendation()] }} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be loaded/); expect(ended).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText(/Only the owner can decide/)).toBeInTheDocument(); expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
   });
 });

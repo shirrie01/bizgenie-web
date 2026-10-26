@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+const GrowthCentre = lazy(() => import("./GrowthCentre"));
 import PremiumOnboarding, { STAGES } from "./PremiumOnboarding";
 import PremiumWorkspace from "./PremiumWorkspace";
 import PremiumWorkspaces from "./PremiumWorkspaces";
@@ -22,6 +23,7 @@ import { buildSavePayload, formFromOnboarding, hasUnsavedChanges, isSeededDescri
 
 const VIEWS = [
   ["overview", "Overview"],
+  ["growth", "Growth centre"],
   ["onboarding", "Set up"],
   ["studio", "Campaign Studio"],
   ["campaigns", "Campaigns"],
@@ -45,6 +47,7 @@ const EMPTY_DRAFT = { businessName: "", website: "", challenge: "", industryText
 export default function PremiumStudio({ session, brainState, onLoadBrain, onSaveBrain, onBootstrap, membershipRole, readOnly = false, workspaceState, onLoadWorkspaces, onSelectWorkspace, sessionEnded = false, onSignOut, onboardingState, onLoadOnboarding, onSaveOnboarding, recommendationState, onRecommend, campaign, campaignList, onLoadCampaigns, calendarState, onLoadCalendar, workspaceCalendarState, onLoadWorkspaceCalendar, campaignAdmin, onAdminOpen, onAdminRename, onAdminSetArchived, sections }) {
   const [view, setView] = useState(null); // null until the starting point has been decided
   const [stage, setStage] = useState(0);
+  const [growthTab, setGrowthTab] = useState("overview");
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [channels, setChannels] = useState(() => new Set());
   const [prefilled, setPrefilled] = useState(false);
@@ -165,7 +168,7 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
 
   const setField = useCallback((key, value) => setDraft((d) => ({ ...d, [key]: value })), []);
   const toggleChannel = useCallback((name) => setChannels((current) => { const next = new Set(current); if (next.has(name)) next.delete(name); else next.add(name); return next; }), []);
-  const go = useCallback((target) => { if (target.view === "onboarding" && typeof target.stage === "number") setStage(target.stage); setView(target.view); if (typeof window !== "undefined") window.scrollTo(0, 0); }, []);
+  const go = useCallback((target) => { if (target.view === "onboarding" && typeof target.stage === "number") setStage(target.stage); setView(target.view); setGrowthTab(target.tab || "overview"); if (typeof window !== "undefined") window.scrollTo(0, 0); }, []);
 
   // BG-STUDIO-017-FE (DEC-023): the calendar loads by itself when it is opened for a campaign. Only from "idle", so a failure is
   // never retried in a loop; "Refresh" is the customer's choice.
@@ -198,6 +201,14 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
     );
   } else if (view === "overview") {
     content = <PremiumWorkspace model={model} brainState={brainState} campaignList={campaignList} onGo={go} onRetryBrain={onLoadBrain} onRetryCampaigns={onLoadCampaigns} calendarState={calendarState} onboardingState={onboardingState} onRetryOnboarding={onLoadOnboarding} />;
+  } else if (view === "growth") {
+    content = (
+      <Suspense fallback={<p className="visually-hidden" role="status">Loading…</p>}>
+        <GrowthCentre model={model} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={membershipRole === "owner"} readOnly={readOnly}
+          campaignList={campaignList} workspaceCalendarState={workspaceCalendarState} analyticsEnabled={false} tab={growthTab} onGo={go}
+          onOpenCampaign={async (id) => { const r = await onAdminOpen(id); if (r && r.ok) go({ view: "studio" }); }} />
+      </Suspense>
+    );
   } else if (view === "studio") {
     content = (sections.recommendation || sections.campaign) ? (<>{sections.recommendation}{sections.campaign}</>) : (
       <section className="ps-empty" aria-label="Campaign Studio">
