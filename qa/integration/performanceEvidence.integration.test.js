@@ -5,7 +5,7 @@
 // Skipped unless BIZGENIE_API_DIR points at the backend checkout with node_modules installed.
 import { createRequire } from "node:module";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { describeRecommendation, readRecommendation, readSnapshot, summarise } from "../../src/intel/performanceEvidence";
 
 const DIR = process.env.BIZGENIE_API_DIR;
@@ -13,8 +13,9 @@ const run = DIR ? describe : describe.skip;
 const U = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
 run("frontend evidence validators against the backend reference registry", () => {
-  const req = createRequire(path.join(DIR, "index.js"));
-  const { PerformanceEvidenceReferenceRegistry, compareObservations, EvidenceError } = req("./src/performance-evidence/contract");
+  // Loaded lazily: a skipped describe still runs its body, and DIR is undefined then.
+  let PerformanceEvidenceReferenceRegistry; let compareObservations; let EvidenceError;
+  beforeAll(() => { const req = createRequire(path.join(DIR, "index.js")); ({ PerformanceEvidenceReferenceRegistry, compareObservations, EvidenceError } = req("./src/performance-evidence/contract")); });
   const now = new Date("2026-10-20T00:00:00.000Z");
   const scope = { tenant_id: "t1", project_id: "p1", brand_id: "b1", campaign_id: U(1), variant_id: U(2), publication_id: U(3), objective: "leads", platform: "instagram" };
   const binding = { ...scope, published_at: "2026-09-30T00:00:00.000Z" };
