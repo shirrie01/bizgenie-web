@@ -13,7 +13,9 @@ import ManualPublicationPanel from "./premium/ManualPublicationPanel";
 import GenerateWithQuote from "./premium/GenerateWithQuote";
 import CreativeStudio from "./premium/CreativeStudio";
 import { isCustomerMediaApiEnabled } from "./premium/creativeProductionClient";
-import { describeGenerateRefusal, isGenerationQuoteApiEnabled, quoteFields, requestGenerationQuote } from "./premium/generationQuoteClient";
+import { isCreditPreviewApiEnabled } from "./premium/creditPreviewClient";
+import { requestCostCheck } from "./premium/costCheck";
+import { describeGenerateRefusal, isGenerationQuoteApiEnabled, quoteFields } from "./premium/generationQuoteClient";
 import { fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived } from "./premium/campaignManagementClient";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
@@ -589,7 +591,8 @@ export default function App() {
 
   // BG-STUDIO-019-FE (Premium Studio): the cost is shown first when the backend can quote it; a refusal says why and that nothing was charged.
   async function premiumQuote(variant) {
-    return requestGenerationQuote({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId }, campaign: campaignState.campaign, variant, executionClass: "text.standard", executionMode });
+    // A binding server quote when the durable quote/confirm backend exists; otherwise the backend's read-only price preview, labelled as such.
+    return requestCostCheck({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }, campaign: campaignState.campaign, variant, executionClass: "text.standard", executionMode });
   }
   async function premiumGenerate(variant, quote) {
     if (generationState.status === "loading" || !campaignState.campaign || variant.workflow !== "draft") return { ok: false, kind: "error", text: "This draft is not ready to generate yet." };
@@ -916,7 +919,7 @@ export default function App() {
             <label htmlFor="execution-mode">Execution mode</label>
             <select id="execution-mode" value={executionMode} onChange={(event) => setExecutionMode(event.target.value)}>
               <option value="ai">AI — create from Brand Brain and your brief</option>
-              <option value="hybrid" disabled>{premiumEnabled ? "Hybrid — your media with AI is under “Create an image or video” below" : "Hybrid — use your media + AI (add-media picker coming next)"}</option>
+              <option value="hybrid" disabled>{premiumEnabled ? "Hybrid — your own media with AI is not available yet" : "Hybrid — use your media + AI (add-media picker coming next)"}</option>
             </select>
             <label htmlFor="execution-brief">Execution brief (optional)</label>
             <textarea id="execution-brief" maxLength={4000} value={executionBrief} onChange={(event) => setExecutionBrief(event.target.value)} placeholder="Temporary direction for this execution, e.g. focus on the founder story and keep the opening conversational." />
@@ -933,13 +936,13 @@ export default function App() {
                     {variant.workflow === "approved" && <CreativePreviewCard variant={variant} />}
                     <small>{variant.destination_label}</small>
                     {variant.workflow === "draft" && (premiumEnabled ? (
-                      <GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isGenerationQuoteApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} />
+                      <GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isGenerationQuoteApiEnabled() || isCreditPreviewApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} />
                     ) : (
                       <button className="secondary" type="button" onClick={() => runGenerateVariant(variant)} disabled={generationState.status === "loading"}>
                         {generationState.status === "loading" ? "Generating…" : "Generate draft"}
                       </button>
                     ))}
-                    {premiumEnabled && ["draft", "review", "approved"].includes(variant.workflow) && <CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} quotesEnabled={isGenerationQuoteApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} readOnly={isReadOnlyRole(roleState.role)} onSessionEnded={() => setSessionEnded(true)} />}
+                    {premiumEnabled && ["draft", "review", "approved"].includes(variant.workflow) && <CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} topic={item.name} contentItemId={item.content_item_id} readOnly={isReadOnlyRole(roleState.role)} onSessionEnded={() => setSessionEnded(true)} />}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
                     {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <ScheduleControls campaign={campaignState.campaign} variant={variant} state={scheduleState} onSchedule={runSchedule} />}
                     {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <ManualPublicationPanel campaign={campaignState.campaign} variant={variant} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} />}

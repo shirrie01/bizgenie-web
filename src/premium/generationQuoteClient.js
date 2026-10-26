@@ -72,7 +72,9 @@ export async function requestGenerationQuote({ apiBaseUrl, accessToken, scope, c
 }
 
 // What the generate request carries once the customer has confirmed a quote.
-export const quoteFields = (quote) => (quote ? { quote_id: quote.quoteId, max_credits: quote.authorisedCredits } : {});
+// A read-only preview (binding === false) carries nothing: the backend's generate body is strict and has no quote fields until the durable
+// quote/confirm contract ships, so only a real server quote may add them.
+export const quoteFields = (quote) => (quote && quote.binding !== false && quote.quoteId ? { quote_id: quote.quoteId, max_credits: quote.authorisedCredits } : {});
 
 // Turns a refused generate call into what the customer should see and what the screen should do next.
 export function describeGenerateRefusal(status, code) {

@@ -63,12 +63,22 @@ export default function GenerateWithQuote({ label = "Generate draft", quotesEnab
       )}
       {phase === "quoted" && quote && (
         <div role="group" aria-label="Credit cost" className="ps-quote-card">
-          <p><strong>{quote.kind === "estimate" ? `About ${credits(quote.credits)}, at most ${credits(quote.maxCredits)}` : credits(quote.credits)}</strong> will be used to generate this.</p>
-          <p>{quote.availableCredits === null ? "Your credit balance could not be shown." : `You have ${credits(quote.availableCredits)} available.`}</p>
-          <p className="ps-hint">{quote.kind === "estimate" ? "This is an estimate. You will never be charged more than the maximum shown." : "This is a fixed price."} Valid until {clock(quote.expiresAt)}.</p>
-          {!quote.sufficient && <p className="error" role="alert">You do not have enough credits for this. Nothing will be charged. Your balance is in Plan and billing.</p>}
+          {quote.binding === false ? (
+            <>
+              <p><strong>Right now this uses {credits(quote.credits)}.</strong></p>
+              <p>{quote.availableCredits === null ? "Your credit balance could not be shown." : `You have ${credits(quote.availableCredits)} available.`}</p>
+              <p className="ps-hint">This is the current price, not a locked quote. No credits are reserved. The price and your balance are checked again when generation starts, so the amount used could differ if either changes. This check expires at {clock(quote.expiresAt)}.</p>
+            </>
+          ) : (
+            <>
+              <p><strong>{quote.kind === "estimate" ? `About ${credits(quote.credits)}, at most ${credits(quote.maxCredits)}` : credits(quote.credits)}</strong> will be used to generate this.</p>
+              <p>{quote.availableCredits === null ? "Your credit balance could not be shown." : `You have ${credits(quote.availableCredits)} available.`}</p>
+              <p className="ps-hint">{quote.kind === "estimate" ? "This is an estimate. You will never be charged more than the maximum shown." : "This is a fixed price."} Valid until {clock(quote.expiresAt)}.</p>
+            </>
+          )}
+          {!quote.sufficient && <p className="error" role="alert">{quote.affordability === "spend_cap_exceeded" ? "This is above the limit that applies here. Nothing will be charged." : "You do not have enough credits for this. Nothing will be charged. Your balance is in Plan and billing."}</p>}
           <div className="ps-camp-actions">
-            <button type="button" className="ps-primary" onClick={() => confirm(quote)} disabled={!quote.sufficient}>{`Use ${quote.kind === "estimate" ? `up to ${credits(quote.maxCredits)}` : credits(quote.credits)} and generate`}</button>
+            <button type="button" className="ps-primary" onClick={() => confirm(quote)} disabled={!quote.sufficient}>{quote.binding === false ? "Generate now" : `Use ${quote.kind === "estimate" ? `up to ${credits(quote.maxCredits)}` : credits(quote.credits)} and generate`}</button>
             <button type="button" className="secondary" onClick={cancel}>Cancel</button>
           </div>
         </div>

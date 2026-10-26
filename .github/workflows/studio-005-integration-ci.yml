@@ -162,12 +162,13 @@ jobs:
         env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
         run: npx playwright test --config qa/premium.playwright.config.mjs
       - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
-        name: Build with the BG-STUDIO-019 capability gates ON (plan catalogue, billing management, quotes, customer media; all mocked in the browser)
+        name: Build with the BG-STUDIO-019 capability gates ON (plan catalogue, billing management, credit preview, customer image/video, workspace calendar API; all mocked in the browser)
         env:
           VITE_PREMIUM_STUDIO_ENABLED: 'true'
           VITE_PLAN_CATALOGUE_API: 'true'
           VITE_BILLING_MANAGEMENT_API: 'true'
-          VITE_GENERATION_QUOTE_API: 'true'
+          VITE_CREDIT_PREVIEW_API: 'true'
+          VITE_WORKSPACE_CALENDAR_API: 'true'
           VITE_CUSTOMER_MEDIA_API: 'true'
           VITE_SUPABASE_URL: http://supabase.test
           VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key

@@ -100,3 +100,23 @@ describe("credit quote before generation", () => {
     await waitFor(() => expect(onGenerate).toHaveBeenCalledWith(null));
   });
 });
+
+describe("read-only price preview (not a binding quote)", () => {
+  const preview = (over = {}) => ({ binding: false, quoteId: null, executionClass: "text.standard", credits: 4, kind: "current", maxCredits: 4, authorisedCredits: null, availableCredits: 12, sufficient: true, affordability: "within_limit", expiresAt: Date.now() + 60000, ...over });
+  it("calls it the current price, says nothing is reserved, and offers 'Generate now' — never 'use N credits and generate'", async () => {
+    const onQuote = vi.fn().mockResolvedValue(preview()); const onGenerate = vi.fn().mockResolvedValue({ ok: true });
+    render(<GenerateWithQuote quotesEnabled onQuote={onQuote} onGenerate={onGenerate} />);
+    const card = await check();
+    expect(card).toHaveTextContent(/right now this uses 4 credits/i); expect(card).toHaveTextContent(/not a locked quote/i); expect(card).toHaveTextContent(/no credits are reserved/i);
+    expect(screen.queryByRole("button", { name: /use 4 credits and generate/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Generate now" }));
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(1));
+    expect(onGenerate.mock.calls[0][0]).toMatchObject({ binding: false, quoteId: null });
+  });
+  it("blocks generation when the preview says credits are short or a limit applies", async () => {
+    render(<GenerateWithQuote quotesEnabled onQuote={vi.fn().mockResolvedValue(preview({ sufficient: false, affordability: "insufficient_credits", availableCredits: 1 }))} onGenerate={vi.fn()} />);
+    await check();
+    expect(screen.getByRole("button", { name: "Generate now" })).toBeDisabled(); expect(screen.getByRole("alert")).toHaveTextContent(/not have enough credits/i);
+  });
+});
+
