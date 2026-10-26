@@ -50,7 +50,7 @@ run("quote -> confirm -> status -> private delivery, frontend clients against th
     await pool.query("insert into credit_accounts(account_id,tenant_id)values('synthetic_account','tenant_a')");
     const billing = new PostgresBillingRepository({ pool, now }); const billingService = new BillingService({ repository: billing, now });
     const campaigns = new PostgresCampaignRepository({ pool, now, resolvePreviewReceipt: previewReceipt, validatePreview: async () => true });
-    const profiles = { "image.normal": { id: "synthetic.image", version: 1, provider_model: "mock-only", aspect_ratio: "1:1" }, "text.standard": { id: "synthetic.text", version: 1, provider_model: "mock-only" }, "video.normal": { id: "synthetic.video", version: 1, provider_model: "mock-only" } };
+    const profiles = { "image.normal": { id: "synthetic.image", version: 1, provider_model: "mock-only", aspect_ratio: "1:1" }, "text.standard": { id: "synthetic.text", version: 1, provider_model: "mock-only" }, "video.normal": { id: "synthetic.video", version: 1, provider_model: "mock-only", aspect_ratio: "9:16", duration_seconds: 4 } };
     const quotes = (o = {}) => new PostgresGenerationQuoteService({ billingRepository: billing, profiles, now, ...o });
     const storage = { bucket: "private-synthetic-test", putObject: async ({ key, data }) => { objects.set(key, Buffer.from(data)); return { byteSize: data.length }; }, delete: async () => {}, statPreview: async ({ key }) => ({ size: objects.get(key).length, mimeType: "image/png", generation: "123" }), openPreview: async ({ key }) => new Response(objects.get(key), { headers: { "content-type": "image/png", "content-length": String(objects.get(key).length) } }) };
     const tokens = { verifyAccessToken: async (t) => { if (t === "ok") return actor; if (t === "other") return { kind: "customer", auth_user_id: "99999999-9999-4999-8999-999999999999" }; throw new AuthenticationRequiredError(); } };
@@ -136,6 +136,20 @@ run("quote -> confirm -> status -> private delivery, frontend clients against th
     expect(q.credits).toBe(2);
   });
 
+  it("video: a TikTok-feed video item (which has an approved preview profile) can be priced as video.normal, confirmed and cancelled; premium has no server profile and says so", async () => {
+    const x = await item("text"); const updated = await addContentItem({ ...common(), campaign: x.campaign, name: "Reveal video", format: "video", platform: "tiktok", placement: "feed", destinationLabel: "Brand account" });
+    const added = updated.items.find((i) => i.name === "Reveal video"); const variant = added.variants[0];
+    const q = await requestGenerationQuote({ ...common(), request: buildQuoteRequest({ scope: scope(), campaign: updated, variant, executionClass: "video.normal", brief: "A short reveal" }), nonce: newNonce() });
+    expect(q).toMatchObject({ executionClass: "video.normal", credits: 6, sufficient: true });
+    const start = await balance(); const r = await confirmGenerationQuote({ ...common(), quote: q, key: confirmKey() }); expect(r.status).toBe("queued"); expect(await balance()).toBe(start - 6);
+    await cancelGenerationQuote({ ...common(), quoteId: q.quoteId }); expect(await balance()).toBe(start);
+    await expect(requestGenerationQuote({ ...common(), request: buildQuoteRequest({ scope: scope(), campaign: updated, variant, executionClass: "video.premium", brief: "A short reveal" }), nonce: newNonce() })).rejects.toMatchObject({ kind: "unsupported" });
+  });
+  it("an Instagram-feed video item is refused at the price step because that destination has no approved preview, and nothing is charged", async () => {
+    const x = await item("text"); const updated = await addContentItem({ ...common(), campaign: x.campaign, name: "IG video", format: "video", platform: "instagram", placement: "feed", destinationLabel: "Brand page" });
+    const variant = updated.items.find((i) => i.name === "IG video").variants[0]; const before = await ledger();
+    await expect(requestGenerationQuote({ ...common(), request: buildQuoteRequest({ scope: scope(), campaign: updated, variant, executionClass: "video.normal", brief: "x" }), nonce: newNonce() })).rejects.toMatchObject({ kind: "unsupported", message: expect.stringMatching(/cannot be previewed or approved yet/) }); expect(await ledger()).toEqual(before);
+  });
   it("FULL LOCAL LIFECYCLE (mock provider): quote -> confirm -> worker -> Finished -> attach -> approval -> authenticated private delivery -> revocation", async () => {
     const { ImageGenerationService, InMemoryImageGenerationRepository } = req("./src/image-generation"); const { PostgresMediaAssetRepository, DurableMediaAssetStore } = req("./src/media");
     const { PostgresBrandBrainRepository } = req("./src/brand-brain"); const { PostgresGenerationJobRepository } = req("./src/generation-jobs"); const { ExistingCreativeServicesAdapter } = req("./src/generation-quotes/creativeAdapter");
