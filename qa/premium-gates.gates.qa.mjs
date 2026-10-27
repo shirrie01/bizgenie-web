@@ -57,6 +57,13 @@ async function open(page, { role = 'owner', subscription = { status: 'not_subscr
     if (p === '/customer/generation-quotes' && m === 'POST') { const b = log.bodies[key]; log.quoteRequests = (log.quoteRequests || 0) + 1; log.quoteState = { state: 'quoted' }; return json(route, { contract_version: 'generation-quote.v1', quote_id: QID, execution_class: b.execution_class, credits: 3, kind: 'fixed', max_credits: 3, available_credits: 40, sufficient: true, expires_at: new Date(Date.now() + 120000).toISOString(), policy_version: 'pol:1', state: 'quoted' }, 201); }
     if (p === `/customer/generation-quotes/${QID}/confirm`) { log.quoteState = { state: 'confirmed', polls: 0 }; return json(route, { status: 'queued', job_id: 'quoted:job1', quote_id: QID, reserved_credits: 3, replay: false }, 202); }
     if (p === `/customer/generation-quotes/${QID}` && m === 'GET') { const st = log.quoteState || { state: 'quoted' }; st.polls = (st.polls || 0) + 1; const seq = ['queued', 'claimed', 'calling', 'succeeded']; const state = st.state === 'confirmed' ? seq[Math.min(st.polls - 1, seq.length - 1)] : st.state; return json(route, { quote_id: QID, job_id: 'quoted:job1', state, execution_class: 'image.normal', reserved_credits: state === 'succeeded' ? 0 : 3, reservation_state: state === 'succeeded' ? 'settled' : 'held' }); }
+    const HX = (c) => c.repeat(64), OB1 = '00000000-0000-4000-8000-000000000a11', OB2 = '00000000-0000-4000-8000-000000000a12', REC = '00000000-0000-4000-8000-000000000a21', SNAP = '00000000-0000-4000-8000-000000000a31';
+    const obsRow = (id, value, from, to, fp) => ({ contract_version: 'performance-observation.v1', observation: { observation_id: id, tenant_id: 't1', project_id: 'p1', brand_id: 'b1', campaign_id: CID, variant_id: VID, publication_id: 'dd111111-1111-4111-8111-111111111111', objective: 'traffic', platform: 'instagram', attribution: 'organic', metric: 'clicks', unit: 'count', value, period: { from, to }, observed_at: to, source: { kind: 'platform_api', source_id: 'synthetic.connector', account_id: 'acct_one', record_id: 'r' + id.slice(-2) }, retracted: false }, fingerprint: HX(fp), superseded_by: null });
+    const recBody = () => ({ recommendation_id: REC, contract_version: 'evidence-recommendation.v1', kind: 'review_metric_change', metric: 'clicks', previous_value: 10, current_value: 20, absolute_change: 10, percentage_change: 100, evidence: [HX('1'), HX('2')], confidence: 'observed_change_only', causal_claim: false, requires_customer_acceptance: true });
+    if (p === '/customer/insights/snapshots') { const n = Date.now(); return json(route, { snapshot_id: SNAP, contract_version: 'performance-snapshot.v1', state: 'available', reason: null, observations: [obsRow(OB1, 10, new Date(n - 6 * 86400000).toISOString(), new Date(n - 3 * 86400000).toISOString(), '1'), obsRow(OB2, 20, new Date(n - 3 * 86400000).toISOString(), new Date(n - 1 * 86400000).toISOString(), '2')] }); }
+    if (p === '/customer/insights/recommendations' && m === 'POST') { log.recCreated = true; return json(route, recBody()); }
+    if (p === '/customer/insights/recommendations') return json(route, { recommendations: log.recCreated || log.seedRec ? [{ ...recBody(), evidence_state: 'current', decision: log.decision || null, feedback_version: log.decision ? 1 : 0, created_at: '2026-10-27T10:00:00.000Z' }] : [], next_cursor: null });
+    if (p === '/customer/insights/feedback') { log.decision = log.bodies[key].decision; return json(route, { decision: log.decision, version: 1 }); }
     return json(route, { status: 'failed', error: { code: 'NOT_FOUND' } }, 404);
   });
   return log;
@@ -228,14 +235,40 @@ test('accounts and publishing: only what the server reports; a failed publicatio
   expect(log.errors).toEqual([]);
 });
 
-test('results and insights: with the gate on but no backend route, nothing is invented and entered results are not presented as measured', async ({ page }) => {
-  const log = await open(page);
+test('results and insights (real routes): nothing is read until the owner asks; platform rows, a compared change, and an accepted decision carry the server version; members only read suggestions', async ({ page }) => {
+  const log = await open(page); log.seedRec = false;
   await page.goto('/'); await welcome(page);
   await nav(page).getByRole('button', { name: 'Results and insights', exact: true }).click();
-  await expect(page.getByText(/Platform results are not connected yet/)).toBeVisible();
+  await expect(page.getByText(/Nothing is read until you ask/)).toBeVisible();
+  expect(log.calls).not.toContain('POST /customer/insights/snapshots'); // viewing writes nothing
   await expect(page.getByRole('table')).toHaveCount(0);
-  await expect(page.locator('main')).not.toContainText('Measured by the platform</');
-  await checks(page, 'insights');
+  await page.getByRole('button', { name: 'Read the latest platform results' }).click();
+  await expect(page.getByRole('table')).toContainText('Measured by the platform');
+  await expect(page.locator('main')).not.toContainText('Entered by you</');
+  expect(log.bodies['POST /customer/insights/snapshots']).toEqual({ tenant_id: 't1', project_id: 'p1', brand_id: 'b1' });
+  await checks(page, 'insights-results');
+  await page.getByRole('button', { name: /Look for a change in Instagram Clicks/ }).click();
+  await expect(page.getByRole('list', { name: 'Changes worth reviewing' })).toContainText('went up from 10 to 20');
+  await expect(page.getByText(/does not show what caused it/).first()).toBeVisible();
+  expect(log.bodies['POST /customer/insights/recommendations']).toMatchObject({ snapshot_id: '00000000-0000-4000-8000-000000000a31', previous_id: '00000000-0000-4000-8000-000000000a11', current_id: '00000000-0000-4000-8000-000000000a12' });
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(page.getByText(/Accepted by you and saved/)).toBeVisible();
+  expect(log.bodies['POST /customer/insights/feedback']).toMatchObject({ recommendation_id: '00000000-0000-4000-8000-000000000a21', decision: 'accepted', expected_version: 0 });
+  expect(log.bodies['POST /customer/insights/feedback'].idempotency_key).toBeTruthy();
+  await checks(page, 'insights-decided');
+  expect(log.errors).toEqual([]);
+});
+
+test('results and insights (real routes): a member reads the shared suggestions and cannot refresh or decide', async ({ page }) => {
+  const log = await open(page, { role: 'member' }); log.seedRec = true;
+  await page.goto('/'); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Results and insights', exact: true }).click();
+  await expect(page.getByText(/The workspace owner refreshes platform results/)).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Changes worth reviewing' })).toContainText('went up from 10 to 20');
+  await expect(page.getByRole('button', { name: 'Accept', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /platform results|Refresh results/ })).toHaveCount(0);
+  expect(log.calls).not.toContain('POST /customer/insights/snapshots');
+  await checks(page, 'insights-member');
   expect(log.errors).toEqual([]);
 });
 

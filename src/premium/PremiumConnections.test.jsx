@@ -114,4 +114,42 @@ describe("PremiumInsights (canonical performance-evidence models)", () => {
     expect(send).toHaveBeenCalledTimes(2); const [a, b] = send.mock.calls.map((c) => c[0].body);
     expect(a).toMatchObject({ recommendation_id: id, decision: "accepted", expected_version: 0 }); expect(a.idempotency_key).toBe(b.idempotency_key); expect(a).not.toHaveProperty("recommendation_hash");
   });
+
+  describe("real-route mode (refreshSnapshot / createRecommendation / fetchRecommendations)", () => {
+    const rec = (o = {}) => recommendation({ recommendation_id: "00000000-0000-4000-8000-0000000000aa", evidence_state: "current", decision: null, feedback_version: 0, ...o });
+    const real = (extra = {}) => ({ refreshSnapshot: vi.fn(async () => ({ ...snapshotAvailable(), snapshot_id: "00000000-0000-4000-8000-0000000000ee" })), fetchRecommendations: vi.fn(async () => [rec()]), ...extra });
+    it("an owner reads nothing until they ask; Refresh stores one snapshot and shows platform rows", async () => {
+      const api = real(); render(<PremiumInsights enabled session={session} scope={scope} isOwner api={api} now={Date.parse("2026-10-12T00:00:00Z")} />);
+      expect(await screen.findByText(/Nothing is read until you ask/)).toBeInTheDocument(); expect(api.refreshSnapshot).not.toHaveBeenCalled(); expect(api.fetchRecommendations).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: "Read the latest platform results" })); expect(await screen.findByRole("table")).toHaveTextContent("Measured by the platform"); expect(api.refreshSnapshot).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/The results were refreshed/)).toBeInTheDocument();
+    });
+    it("a member never triggers a snapshot; they see the shared suggestions and are told who refreshes", async () => {
+      const api = real(); render(<PremiumInsights enabled session={session} scope={scope} isOwner={false} api={api} />);
+      expect(await screen.findByText(/The workspace owner refreshes platform results/)).toBeInTheDocument(); expect(screen.queryByRole("button", { name: /platform results|Refresh results/ })).toBeNull(); expect(api.refreshSnapshot).not.toHaveBeenCalled();
+      expect(await screen.findByRole("list", { name: "Changes worth reviewing" })).toBeInTheDocument(); expect(screen.getByText(/Only the owner can decide/)).toBeInTheDocument();
+    });
+    it("the owner can ask for a change between the two most recent periods; it is added and listed", async () => {
+      const create = vi.fn(async () => ({})); const second = observationRow(2, { value: 52, period: { from: "2026-10-08T00:00:00.000Z", to: "2026-10-15T00:00:00.000Z" }, observed_at: "2026-10-16T00:00:00.000Z" });
+      const snap = { ...snapshotAvailable(), observations: [observationRow(1), second] }; const api = real({ createRecommendation: create, refreshSnapshot: vi.fn(async () => ({ ...snap, snapshot_id: "00000000-0000-4000-8000-0000000000ee" })) });
+      render(<PremiumInsights enabled session={session} scope={scope} isOwner api={api} now={Date.parse("2026-10-17T00:00:00Z")} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Read the latest platform results" })); await screen.findByRole("table");
+      fireEvent.click(screen.getByRole("button", { name: /Look for a change in Instagram Clicks/ })); expect(await screen.findByText(/A change to review was added below/)).toBeInTheDocument();
+      expect(create.mock.calls[0][0]).toMatchObject({ snapshotId: "00000000-0000-4000-8000-0000000000ee", previousId: observationRow(1).observation.observation_id, currentId: second.observation.observation_id }); expect(api.fetchRecommendations).toHaveBeenCalledTimes(2);
+    });
+    it("a decision already recorded by the server is shown as saved with no buttons; an invalidated one says it no longer applies; a new decision carries the server's version", async () => {
+      const send = vi.fn(async () => ({ decision: "accepted", version: 2 }));
+      const list = [rec({ decision: "accepted", feedback_version: 1 }), rec({ recommendation_id: "00000000-0000-4000-8000-0000000000bb", decision: "invalidated", feedback_version: 1, evidence_state: "unavailable" }), rec({ recommendation_id: "00000000-0000-4000-8000-0000000000cc", feedback_version: 3 })].map((r, i) => ({ ...r, evidence: [String(i + 1).repeat(64).slice(0, 64), "f".repeat(64)] }));
+      render(<PremiumInsights enabled session={session} scope={scope} isOwner api={{ fetchRecommendations: async () => list, sendFeedback: send }} />);
+      expect(await screen.findByText(/Accepted by you and saved/)).toBeInTheDocument(); expect(screen.getByText(/Your earlier decision no longer applies/)).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "Accept" })).toHaveLength(1); fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1)); expect(send.mock.calls[0][0].body).toMatchObject({ recommendation_id: "00000000-0000-4000-8000-0000000000cc", decision: "accepted", expected_version: 3 });
+    });
+    it("failures are explained and retryable; an unavailable service says so; auth is reported", async () => {
+      const ended = vi.fn(); const f = vi.fn().mockRejectedValueOnce(Object.assign(new Error("Results and suggestions are not switched on for this workspace yet."), { kind: "unavailable" })).mockResolvedValue([rec()]);
+      const { unmount } = render(<PremiumInsights enabled session={session} scope={scope} isOwner api={{ fetchRecommendations: f }} />);
+      expect(await screen.findByRole("alert")).toHaveTextContent(/not switched on/); fireEvent.click(screen.getByRole("button", { name: "Try again" })); expect(await screen.findByRole("list", { name: "Changes worth reviewing" })).toBeInTheDocument(); unmount();
+      render(<PremiumInsights enabled session={session} scope={scope} isOwner onSessionEnded={ended} api={{ fetchRecommendations: async () => { throw Object.assign(new Error("Your session has ended."), { kind: "auth" }); } }} />); await screen.findByRole("alert"); expect(ended).toHaveBeenCalled();
+    });
+  });
 });
