@@ -62,7 +62,7 @@ describe("QuotedGeneration", () => {
     const seq = ["queued", "claimed", "calling", "succeeded"]; const onSettled = vi.fn();
     mount({ confirmGenerationQuote: async () => ({ jobId: "quoted:j1", quoteId: Q, reservedCredits: 3, status: "queued", replay: false }), fetchQuoteStatus: async () => status(seq.length > 1 ? seq.shift() : seq[0], { reservedCredits: seq.length > 1 ? 3 : 0 }) }, { onSettled }); await price();
     fireEvent.click(screen.getByRole("button", { name: /Confirm and set aside/ }));
-    expect(await screen.findByText(/Finished\. 3 credits used/)).toBeInTheDocument(); expect(screen.getByText(/not approved and not published/)).toBeInTheDocument();
+    expect(await screen.findByText(/3 credits used\./)).toBeInTheDocument(); expect(screen.getByText(/not approved and not published/)).toBeInTheDocument();
     await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(1)); expect(onSettled.mock.calls[0][0]).toMatchObject({ state: "succeeded", credits: 3 });
   });
   it.each([["recovery_required", /checking the result with the provider.*nothing is sent again/i], ["failed", /could not be made\. You were not charged/], ["cancelled", /Cancelled\. You were not charged/]])("shows %s honestly", async (state, text) => {

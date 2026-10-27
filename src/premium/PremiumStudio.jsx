@@ -29,6 +29,7 @@ const VIEWS = [
   ["campaigns", "Campaigns"],
   ["calendar", "Calendar"],
   ["brand", "Brand"],
+  ["media", "Your media"],
   ["connections", "Accounts and publishing"],
   ["insights", "Results and insights"],
   ["account", "Plan and billing"],
@@ -251,6 +252,8 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
     content = <PremiumWorkspaces session={session} workspaceState={workspaceState} onLoad={onLoadWorkspaces} onSelect={onSelectWorkspace} unsavedAnswers={dirty} required={scopeMissing} />;
   } else if (view === "brand") {
     content = <PremiumBrandBrain brainState={brainState} onLoadBrain={onLoadBrain} onSave={onSaveBrain} draft={draft} setField={setField} getBrainBaseline={getBrainBaseline} readOnly={readOnly} membershipRole={membershipRole} onChooseWorkspace={() => go({ view: "workspaces" })} />;
+  } else if (view === "media") {
+    content = sections.media;
   } else if (view === "connections") {
     content = sections.connections;
   } else if (view === "insights") {

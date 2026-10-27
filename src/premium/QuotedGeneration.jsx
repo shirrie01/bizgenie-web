@@ -16,7 +16,7 @@ export const STATE_TEXT = {
   claimed: (c) => `Starting. ${credits(c)} are set aside and are only used if it succeeds.`,
   calling: (c) => `Being created. It can no longer be cancelled. ${credits(c)} are set aside and are only used if it succeeds.`,
   recovery_required: (c) => `BizGenie is checking the result with the provider. ${credits(c)} stay set aside until it is known, and nothing is sent again.`,
-  succeeded: (c) => `Finished. ${credits(c)} used.`,
+  succeeded: (c) => `${credits(c)} used.`,
   failed: () => "It could not be made. You were not charged.",
   cancelled: () => "Cancelled. You were not charged.",
 };

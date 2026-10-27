@@ -1,16 +1,18 @@
 import React, { useState } from "react";
 import QuotedGeneration from "./QuotedGeneration";
-import { ATTACH_BLOCKER, HYBRID_BLOCKER, KIND_LABEL, VIDEO_QUALITIES, executionClassFor } from "./creativeProductionClient";
+import CreativeJobResult from "./CreativeJobResult";
+import CreativeJobsList from "./CreativeJobsList";
+import { HYBRID_BLOCKER, KIND_LABEL, VIDEO_QUALITIES, executionClassFor } from "./creativeProductionClient";
 
 // Image and video for one content item (BG-STUDIO-021-FE). The brief is the only creative input the server accepts; shape, length, provider and preview
 // profile are the server's. Cost is a binding quote the customer confirms (QuotedGeneration). A job that has Finished is not approved and not published: the
 // result becomes reviewable only when the campaign's current revision carries it (the review/approval flow and authenticated delivery already exist for
 // that), and until the backend attaches outputs to the campaign this panel says so instead of faking a preview. Hybrid is named unavailable.
-export default function CreativeStudio({ enabled, session, scope, campaign, variant, format, readOnly = false, attached = false, api = {}, pollMs, onSessionEnded, onFinished }) {
+export default function CreativeStudio({ enabled, session, scope, campaign, variant, format, readOnly = false, canAttach = false, api = {}, pollMs, onSessionEnded, onFinished }) {
   const [open, setOpen] = useState(false);
   const [brief, setBrief] = useState({ text: "", quality: "normal" });
   const [locked, setLocked] = useState(false);
-  const [finished, setFinished] = useState(null);
+  const [finished, setFinished] = useState(null); const [reload, setReload] = useState(0);
   const summary = <summary>{format === "video" ? "Create the video for this post" : "Create the image for this post"}</summary>;
   if (!["image", "video"].includes(format)) return null;
   if (!enabled) {
@@ -37,9 +39,9 @@ export default function CreativeStudio({ enabled, session, scope, campaign, vari
             </>
           )}
           <p className="ps-hint">{HYBRID_BLOCKER}</p>
-          <QuotedGeneration key={`${session.tenantId}:${variant.variant_id}`} enabled session={session} inputs={inputs} label={`Get the price for the ${KIND_LABEL[format].toLowerCase()}`} api={api} pollMs={pollMs} onLockChange={setLocked} onSessionEnded={onSessionEnded} onSettled={(s) => { setFinished(s); if (s.state === "succeeded" && onFinished) onFinished(s); }} />
-          {finished && finished.state === "succeeded" && !attached && <p className="ps-hint" role="status">{ATTACH_BLOCKER}</p>}
-          {finished && finished.state === "succeeded" && attached && <p className="ps-hint" role="status">It is attached to this item below. Review it before it can be approved: finished is not approved, and approved is not published.</p>}
+          <QuotedGeneration key={`${session.tenantId}:${variant.variant_id}`} enabled session={session} inputs={inputs} label={`Get the price for the ${KIND_LABEL[format].toLowerCase()}`} api={api} pollMs={pollMs} onLockChange={setLocked} onSessionEnded={onSessionEnded} onSettled={(s) => { setFinished(s); }} />
+          <CreativeJobsList session={session} scope={scope} campaign={campaign} variant={variant} canAttach={canAttach} api={api} reloadKey={reload + (finished ? 1 : 0)} onAttached={(job) => { setReload((n) => n + 1); return onFinished ? onFinished(job) : undefined; }} onSubmitted={() => (onFinished ? onFinished() : undefined)} onSessionEnded={onSessionEnded} />
+          {finished && finished.jobId && ["succeeded", "failed", "cancelled"].includes(finished.state) && <CreativeJobResult key={finished.jobId} jobId={finished.jobId} session={session} scope={scope} campaign={campaign} variant={variant} canAttach={canAttach} api={api} onAttached={(job) => { setReload((n) => n + 1); return onFinished ? onFinished(job) : undefined; }} onSubmitted={() => (onFinished ? onFinished() : undefined)} onSessionEnded={onSessionEnded} />}
         </div>
       )}
     </details>
