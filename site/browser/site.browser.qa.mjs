@@ -17,7 +17,15 @@ async function checks(page, label) {
     expect(v, `${label}: axe`).toEqual([]);
   }
 }
-const shot = async (page, name) => { if (EVIDENCE) { fs.mkdirSync(EVIDENCE, { recursive: true }); await page.screenshot({ path: `${EVIDENCE}/${W}-${name}.jpg`, type: "jpeg", quality: 55, fullPage: ["home", "privacy", "terms", "data-deletion"].includes(name) }); } };
+const shot = async (page, name) => {
+  if (!EVIDENCE) return;
+  fs.mkdirSync(EVIDENCE, { recursive: true });
+  const full = ["home", "privacy", "terms", "data-deletion"].includes(name);
+  if (full) { // lazy images only load when scrolled to: force them to load so the evidence shows what a visitor sees
+    await page.evaluate(async () => { await Promise.all([...document.images].map((i) => { i.loading = "eager"; return i.decode().catch(() => {}); })); window.scrollTo(0, 0); });
+  }
+  await page.screenshot({ path: `${EVIDENCE}/${W}-${name}.jpg`, type: "jpeg", quality: 55, fullPage: full });
+};
 const uniq = () => `qa.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@example.com`;
 async function fill(page, { email = uniq(), intent = "early_access", name = "Ada Lovelace", company = "Analytical Engines Ltd", industry = "agency", marketing = false } = {}) {
   await page.getByRole("radio", { name: new RegExp(intent === "early_access" ? "^Early access" : "^Founding customer") }).check();

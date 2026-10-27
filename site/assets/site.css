@@ -156,3 +156,6 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   .prose th, .prose td { border: 0; padding: 4px 0; }
   .prose td::before, .prose th[scope="row"]::before { content: attr(data-label); display: block; font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 }
+
+.consent .check { margin-bottom: 14px; }
+.consent .error { margin-top: -6px; margin-bottom: 14px; }
