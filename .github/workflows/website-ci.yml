@@ -1,0 +1,65 @@
+# CI for the public website only (site/). No deployment, no secrets, no network beyond npm/Playwright downloads. The website and its lead-capture stub run
+# on 127.0.0.1; nothing is published. Dispatch with `ref` + `expected_sha` to test an exact commit; also runs on pull requests that touch site/.
+name: Website CI
+on:
+  push:
+    branches: [bg-web-001-public-site]
+    paths: ['site/**', 'docs/website/**', '.github/workflows/website-ci.yml', 'package.json']
+  pull_request:
+    paths: ['site/**', 'docs/website/**', '.github/workflows/website-ci.yml', 'package.json']
+  workflow_dispatch:
+    inputs:
+      ref: { description: 'Branch or SHA to test (default: this branch)', required: false, default: '' }
+      expected_sha: { description: 'Optional: fail unless the checked-out commit equals this SHA', required: false, default: '' }
+jobs:
+  unit-contract-build:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - name: Website unit, contract (against the reference stub) and build tests
+        run: npx vitest run site
+      - name: Whole repository tests and the existing app build still pass
+        run: npm test && npm run build
+      - name: A publication (strict) build must refuse while founder-only facts are unresolved
+        run: |
+          if SITE_OUT=site-dist-strict node site/build.mjs --strict; then echo "strict build unexpectedly succeeded"; exit 1; fi
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ['1440x900', '1024x768', '768x1024', '390x844', '320x568']
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1 axe-core@4.10.2
+      - name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
+        timeout-minutes: 12
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          npx playwright install --with-deps chromium
+      - name: Browser journeys, accessibility, responsive and privacy checks
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}', CI: 'true' }
+        run: npx playwright test --config site/browser/playwright.config.mjs
