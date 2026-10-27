@@ -14,6 +14,7 @@ const ManualPublicationPanel = lazy(() => import("./premium/ManualPublicationPan
 const GenerateWithQuote = lazy(() => import("./premium/GenerateWithQuote"));
 const CreativeStudio = lazy(() => import("./premium/CreativeStudio"));
 import { isSocialApiEnabled } from "./premium/socialClient";
+import { isMediaIntakeApiEnabled } from "./premium/mediaIntakeClient";
 import { isAnalyticsApiEnabled } from "./premium/insightsClient";
 import { isCustomerMediaApiEnabled } from "./premium/creativeProductionClient";
 import { isCreditPreviewApiEnabled } from "./premium/creditPreviewClient";
@@ -28,6 +29,7 @@ import { operationKey } from "./operationKey";
 function Lazy({ children }) { return <Suspense fallback={<span className="visually-hidden" role="status">Loading…</span>}>{children}</Suspense>; }
 const AddCreativeItem = lazy(() => import("./premium/AddCreativeItem"));
 const PremiumConnections = lazy(() => import("./premium/PremiumConnections"));
+const PremiumMedia = lazy(() => import("./premium/PremiumMedia"));
 const PremiumInsights = lazy(() => import("./premium/PremiumInsights"));
 const PremiumStudio = lazy(() => import("./premium/PremiumStudio"));
 import PremiumErrorBoundary from "./premium/PremiumErrorBoundary";
@@ -1001,7 +1003,7 @@ export default function App() {
                       item.format === "text" ? (
                         <Lazy><GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isCreditPreviewApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} /></Lazy>
                       ) : (
-                        <Lazy><CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} format={item.format} readOnly={isReadOnlyRole(roleState.role)} attached={Boolean(variant.current_content && Array.isArray(variant.current_content.asset_refs) && variant.current_content.asset_refs.length)} onSessionEnded={() => setSessionEnded(true)} onFinished={premiumReloadCampaign} /></Lazy>
+                        <Lazy><CreativeStudio key={`creative:${variant.variant_id}:${session.tenantId}`} enabled={isCustomerMediaApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaign={campaignState.campaign} variant={variant} format={item.format} readOnly={isReadOnlyRole(roleState.role)} canAttach={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} onFinished={premiumReloadCampaign} /></Lazy>
                       )
                     ) : (
                       <button className="secondary" type="button" onClick={() => runGenerateVariant(variant)} disabled={generationState.status === "loading"}>
@@ -1411,6 +1413,7 @@ export default function App() {
           recommendation: recommendationSection,
           campaign: campaignSection,
           brand: brandSection,
+          media: <Lazy><PremiumMedia enabled={isMediaIntakeApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
           connections: <Lazy><PremiumConnections enabled={isSocialApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
           insights: <Lazy><PremiumInsights enabled={isAnalyticsApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaignId={campaignState.campaign ? campaignState.campaign.campaign_id : ""} campaignName={campaignState.campaign ? campaignState.campaign.name : ""} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
           account: <Lazy><PremiumBilling session={session} isOwner={roleState.role === "owner"} /></Lazy>,

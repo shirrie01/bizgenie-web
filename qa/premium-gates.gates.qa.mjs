@@ -59,6 +59,13 @@ async function open(page, { role = 'owner', subscription = { status: 'not_subscr
     if (p === '/customer/generation-quotes' && m === 'POST') { const b = log.bodies[key]; log.quoteRequests = (log.quoteRequests || 0) + 1; log.quoteState = { state: 'quoted' }; return json(route, { contract_version: 'generation-quote.v1', quote_id: QID, execution_class: b.execution_class, credits: 3, kind: 'fixed', max_credits: 3, available_credits: 40, sufficient: true, expires_at: new Date(Date.now() + 120000).toISOString(), policy_version: 'pol:1', state: 'quoted' }, 201); }
     if (p === `/customer/generation-quotes/${QID}/confirm`) { log.quoteState = { state: 'confirmed', polls: 0 }; return json(route, { status: 'queued', job_id: 'quoted:job1', quote_id: QID, reserved_credits: 3, replay: false }, 202); }
     if (p === `/customer/generation-quotes/${QID}` && m === 'GET') { const st = log.quoteState || { state: 'quoted' }; st.polls = (st.polls || 0) + 1; const seq = ['queued', 'claimed', 'calling', 'succeeded']; const state = st.state === 'confirmed' ? seq[Math.min(st.polls - 1, seq.length - 1)] : st.state; return json(route, { quote_id: QID, job_id: 'quoted:job1', state, execution_class: 'image.normal', reserved_credits: state === 'succeeded' ? 0 : 3, reservation_state: state === 'succeeded' ? 'settled' : 'held' }); }
+    const jobId = 'quoted:job1', ASSET = '55555555-5555-4555-8555-555555555555', REV = '66666666-6666-4666-8666-666666666666';
+    const jobBody = () => ({ contract_version: 'creative-job.v1', job_id: jobId, quote_id: QID, kind: 'image', execution_class: 'image.normal', state: 'succeeded', content_dna: null, error_code: null, created_at: '2026-10-27T10:00:00Z', campaign_id: CID, variant_id: VID, outputs: [{ asset_id: ASSET, mime_type: 'image/png', media_kind: 'image', provenance: { origin: 'ai_generated', supplied_asset_ids: [] } }], association: log.attached ? { campaign_id: CID, variant_id: VID, revision_id: REV, campaign_version: 5, current: true, current_campaign_version: 5, approval_status: 'not_approved' } : null, preview: null, can_cancel: false, retry_guidance: null });
+    if (p === '/customer/creative-jobs') return json(route, { contract_version: 'creative-job-list.v1', jobs: log.quoteState ? [{ job_id: jobId, quote_id: QID, campaign_id: CID, variant_id: VID, execution_class: 'image.normal', state: 'succeeded', content_dna: null, error_code: null, created_at: '2026-10-27T10:00:00Z' }] : [], next_cursor: null });
+    if (p === '/customer/creative-jobs/' + encodeURIComponent(jobId) && m === 'GET') return json(route, jobBody());
+    if (p === '/customer/creative-jobs/' + encodeURIComponent(jobId) + '/attach') { log.attached = true; return json(route, jobBody()); }
+    if (p === '/customer/assets') return json(route, { assets: [{ asset_id: ASSET, filename: 'shopfront.png', kind: 'image', content_type: 'image/png', bytes: 2048, state: 'ready', rights_confirmed: true, rights_evidence_kind: 'customer_attestation', rights_policy_version: 'rights.v1', created_at: '2026-10-27T10:00:00Z', physical_deletion: null }], next_cursor: null });
+    if (p === '/customer/assets/' + ASSET + '/preview') return route.fulfill({ status: 200, contentType: 'image/png', headers: CORS, body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
     return json(route, { status: 'failed', error: { code: 'NOT_FOUND' } }, 404);
   });
   return log;
@@ -169,9 +176,14 @@ test('creative: add an image item, get a binding price, confirm, follow the job 
   await page.getByRole('button', { name: /Confirm and set aside 3 credits/ }).click();
   await expect.poll(() => log.bodies[`POST /customer/generation-quotes/${QID}/confirm`]).toMatchObject({ max_credits: 3, confirmed: true });
   await expect(page.getByText(/Finished\. 3 credits used/)).toBeVisible({ timeout: 20000 });
-  await expect(page.getByText(/Finished is not approved and not published/)).toBeVisible();
-  await expect(page.getByText(/needs one more step on BizGenie's side/)).toBeVisible();
+  await expect(page.getByText(/Finished is not approved and not published/).first()).toBeVisible();
+  const result = page.getByLabel('Image result').first();
+  await expect(result).toContainText(/stored privately/);
   await expect(page.locator('.ps-creative img, .ps-creative video')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Attach to this post' }).click();
+  await expect(page.getByText(/Attached to the post/)).toBeVisible();
+  expect(log.bodies['POST /customer/creative-jobs/' + encodeURIComponent('quoted:job1') + '/attach']).toEqual({ tenant_id: 't1', project_id: 'p1', brand_id: 'b1' });
+  await expect(page.getByText(/Not approved yet/)).toBeVisible();
   await expect(page.locator('main')).not.toContainText(/gs:\/\/|s3:\/\//);
   await checks(page, 'creative-finished');
   const quotesBefore = log.quoteRequests;
@@ -216,6 +228,19 @@ test('campaign management: rename, then archive with a reason; the archived camp
   await page.getByRole('button', { name: /Show archived campaigns/ }).click();
   await expect(page.getByRole('list', { name: 'Archived campaigns' })).toContainText('Northgate autumn leasing');
   expect(log.bodies[`POST /customer/campaigns/${CID}/archive`]).toMatchObject({ reason: 'Replaced by the winter campaign' });
+  expect(log.errors).toEqual([]);
+});
+
+test('your media: the owner sees server-reported files, ready ones preview through the authenticated route, and rights are the customer\'s own words', async ({ page }) => {
+  const log = await open(page);
+  await page.goto('/'); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Your media', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Your files' })).toContainText('Ready to use');
+  await expect(page.getByAltText('Your file shopfront.png')).toBeVisible();
+  await expect(page.getByText(/your own confirmation/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add file' })).toBeDisabled();
+  await checks(page, 'media');
+  expect(log.calls.filter((c) => c.startsWith('GET /customer/assets/') && c.endsWith('/preview'))).toHaveLength(1);
   expect(log.errors).toEqual([]);
 });
 
