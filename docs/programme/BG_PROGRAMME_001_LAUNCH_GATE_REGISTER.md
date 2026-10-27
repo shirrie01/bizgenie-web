@@ -22,7 +22,9 @@
 | Stripe test-mode → live | RED | inactive |
 | Product worker, storage, media inspection | OPEN | not done |
 | Five-industry owner/member staging e2e | OPEN | local only |
-| Ring-1 gaps: video, editing, Genie, Creative Director | RED (D1 decides scope) | grep |
+| Pre-launch: Learning on real data, Hybrid UGC, social connection (`DEC-014`); Ring-1 gaps video, editing, Genie, Creative Director | RED | code inspection |
+| Workspace-wide calendar (`DEC-025`) | OPEN | task B5/F3 |
+| Class D deployed acceptance | NOT EVIDENCED | task D1 |
 | Real social OAuth/publishing | EXTERNAL | Meta |
 | Analytics ingestion / Learning on real data | EXTERNAL | Meta |
 | Founder acceptance | OPEN | — |

@@ -40,10 +40,10 @@ Conclusion: **no price is approved and recoverable**. Anything on the site, in t
 | 9 | Voice-over, music, captions/subtitles, trimming, sequencing, Genie, Creative Director analysis | **Missing original capability** (Canon Ring 1) | grep of both repos: none |
 | 10 | Real video generation / real hybrid composition | Missing original capability (backend has profiles and a fixture compositor only) | backend source |
 | 11 | Real social OAuth/publishing and analytics ingestion | Blocked (external approvals) and contract-only | #192; #218 |
-| 12 | Hybrid UGC (#188/#189) and engagement intelligence (#204) | Unresolved — drafts not in the main chain | PR register |
+| 12 | Hybrid UGC (#188/#189) and engagement intelligence (#204) | Pre-launch work not yet integrated (drafts outside the #218 chain) | PR register |
 | 13 | Referral credits (#155), Y1 quotas (#43) | Unresolved/provisional | issues |
 | 14 | Pricing | Unresolved decision | §2 |
-| 15 | Canon Ring 1 vs #128 launch bar | Unresolved decision (D1) | source index §3 |
+| 15 | Canon Ring 1 vs #128 launch bar | **Resolved** by `DEC-014` (founder-verified): Learning, Hybrid UGC, social connection pre-launch | founder 27 Oct |
 
 ## 4. Where drift actually occurred
 Drift was not wild feature invention. It was **depth-first on one slice**: premium UX, persistence and learning contracts were built to a high standard while the Ring-1 *creation and editing* capabilities (video, voice, music, captions, Genie) and the *external* capabilities (OAuth, publishing, ingestion, real billing) never started or are blocked. The product the founder can demo is the planning-and-review half; the product a customer pays for is the produce-and-publish half. A second, quieter drift is **process**: many parallel registers (this programme, #191, #141, 022 matrix, record-only PRs) instead of one.

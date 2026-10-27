@@ -17,7 +17,7 @@
 1. **Strategy-to-execution continuity with cost-safe quoting** (score 3, closest to done).
 2. **Brand Brain as the persistent source of truth** (3).
 3. **Closed-loop Learning Brain feeding the next brief** (2 → must reach real data in the first 60 days to become real).
-4. **Hybrid AI+human creative** (1; the differentiator against pure-AI tools; do after 1–3).
+4. **Hybrid AI+human creative** (1; pre-launch per `DEC-014`; not deferred).
 Multi-industry breadth is a *marketing* claim, not a moat; Content DNA cannot be scored until its source is supplied.
 
 **Rule:** a moat is only counted when a paying customer's data has made the product measurably better for that customer. Today the honest total is **0 proven moats, 2 built foundations**.

@@ -3,7 +3,7 @@
 27 Oct 2026. Nothing below is executed.
 
 ```
-R0 founder decisions D1–D3, connect Drive (MC read)
+R0 founder decisions E1–E9 (see register); superseded by EXECUTION_HANDOVER.md §8
 R1 Backend: migration rehearsal on throwaway DB ──▶ merge #218 chain tip ──▶ staging (S1 isolation approved)
 R2 Frontend: fix socialClient + media UI ──▶ merge #56 ──▶ staging with gates OFF
 R3 Codex: lead route (WEB-002) ──▶ website strict build ──▶ preview deploy ──▶ DNS (separate approval)

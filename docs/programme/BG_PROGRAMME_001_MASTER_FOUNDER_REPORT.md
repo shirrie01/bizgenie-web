@@ -1,18 +1,17 @@
-# BG-PROGRAMME-001 — master founder report
+# BG-PROGRAMME-001 — master founder report (corrected 27 Oct 2026)
 
-27 Oct 2026. Read-only audit. Nothing merged, deployed, activated or written to Mission Control. **Mission Control and the source packs could not be read** (no route to docs.google.com; Drive connector not connected): conclusions that depend on them are marked unverified. Fixing that is decision D0.
+Correction of PR #58 after founder review against live Mission Control. Read-only; nothing merged, deployed, migrated, activated or billed. My session still cannot open Mission Control or the source archives (no route to docs.google.com; Drive connector not connected); they exist and are available to programme control. Governance below is **founder-verified**, not derived by me. The earlier recommendations to reduce launch scope, defer Hybrid, invoice manually or set a founding price are **withdrawn**.
 
-1. **Still building the intended product?** Partly. The planning, review, quoting and learning-persistence half is built to a high standard; the produce-and-publish half (video, editing, voice/music, Genie, Creative Director, real publishing, analytics) is not. Drift was depth-first on one slice and parallel registers, not feature sprawl.
-2. **Capabilities (denominator 25):** implemented anywhere 20 (80 %), of which genuinely real 15 (60 %); integrated locally in draft 5 (20 %); **independently proven operationally 0 (0 %)**; not implemented 4 (16 %). Method in the capability matrix.
-3. **Where drift occurred:** premium/learning depth ahead of data; Studio record-only PRs; two media lineages; a parallel competitor matrix; committed build artefacts. Canon Ring 1 vs #128 launch bar is unresolved (D1).
-4. **Genuine competitive value:** strategy-to-execution continuity with cost-safe quoting and a persistent Brand Brain. Learning-loop value is a hypothesis until real data flows.
-5. **Strongest moat:** continuity + Brand Brain (score 3/5). No moat is proven (customer data advantage 0).
-6. **What blocks merging:** frontend #56 — socialClient routes, media UI adoption, founder merge-strategy approval; backend #218 — migration rehearsal and S1 staging approval; #205–#212 media lineage needs Codex reconciliation. Both tips merge cleanly and have green hosted CI.
-7. **What blocks paying customers:** no approved price, Stripe inactive, no staging, company/legal facts, no lead route, and a launch-bar decision. Not blocked by video/Genie if D1 goes for a founder-assisted programme.
-8. **Integrate first:** #218 → #56 (gates OFF) → lead route + #57.
-9. **Can wait:** video, voice/music/captions, Genie, Creative Director, hybrid (#189), engagement intelligence (#204), inbox, live Stripe, Meta ingestion.
-10. **Founder decisions:** D0–D10 in the decision register; most urgent D0, D1, D4, D10.
-11. **Codex next:** lead route (extend paid-beta), media-lineage reconcile on #218, analytics manual-entry route, calendar endpoint check, row-level contract version, billing routes behind a flag.
-12. **Next verifiable commercial milestone:** first real lead through the live endpoint (M1), then first onboarded founding customer (M2).
+**Governing facts:** Mission Control is canonical (17 tabs). `DEC-014` supersedes `DEC-009`: core Learning Brain, Hybrid UGC and social connection are PRE-LAUNCH. #128 is the launch contract read with #191 and Mission Control; #191 is an engineering cross-reference (`DEC-015`). `LOCK-015` preserves prior verified PASS evidence. `DEC-020`: Architecture A approved, implementation gated. `DEC-025`: workspace calendar required before full launch. No public pricing or credit tariff is approved.
 
-Limitations: competitor prices are secondary-source and indicative; the £99/£149 tiers and original moat/Content DNA documents were not found; Meta verification is founder-reported; counts in BG-STUDIO reports are agent-reported unless backed by hosted CI listed in the PR register.
+1. **Still building the intended product?** The planning/review/quote/learning-persistence half is built and locally integrated; the produce-and-publish half is incomplete (video, editing, Genie, Creative Director not coded; Hybrid UGC and real social/ingestion not integrated). All of Learning, Hybrid and social are pre-launch, so these are launch work, not deferrals.
+2. **Capabilities (denominator 25), by evidence class:** implemented anywhere 20 (80 %); genuinely real beyond mocks 15 (60 %); integrated in local draft (class L) 5 (20 %); current deployed operational acceptance (class D) **none evidenced to me (0 %)**; historical staging PASS (class H) exists in Mission Control and is preserved, not counted or re-verified here; not implemented 4 (16 %). Percentages are mine and rest on code inspection.
+3. **Where drift occurred:** depth on one slice, record-only PRs, two backend media lineages, parallel competitor matrix, committed build artefacts.
+4. **Competitive value / strongest moat:** strategy-to-execution continuity with cost-safe quoting and Brand Brain; Learning loop becomes a moat only on real data.
+5. **What blocks merging:** pair #218 → #56 (gates OFF) is the smallest safe candidate; blockers: B1 onboarding gating vs `DEC-020`, B2 approved migration rehearsal (local rehearsal of all 9 migrations passed), B3 media lineage, F1 socialClient rewrite.
+6. **What blocks a controlled production launch:** class D evidence, Hybrid UGC (#189) and Learning on real data, social connection (Meta Tech Provider access verification by 25 Dec 2026), workspace calendar (`DEC-025`), editing/Genie/Creative Director per Canon, pricing canon, Stripe/billing authorisation.
+7. **Integrate first:** `EXECUTION_HANDOVER.md` §8, in dependency order (B-tasks Codex, F-tasks Claude).
+8. **Founder decisions:** see decision register (short list, scope-preserving).
+9. **Next verifiable milestone:** class-D run of the full journey in an approved environment (task D1).
+
+Limitations: competitor figures indicative; Meta business verification (26 Oct) founder-reported and distinct from access verification; agent-reported counts in BG-STUDIO reports are not independent verification.

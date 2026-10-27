@@ -19,8 +19,8 @@ Recommended frontend batch: **merge #56 once, as one squash-free merge** (preser
 |---|---|---|---|---|
 | #167 stripe return fixture test | 82fa747 | 2 | no | Close candidate (stale, 8 behind main) unless test still needed |
 | #175 provisional component interfaces | f00cb58 | 4 | no | Hold / close candidate (superseded by BG-STUDIO-019 contracts in #216) |
-| #189 media upload requires approved brand identity (#188 hybrid) | ae0f148 | 6 | no | **Hold pending decision**; merges cleanly with #218 — Codex to rebase onto #218 and add tests |
-| #204 engagement intelligence (#20) WIP | 3e9d656 | 10 | no | Hold; merges cleanly with #218; keep as ingestion-model reference |
+| #189 media upload requires approved brand identity (#188 hybrid) | ae0f148 | 6 | no | **Needs rebase + tests (pre-launch, `DEC-014`)**; merges cleanly with #218 — task B6 |
+| #204 engagement intelligence (#20) WIP | 3e9d656 | 10 | no | Needs integration review (part of Learning); merges cleanly with #218 |
 | #205–#212 media preview / capability / cleanup / evidence | 69dd72a … b60e380 | 1–13 | no | **Duplicated lineage.** `git cherry` vs #218: #206 fully, #208 2/4, #209 3/5, #210 4/7, #211 6/9, #212 10/13 patch-equivalent. Conflicts with #218 (add/add `src/media/previewDelivery.js`, `index.js`, campaigns repository/router). **Hold pending Codex decision**: take #218's version, port only residual unique commits from #207/#208/#209, close the rest |
 | #213 onboarding hardening | 120a874 | 3 | yes | Merge via chain |
 | #214 Brand Brain contract Q1–Q8 | 51e8ca4 | 7 | yes | chain |
