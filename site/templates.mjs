@@ -327,5 +327,5 @@ export function deletionPage({ strict }) {
 
 export function notFoundPage({ strict }) {
   const body = `<section class="wrap narrow prose"><h1>Page not found</h1><p>That page does not exist. <a href="/">Go to the home page</a>.</p></section>`;
-  return layout({ title: "Page not found — BizGenie", description: "Page not found.", path: "/404.html", body, strict, scripts: false });
+  return layout({ title: "Page not found — BizGenie", description: "The page you asked for does not exist on the BizGenie website.", path: "/404.html", body, strict, scripts: false });
 }
