@@ -31,3 +31,9 @@ Exact-SHA hosted CI: see the PR. Hosted CI does not run the cross-repo integrati
 | M4 | `GET /customer/creative-jobs` cannot filter by variant and the client does not follow `next_cursor`. | The list filters client-side over the first page |
 | M5 | `#219` routes `/customer/strategy-workflows` (create, quote per stage, stop) have no frontend flow. | Only the *output* is handled correctly here; the staged-strategy UI (priced stages, stop) is a separate task after #219 is reconciled |
 | M6 | Hybrid (supplied assets with `execution_mode: hybrid`) is still blocked on backend lineage (#189). | Hybrid stays named unavailable (F4) |
+
+## Update after the real-backend acceptance (bizgenie-api #220, e653ed3)
+Driving the full journey in a browser against the real backend (see BG_STUDIO_028_FE_INTEGRATED_ACCEPTANCE.md on the integrated branch) found two defects in this flow, fixed here:
+* An attached creative could not be sent for review: there was no client for `POST …/variants/:id/review`. `submitForReview` and a "Send for review" action were added (owner, only while the post is a draft carrying this asset, current revision only; it approves and publishes nothing). The existing render → acknowledge → approve steps then run unchanged, on the current version.
+* An approved creative was never displayed (only the review step loaded the saved creative). `ApprovedCreative` shows the current revision's media through the existing authenticated delivery for approved posts with attached media.
+Also: "Finished. Finished." duplicate wording removed and the stale Hybrid blocker text corrected (you can add your own media; combining it with AI is not finished). Integration re-run against #220: 4/4 + strategy 1/1.
