@@ -138,4 +138,15 @@ describe("workspace calendar", () => {
     fireEvent.click(screen.getByRole("button", { name: /^try again$/i }));
     expect(onLoad).toHaveBeenCalled();
   });
+  it("published entries say who vouches for them; scheduled entries show their delivery status; a failed overlay is stated, not hidden", () => {
+    const items = [
+      mk({ campaignId: "c1", campaignName: "Spring leasing", variantId: "p1", contentName: "Platform post", workflow: "published", occurrenceKind: "published", platformVerified: true, occurrenceAt: "2026-10-28T09:00:00.000Z" }),
+      mk({ campaignId: "c1", campaignName: "Spring leasing", variantId: "p2", contentName: "Manual post", workflow: "published", occurrenceKind: "published", platformVerified: false, occurrenceAt: "2026-10-28T10:00:00.000Z" }),
+      mk({ campaignId: "c1", campaignName: "Spring leasing", variantId: "p3", contentName: "Queued post", occurrenceKind: "scheduled", occurrenceAt: "2026-10-28T11:00:00.000Z", delivery: { state: "queued", label: "Queued to send at the planned time" } }),
+    ];
+    show({ ...READY, items, overlay: { ok: false, dropped: 0 } });
+    expect(screen.getByText("Confirmed by the platform")).toBeInTheDocument(); expect(screen.getByText(/Recorded by you; not checked with the platform/)).toBeInTheDocument(); expect(screen.getByText(/Queued to send at the planned time\./)).toBeInTheDocument();
+    expect(screen.getByText(/Delivery status could not be loaded, so scheduled items show their planned time only/)).toBeInTheDocument();
+  });
+  it("unmatched delivery records are counted in words, not drawn", () => { show({ ...READY, overlay: { ok: true, dropped: 2 } }); expect(screen.getByText(/2 delivery records did not match a scheduled item and were left out/)).toBeInTheDocument(); });
 });

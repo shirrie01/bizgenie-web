@@ -46,6 +46,10 @@ function itemOf(row, dated) {
     platform: text(row.platform), placement: text(row.placement), destinationLabel: text(row.destination_label), workflow: text(row.workflow),
     occurrenceAt: dated ? new Date(row.occurrence_at).toISOString() : null, occurrenceKind: dated ? text(row.occurrence_kind) : "",
     scheduleId: text(row.schedule_id) || null, publicationId: text(row.publication_id) || null,
+    // bizgenie-api #220: a published entry projected from a verified platform publication also carries evidence_kind + provider_publication_id; a manual (customer-attested)
+    // publication carries neither. "Confirmed by the platform" requires both, on a published entry.
+    evidenceKind: text(row.evidence_kind), providerPublicationId: text(row.provider_publication_id),
+    platformVerified: dated && text(row.occurrence_kind) === "published" && row.evidence_kind === "platform_api" && text(row.provider_publication_id).length > 0,
   };
 }
 
