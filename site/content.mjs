@@ -45,9 +45,9 @@ export const audiences = [
 ];
 
 export const previews = [
-  { id: "overview", file: "previews/overview.jpg", w: 1440, h: 900, alt: "A BizGenie workspace overview for a sample fragrance business, showing its profile status, recommended next steps and what BizGenie knows about the business.", caption: "Workspace overview" },
-  { id: "growth", file: "previews/growth.jpg", w: 1440, h: 900, alt: "The BizGenie Growth centre for a sample business: objective, current performance, content pipeline and experiments, shown with empty states because nothing has been created or measured yet.", caption: "Growth centre" },
-  { id: "calendar", file: "previews/calendar.jpg", w: 1440, h: 900, alt: "The BizGenie campaign calendar for a sample business, with nothing scheduled yet.", caption: "Campaign calendar" },
+  { id: "overview", file: "previews/overview.jpg", w: 1060, h: 760, alt: "A BizGenie workspace overview for a sample fragrance business, showing its profile status, recommended next steps and what BizGenie knows about the business.", caption: "Workspace overview" },
+  { id: "growth", file: "previews/growth.jpg", w: 1060, h: 760, alt: "The BizGenie Growth centre for a sample business: objective, current performance, content pipeline and experiments, shown with empty states because nothing has been created or measured yet.", caption: "Growth centre" },
+  { id: "calendar", file: "previews/calendar.jpg", w: 1060, h: 760, alt: "The BizGenie campaign calendar for a sample business, with nothing scheduled yet.", caption: "Campaign calendar" },
 ];
 export const previewNote = "Screenshots of the pre-release product with made-up sample businesses and no real customer data. Features and appearance may change before release.";
 

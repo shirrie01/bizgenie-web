@@ -6,7 +6,7 @@ const tbc = (v, strict) => (v ? esc(v) : strict ? "" : `<span class="tbc">to be 
 
 export function layout({ title, description, path, body, strict = false, scripts = true }) {
   const canonical = `${company.siteUrl}${path}`;
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
@@ -37,6 +37,8 @@ ${scripts ? `<script type="module" src="/assets/site.js"></script>` : ""}
 </body>
 </html>
 `;
+  // On the home page an in-page anchor must stay in the same document (a "/#x" link from "/?utm_source=..." would reload and drop the visitor's choices).
+  return path === "/" ? html.replaceAll('href="/#', 'href="#') : html;
 }
 
 function header() {
@@ -144,6 +146,8 @@ function registerForm() {
 }
 
 export function homePage({ strict }) {
+  const used = [...new Set(C.features.map((x) => x.status))];
+  const legend = used.map((k) => `<span>${statusBadge(k)} ${esc(C.STATUS[k].note)}</span>`).join("");
   const f = C.features.map((x) => `<article class="card feature" id="feature-${x.id}"><div class="row"><h3>${esc(x.title)}</h3>${statusBadge(x.status)}</div><p>${esc(x.text)}</p><p class="fine">${esc(C.STATUS[x.status].note)}</p></article>`).join("");
   const steps = C.steps.map((s, i) => `<li><span class="n" aria-hidden="true">${i + 1}</span><div><h3>${esc(s.title)}</h3><p>${esc(s.text)}</p></div></li>`).join("");
   const aud = C.audiences.map((a) => `<li class="card"><h3>${esc(a.title)}</h3><p>${esc(a.text)}</p></li>`).join("");
@@ -173,7 +177,7 @@ export function homePage({ strict }) {
     <h2 id="product-title">One platform for the whole marketing loop</h2>
     <p class="sub">What each part does, and exactly where it stands today.</p>
     <div class="grid3">${f}</div>
-    <div class="legend" aria-label="What the labels mean"><span>${statusBadge("pre")} ${esc(C.STATUS.pre.note)}</span><span>${statusBadge("dev")} ${esc(C.STATUS.dev.note)}</span><span>${statusBadge("plan")} ${esc(C.STATUS.plan.note)}</span></div>
+    <div class="legend" aria-label="What the labels mean">${legend}</div>
   </div>
 </section>
 
@@ -258,12 +262,12 @@ export function privacyPage({ strict }) {
   <table>
     <thead><tr><th scope="col">What</th><th scope="col">Why</th><th scope="col">Our basis</th></tr></thead>
     <tbody>
-      <tr><th scope="row">Name, email, business name, industry and the type of registration you choose</th><td>To record your interest and contact you about early access</td><td>Your consent, which you can withdraw</td></tr>
-      <tr><th scope="row">Optional: what matters to you, and anything you add in the notes box</th><td>To understand what to build and to decide who to invite</td><td>Your consent</td></tr>
-      <tr><th scope="row">Optional: agreement to receive product news</th><td>To send occasional news about BizGenie</td><td>Your separate consent. Unticked by default</td></tr>
-      <tr><th scope="row">The wording you agreed to, its version and the time you agreed</th><td>To prove what you consented to</td><td>Legal obligation to demonstrate consent</td></tr>
-      <tr><th scope="row">Where you came from (for example the campaign tag in a link, or the website that linked to us)</th><td>To understand which channels bring interested businesses</td><td>Legitimate interests</td></tr>
-      <tr><th scope="row">A one-way pseudonym of your connection, held briefly</th><td>To limit automated abuse of the form. Your raw IP address is not stored with your registration</td><td>Legitimate interests</td></tr>
+      <tr><th scope="row" data-label="What">Name, email, business name, industry and the type of registration you choose</th><td data-label="Why">To record your interest and contact you about early access</td><td data-label="Our basis">Your consent, which you can withdraw</td></tr>
+      <tr><th scope="row" data-label="What">Optional: what matters to you, and anything you add in the notes box</th><td data-label="Why">To understand what to build and to decide who to invite</td><td data-label="Our basis">Your consent</td></tr>
+      <tr><th scope="row" data-label="What">Optional: agreement to receive product news</th><td data-label="Why">To send occasional news about BizGenie</td><td data-label="Our basis">Your separate consent. Unticked by default</td></tr>
+      <tr><th scope="row" data-label="What">The wording you agreed to, its version and the time you agreed</th><td data-label="Why">To prove what you consented to</td><td data-label="Our basis">Legal obligation to demonstrate consent</td></tr>
+      <tr><th scope="row" data-label="What">Where you came from (for example the campaign tag in a link, or the website that linked to us)</th><td data-label="Why">To understand which channels bring interested businesses</td><td data-label="Our basis">Legitimate interests</td></tr>
+      <tr><th scope="row" data-label="What">A one-way pseudonym of your connection, held briefly</th><td data-label="Why">To limit automated abuse of the form. Your raw IP address is not stored with your registration</td><td data-label="Our basis">Legitimate interests</td></tr>
     </tbody>
   </table>
   <p>We do <strong>not</strong> ask for social media passwords, access tokens or payment details on this site, and you should not enter them.</p>

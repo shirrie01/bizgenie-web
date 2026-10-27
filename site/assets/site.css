@@ -70,7 +70,8 @@ section { padding: clamp(40px, 7vw, 88px) 0; }
 .badge-dev { background: #fbf1da; color: #6b4a07; border-color: #8a6420; }
 .badge-plan { background: #ecedf0; color: #3b4452; border-color: #5b6573; }
 .legend { display: grid; gap: 8px; margin-top: 24px; font-size: .95rem; color: var(--muted); }
-@media (min-width: 900px) { .legend { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 700px) { .legend { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); } }
+
 
 /* steps */
 .steps { list-style: none; counter-reset: s; padding: 0; margin: 28px 0 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
@@ -135,7 +136,7 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 @media (max-width: 480px) { .facts { grid-template-columns: 1fr; gap: 0; } .facts dd { margin-bottom: 10px; } }
 .prose { padding-block: clamp(32px, 6vw, 64px); }
 .prose h2 { font-size: 1.5rem; margin-top: 1.6em; }
-.prose table { width: 100%; border-collapse: collapse; margin: 0 0 1em; font-size: .97rem; display: block; overflow-x: auto; }
+.prose table { width: 100%; border-collapse: collapse; margin: 0 0 1em; font-size: .97rem; }
 .prose th, .prose td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .prose thead th { border-bottom: 2px solid var(--ink); }
 .site-footer { background: var(--ink); color: #e8ece9; padding: 40px 0; }
@@ -146,3 +147,12 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 .site-footer ul { list-style: none; padding: 0; margin: 0; }
 .site-footer li a { display: inline-block; padding: 4px 0; min-height: 24px; }
 .cols { display: grid; gap: 28px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+
+/* the data table reflows into stacked rows on narrow screens (no two-dimensional scrolling at 320px) */
+@media (max-width: 640px) {
+  .prose table, .prose tbody, .prose tr, .prose th, .prose td { display: block; width: 100%; }
+  .prose thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .prose tr { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; background: var(--paper); }
+  .prose th, .prose td { border: 0; padding: 4px 0; }
+  .prose td::before, .prose th[scope="row"]::before { content: attr(data-label); display: block; font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+}

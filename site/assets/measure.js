@@ -18,9 +18,9 @@ export function createMeasurement({ url, attribution = {}, nav, send, pagePath =
   let finished = false;
   let lastField = null;
   let intention = null;
+  // `fetch` with keepalive, NOT sendBeacon: beacons always send credentials, which a cross-origin API would then have to allow. This sends none.
   const deliver = send || ((body) => {
-    try { if (nav && nav.sendBeacon && nav.sendBeacon(url, new Blob([body], { type: "application/json" }))) return; } catch { /* fall through */ }
-    try { fetch(url, { method: "POST", body, headers: { "content-type": "application/json" }, keepalive: true, credentials: "omit", referrerPolicy: "no-referrer" }).catch(() => {}); } catch { /* none */ }
+    try { fetch(url, { method: "POST", body, headers: { "content-type": "application/json" }, keepalive: true, credentials: "omit", referrerPolicy: "no-referrer", mode: "cors" }).catch(() => {}); } catch { /* none */ }
   });
   const emit = (type, extra = {}) => {
     if (!enabled || !EVENT_TYPES.includes(type)) return false;
