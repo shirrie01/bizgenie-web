@@ -2,6 +2,9 @@
 # on 127.0.0.1; nothing is published. Dispatch with `ref` + `expected_sha` to test an exact commit; also runs on pull requests that touch site/.
 name: Website CI
 on:
+  push:
+    branches: [bg-web-001-public-site]
+    paths: ['site/**', 'docs/website/**', '.github/workflows/website-ci.yml', 'package.json']
   pull_request:
     paths: ['site/**', 'docs/website/**', '.github/workflows/website-ci.yml', 'package.json']
   workflow_dispatch:
