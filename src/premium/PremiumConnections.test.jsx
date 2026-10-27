@@ -1,55 +1,89 @@
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import PremiumConnections from "./PremiumConnections";
 import PremiumInsights from "./PremiumInsights";
-import { normaliseAccounts, normaliseQueue, SocialError } from "./socialClient";
+import { normaliseConnections, normaliseDispatches, SocialError } from "./socialClient";
 import { observationRow, recommendation, snapshotAvailable, snapshotStale } from "../intel/fixtures";
 
-// FIXTURE-DRIVEN tests for proposed contracts: they prove what the screens say, not that any backend exists.
-afterEach(cleanup);
+// FIXTURE-DRIVEN tests of the screens against the #218 /customer/social contract shapes (the shapes themselves are checked against the real
+// backend in qa/integration). They prove what the screens say, not that any platform is connected.
+afterEach(cleanup); beforeEach(() => { try { sessionStorage.clear(); } catch { /* ignore */ } });
 const session = { accessToken: "tk" }; const scope = { tenantId: "t", projectId: "p", brandId: "b" };
-const accounts = (list) => normaliseAccounts({ contract_version: "social-accounts.v1", accounts: list });
-const A = (o = {}) => ({ account_id: "a1", provider: "instagram", display_name: "Test Account", status: "connected", scopes_granted: ["publish"], connected_at: "2026-10-01T00:00:00Z", token_expires_at: "2026-12-01T00:00:00Z", ...o });
-const Q = (items) => normaliseQueue({ contract_version: "publishing-queue.v1", items });
-const I = (o = {}) => ({ publication_id: "pub1", campaign_id: "c1", variant_id: "v1", account_id: "a1", scheduled_for: "2026-11-01T10:00:00Z", status: "published", attempts: 1, last_error_code: null, platform_post_url: "https://example.test/post/1", verified_by: "platform", ...o });
+const C = (o = {}) => ({ connection_id: "c1", platform: "instagram", account_id: "acct_one", status: "active", expires_at: "2026-12-01T00:00:00Z", version: 1, ...o });
+const conns = (list) => normaliseConnections({ connections: list, next_cursor: null });
+const D = (o = {}) => ({ dispatch_id: "d1", campaign_id: "c1", variant_id: "v1", revision_id: "r1", state: "published", scheduled_for: "2026-11-01T10:00:00Z", publication_id: "pub1", publication_url: "https://example.test/post/1", published_at: "2026-11-01T10:01:00Z", evidence_kind: "platform_api", ...o });
+const disp = (list) => normaliseDispatches({ dispatches: list, next_cursor: null });
+const none = async () => disp([]);
 
 describe("PremiumConnections", () => {
   it("gate off: says nothing is connected and BizGenie does not publish, explains the manual route, calls nothing, has no buttons", () => {
-    const f = vi.fn(); render(<PremiumConnections enabled={false} session={session} scope={scope} isOwner api={{ fetchAccounts: f, fetchQueue: f }} />);
-    expect(screen.getByText(/not available in BizGenie yet/i)).toBeInTheDocument(); expect(screen.getByText(/does not publish for you/i)).toBeInTheDocument(); expect(screen.getByText(/labelled as entered by you/i)).toBeInTheDocument();
+    const f = vi.fn(); render(<PremiumConnections enabled={false} session={session} scope={scope} isOwner api={{ fetchConnections: f, fetchDispatches: f }} />);
+    expect(screen.getByText(/not switched on in BizGenie yet/i)).toBeInTheDocument(); expect(screen.getByText(/does not publish for you/i)).toBeInTheDocument(); expect(screen.getByText(/labelled as entered by you/i)).toBeInTheDocument();
     expect(screen.queryByRole("button")).toBeNull(); expect(f).not.toHaveBeenCalled();
   });
-  it("shows connection health from the server only, and the owner can connect (Stripe-style redirect) with the request id reused on retry", async () => {
-    const onRedirect = vi.fn(); const connect = vi.fn().mockRejectedValueOnce(new SocialError("may or may not", { kind: "unconfirmed" })).mockResolvedValueOnce({ url: "https://provider.example.test/oauth" });
-    render(<PremiumConnections enabled session={session} scope={scope} isOwner onRedirect={onRedirect} api={{ fetchAccounts: async () => accounts([A(), A({ account_id: "a2", provider: "linkedin", display_name: "Biz Page", status: "needs_reauth" })]), fetchQueue: async () => Q([]), startConnect: connect }} />);
+  it("shows connection health from the server only; the owner connects: the verifier is kept for the round trip and the browser is sent to the platform", async () => {
+    const onRedirect = vi.fn(); const connect = vi.fn().mockRejectedValueOnce(new SocialError("may or may not", { kind: "unconfirmed" })).mockResolvedValueOnce({ url: "https://provider.example.test/oauth", pending: { intentId: "i1", state: "s1", verifier: "v".repeat(43), provider: "facebook" } });
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner onRedirect={onRedirect} search="" api={{ fetchConnections: async () => conns([C(), C({ connection_id: "c2", platform: "linkedin", account_id: "biz", status: "expired" })]), fetchDispatches: none, startConnect: connect }} />);
     expect(await screen.findByText("Needs reconnecting")).toBeInTheDocument(); expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Connect Instagram" })).toBeNull(); // already connected
+    expect(screen.queryByRole("button", { name: "Connect Instagram" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Connect Facebook" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/may or may not/);
     fireEvent.click(screen.getByRole("button", { name: "Connect Facebook" }));
     await waitFor(() => expect(onRedirect).toHaveBeenCalledWith("https://provider.example.test/oauth"));
-    expect(connect.mock.calls[0][0].id).toBe(connect.mock.calls[1][0].id); expect(screen.getByText(/shows as connected only after Facebook confirms it/)).toBeInTheDocument();
+    expect(JSON.parse(sessionStorage.getItem("bizgenie.social.pending"))).toMatchObject({ intentId: "i1", state: "s1", provider: "facebook" });
+    expect(screen.getByText(/shows as connected only after Facebook confirms it/)).toBeInTheDocument();
+  });
+  it("returning from the platform: completes only against the attempt this browser started, then clears the verifier", async () => {
+    sessionStorage.setItem("bizgenie.social.pending", JSON.stringify({ intentId: "i1", state: "s1", verifier: "v".repeat(43), provider: "instagram" }));
+    const complete = vi.fn(async () => C());
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="?code=abc&state=s1" api={{ fetchConnections: async () => conns([]), fetchDispatches: none, completeConnect: complete }} />);
+    expect(await screen.findByText(/Instagram is connected/)).toBeInTheDocument();
+    expect(complete.mock.calls[0][0]).toMatchObject({ code: "abc", state: "s1", pending: { intentId: "i1" } }); expect(sessionStorage.getItem("bizgenie.social.pending")).toBeNull();
+  });
+  it("a callback with no matching attempt is reported, not connected", async () => {
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="?code=abc&state=zzz" api={{ fetchConnections: async () => conns([]), fetchDispatches: none }} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/did not match this connection attempt/);
+  });
+  it("consent refused on the platform (error=access_denied, no code): nothing is connected, the attempt is cleared, the query is stripped", async () => {
+    sessionStorage.setItem("bizgenie.social.pending", JSON.stringify({ intentId: "i1", state: "s1", verifier: "v".repeat(43), provider: "instagram" }));
+    const complete = vi.fn(); render(<PremiumConnections enabled session={session} scope={scope} isOwner search="?error=access_denied&state=s1" api={{ fetchConnections: async () => conns([]), fetchDispatches: none, completeConnect: complete }} />);
+    expect(await screen.findByText(/Permission was not given on the platform, so nothing was connected/)).toBeInTheDocument(); expect(complete).not.toHaveBeenCalled(); expect(sessionStorage.getItem("bizgenie.social.pending")).toBeNull();
+  });
+  it("an uncertain provider answer is not 'nothing changed': it tells the owner to check accounts first", async () => {
+    sessionStorage.setItem("bizgenie.social.pending", JSON.stringify({ intentId: "i1", state: "s1", verifier: "v".repeat(43), provider: "instagram" }));
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="?code=abc&state=s1" api={{ fetchConnections: async () => conns([]), fetchDispatches: none, completeConnect: vi.fn().mockRejectedValue(new SocialError("The platform did not give a clear answer. Check your connected accounts before starting again.", { kind: "unconfirmed" })) }} />);
+    const warn = await screen.findByText(/Check your connected accounts before starting again/); expect(warn).toHaveClass("ps-warn"); expect(warn.textContent).not.toMatch(/Nothing was changed/);
+  });
+  it("shows the verified display name when there is one, the account id otherwise, and says when permission ended", async () => {
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C({ display_name: "Northgate Leasing" }), C({ connection_id: "c2", platform: "facebook", account_id: "acct_two", status: "expired" })]), fetchDispatches: none }} />);
+    const list = await screen.findByRole("list", { name: "Connected accounts" }); expect(list).toHaveTextContent("Northgate Leasing"); expect(list).toHaveTextContent("acct_two"); expect(list).toHaveTextContent(/permission ended/);
+  });
+  it("a member never triggers a callback completion", async () => {
+    const complete = vi.fn(); render(<PremiumConnections enabled session={session} scope={scope} isOwner={false} search="?code=abc&state=s1" api={{ fetchConnections: async () => conns([]), fetchDispatches: none, completeConnect: complete }} />);
+    await screen.findByText("No accounts are connected yet."); expect(complete).not.toHaveBeenCalled();
   });
   it("disconnect asks first and says published posts stay", async () => {
-    const dis = vi.fn(async () => ({ accountId: "a1" }));
-    render(<PremiumConnections enabled session={session} scope={scope} isOwner api={{ fetchAccounts: async () => accounts([A()]), fetchQueue: async () => Q([]), disconnect: dis }} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Disconnect Test Account" }));
+    const dis = vi.fn(async () => ({ connectionId: "c1" }));
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C()]), fetchDispatches: none, disconnect: dis }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Disconnect acct_one" }));
     expect(dis).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole("button", { name: "Yes, disconnect" }));
-    expect(await screen.findByText(/already published stays on the platform/)).toBeInTheDocument(); expect(dis).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/already published stays on the platform/)).toBeInTheDocument(); expect(dis).toHaveBeenCalledTimes(1); expect(dis.mock.calls[0][0].connectionId).toBe("c1");
   });
   it("a member sees accounts but no connect or disconnect", async () => {
-    render(<PremiumConnections enabled session={session} scope={scope} isOwner={false} api={{ fetchAccounts: async () => accounts([A()]), fetchQueue: async () => Q([]) }} />);
-    expect(await screen.findByText("Connected")).toBeInTheDocument(); expect(screen.queryByRole("button", { name: /connect|disconnect/i })).toBeNull(); expect(screen.getByText(/Only the workspace owner can connect/)).toBeInTheDocument();
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner={false} search="" api={{ fetchConnections: async () => conns([C()]), fetchDispatches: none }} />);
+    expect(await screen.findByText("Connected")).toBeInTheDocument(); expect(screen.queryByRole("button", { name: /connect|disconnect|cancel/i })).toBeNull(); expect(screen.getByText(/Only the workspace owner can connect/)).toBeInTheDocument();
   });
-  it("the queue: platform-confirmed vs not; failure and unknown outcomes are stated plainly", async () => {
-    render(<PremiumConnections enabled session={session} scope={scope} isOwner api={{ fetchAccounts: async () => accounts([A()]), fetchQueue: async () => Q([I(), I({ publication_id: "p2", verified_by: null }), I({ publication_id: "p3", status: "failed", attempts: 2, last_error_code: "TOKEN_EXPIRED", platform_post_url: null, verified_by: null }), I({ publication_id: "p4", status: "needs_reconciliation", platform_post_url: null, verified_by: null })]) }} />);
+  it("publishing list: platform-confirmed needs platform evidence and an https link; failure and unknown outcomes are stated plainly; queued posts can be cancelled by the owner", async () => {
+    const cancel = vi.fn(async () => ({ state: "cancelled" }));
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C()]), cancelDispatch: cancel, fetchDispatches: async () => disp([D(), D({ dispatch_id: "d2", evidence_kind: null }), D({ dispatch_id: "d3", state: "failed", publication_url: null, evidence_kind: null }), D({ dispatch_id: "d4", state: "reconciliation_required", publication_url: null, evidence_kind: null }), D({ dispatch_id: "d5", state: "queued", publication_url: null, evidence_kind: null })]) }} />);
     expect(await screen.findByText("Confirmed by the platform")).toBeInTheDocument(); expect(screen.getByRole("link", { name: "View post" })).toHaveAttribute("href", "https://example.test/post/1");
-    expect(screen.getByText("Not confirmed by the platform")).toBeInTheDocument(); expect(screen.getByText(/Reason code TOKEN_EXPIRED\. 2 attempts made/)).toBeInTheDocument(); expect(screen.getByText(/will not send it again until that is checked/)).toBeInTheDocument();
+    expect(screen.getByText("Not confirmed by the platform")).toBeInTheDocument(); expect(screen.getByText(/The platform refused it/)).toBeInTheDocument(); expect(screen.getByText(/will not send it again until that is checked/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" })); expect(await screen.findByText(/will not be sent/)).toBeInTheDocument(); expect(cancel.mock.calls[0][0].dispatchId).toBe("d5");
   });
   it("errors are explained and retryable; a session that ended is reported", async () => {
-    const ended = vi.fn(); const f = vi.fn().mockRejectedValueOnce(new SocialError("Your session has ended.", { kind: "auth" })).mockResolvedValue(accounts([]));
-    render(<PremiumConnections enabled session={session} scope={scope} isOwner onSessionEnded={ended} api={{ fetchAccounts: f, fetchQueue: async () => Q([]) }} />);
+    const ended = vi.fn(); const f = vi.fn().mockRejectedValueOnce(new SocialError("Your session has ended.", { kind: "auth" })).mockResolvedValue(conns([]));
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" onSessionEnded={ended} api={{ fetchConnections: f, fetchDispatches: none }} />);
     expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent(/session has ended/); expect(ended).toHaveBeenCalled();
     fireEvent.click(screen.getAllByRole("button", { name: "Try again" })[0]); expect(await screen.findByText("No accounts are connected yet.")).toBeInTheDocument();
   });
