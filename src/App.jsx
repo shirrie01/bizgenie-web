@@ -8,6 +8,7 @@ import BillingPanel from "./BillingPanel";
 const PremiumBilling = lazy(() => import("./premium/PremiumBilling"));
 import { fetchWorkspaceCalendar } from "./premium/workspaceCalendarClient";
 import { fetchWorkspaceCalendarFromApi, isWorkspaceCalendarApiEnabled } from "./premium/workspaceCalendarApiClient";
+import { applyDeliveryOverlay, fetchDeliveryOverlay } from "./premium/calendarOverlay";
 const ScheduleControls = lazy(() => import("./premium/ScheduleControls"));
 const ManualPublicationPanel = lazy(() => import("./premium/ManualPublicationPanel"));
 const GenerateWithQuote = lazy(() => import("./premium/GenerateWithQuote"));
@@ -887,6 +888,12 @@ export default function App() {
       let result;
       if (isWorkspaceCalendarApiEnabled()) {
         result = await fetchWorkspaceCalendarFromApi({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope, from: window.from, to: window.to, isCurrent: current });
+        if (current() && isSocialApiEnabled() && session.brandId) { // delivery status for items still scheduled; a failure here never hides the calendar
+          try {
+            const o = await fetchDeliveryOverlay({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { ...scope, brandId: session.brandId }, from: window.from, to: window.to });
+            result = { ...result, ...(() => { const r = applyDeliveryOverlay(result.items, o.entries); return { items: r.items, overlay: { ok: true, dropped: r.dropped + o.skipped } }; })() };
+          } catch { result = { ...result, overlay: { ok: false, dropped: 0 } }; }
+        }
       } else {
         const campaigns = await getCampaignList({ accessToken: session.accessToken, session });
         if (!current()) return;

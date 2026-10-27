@@ -92,4 +92,9 @@ describe("GET /customer/calendar adapter (contract, mocked)", () => {
     const f = vi.fn().mockRejectedValue(Object.assign(new Error("x"), { name: "AbortError" }));
     expect((await run(f)).items).toEqual([]);
   });
+  it("provenance (#220): a published entry is platform-confirmed only with evidence_kind platform_api AND a provider publication id; a manual one is not; scheduled entries are never confirmed", async () => {
+    const f = vi.fn(async () => page([row(1, { occurrence_kind: "published", workflow: "published", publication_id: "d1", evidence_kind: "platform_api", provider_publication_id: "p1" }), row(2, { occurrence_kind: "published", workflow: "published", publication_id: "m1" }), row(3, { occurrence_kind: "published", workflow: "published", publication_id: "d3", evidence_kind: "platform_api" }), row(4, { evidence_kind: "platform_api", provider_publication_id: "p4" })]));
+    const r = await run(f); const by = Object.fromEntries(r.items.map((i) => [i.variantId, i]));
+    expect([by.v1.platformVerified, by.v2.platformVerified, by.v3.platformVerified, by.v4.platformVerified]).toEqual([true, false, false, false]); expect(by.v1).toMatchObject({ evidenceKind: "platform_api", providerPublicationId: "p1", scheduleId: null });
+  });
 });

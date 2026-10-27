@@ -12,6 +12,8 @@ function Entry({ item, tz, clash, showDay, onOpen }) {
       <span className="ps-wcal-what">{item.contentName}</span>
       <span className="ps-wcal-meta">{item.campaignName} · {platformLabel(item)}</span>
       <span className="ps-wcal-status">{statusLabel(item.workflow)}</span>
+      {item.occurrenceKind === "published" && <span className="ps-wcal-prov">{item.platformVerified ? "Confirmed by the platform" : "Recorded by you; not checked with the platform"}</span>}
+      {item.delivery && <span className="ps-wcal-delivery">{item.delivery.label}.</span>}
       {clash && <span className="ps-wcal-clash">Possible clash: another scheduled item has the same destination and time.</span>}
       {onOpen && <button type="button" className="secondary ps-wcal-open" onClick={() => onOpen(item.campaignId)} aria-label={`Open campaign ${item.campaignName}: ${item.contentName}`}>Open campaign</button>}
     </li>
@@ -82,6 +84,8 @@ export default function PremiumWorkspaceCalendar({ state, onLoad, onOpenCampaign
           </p>
           {state.nextOffset != null && <p><button type="button" className="secondary" onClick={() => onLoad(state.window, { more: true })} disabled={state.loadingMore}>{state.loadingMore ? "Loading more campaigns…" : `Load the next ${Math.min(8, state.campaignsTotal - state.campaignsChosen)} campaigns`}</button></p>}
           {state.moreError && <p className="error" role="alert">{state.moreError} The campaigns already shown are unchanged.</p>}
+          {state.overlay && state.overlay.ok === false && <p className="ps-hint" role="status">Delivery status could not be loaded, so scheduled items show their planned time only.</p>}
+          {state.overlay && state.overlay.ok && state.overlay.dropped > 0 && <p className="ps-hint">{state.overlay.dropped} delivery record{state.overlay.dropped === 1 ? "" : "s"} did not match a scheduled item and {state.overlay.dropped === 1 ? "was" : "were"} left out.</p>}
           {state.failures.length > 0 && <p className="error" role="alert">Could not read: {state.failures.map((f) => f.campaignName).join(", ")}. Their activity is missing below. Press Refresh to try again.</p>}
           {state.campaignsTotal === 0 && <p>Create a campaign to see its calendar. Only activity recorded for a real campaign appears here.</p>}
 
