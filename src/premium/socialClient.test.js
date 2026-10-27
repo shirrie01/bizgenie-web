@@ -10,6 +10,10 @@ const dsp = (o = {}) => ({ dispatch_id: "d1", campaign_id: "k1", variant_id: "v1
 
 describe("gate", () => { it.each([[undefined, false], ["1", false], ["true", true]])("%s -> %s", (v, e) => expect(isSocialApiEnabled({ VITE_SOCIAL_ACCOUNTS_API: v })).toBe(e)); });
 describe("connections", () => {
+  it("display_name is plain text only: trimmed, bounded, control characters rejected, falling back to the account id", () => {
+    const n = (d) => normaliseConnections({ connections: [conn({ display_name: d })] }).connections[0];
+    expect(n("  Shop  ")).toMatchObject({ displayName: "Shop", name: "Shop" }); expect(n(null)).toMatchObject({ displayName: "", name: "acct" }); expect(n("a\u0000b").name).toBe("acct"); expect(n("x".repeat(201)).name).toBe("acct"); expect(n("<img src=x onerror=alert(1)>").name).toBe("<img src=x onerror=alert(1)>");
+  });
   it("accepts well-formed rows, maps backend status words, counts unreadable rows instead of hiding them", () => {
     const r = normaliseConnections({ connections: [conn(), conn({ connection_id: "c2", status: "expired" }), conn({ connection_id: "c3", platform: "myspace" }), { connection_id: "c4" }], next_cursor: "n" });
     expect(r.connections.map((c) => [c.id, c.status])).toEqual([["c1", "connected"], ["c2", "needs_reauth"]]); expect(r.skipped).toBe(2); expect(r.nextCursor).toBe("n");
@@ -47,24 +51,37 @@ describe("connect", () => {
     const { verifier, challenge } = await newPkce(); expect(verifier).toMatch(/^[A-Za-z0-9_-]{43}$/); expect(challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const { createHash } = await import("node:crypto"); expect(challenge).toBe(createHash("sha256").update(verifier).digest("base64url"));
   });
-  it("sends platform and challenge only (never the verifier), follows only an https authorize_url, and refuses honestly while the backend supplies none", async () => {
+  const INTENT = (pkce, o = {}) => { const state = "s".repeat(43), redirect = "https://app.example.test/connections"; const url = new URL("https://www.facebook.com/vTEST/dialog/oauth"); for (const [k, v] of Object.entries({ client_id: "synthetic_app", redirect_uri: redirect, response_type: "code", scope: "synthetic_permission", state, code_challenge: pkce.challenge, code_challenge_method: "S256" })) url.searchParams.set(k, v); return { contract_version: "social-oauth-intent.v1", intent_id: "i1", state, expires_at: "2026-10-27T12:05:00Z", authorize_url: url.href, redirect_uri: redirect, authorization_status: "ready", ...o }; };
+  it("sends platform and challenge only (never the verifier) and follows only a ready, https, consistent authorize_url", async () => {
     const pkce = { verifier: "v".repeat(43), challenge: "c".repeat(43) };
-    const ok = reply(200, { intent_id: "i1", state: "s".repeat(43), expires_at: "2026-10-27T12:05:00Z", authorize_url: "https://provider.example.test/oauth" });
+    const ok = reply(200, INTENT(pkce));
     const r = await startConnect({ apiBaseUrl: "http://a", accessToken: "t", scope, provider: "instagram", pkce, fetchImpl: ok });
-    expect(r.url).toBe("https://provider.example.test/oauth"); expect(r.pending).toMatchObject({ intentId: "i1", verifier: pkce.verifier, provider: "instagram" });
+    expect(r.url).toContain("https://www.facebook.com/vTEST/dialog/oauth?"); expect(r.pending).toMatchObject({ intentId: "i1", verifier: pkce.verifier, provider: "instagram", redirectUri: "https://app.example.test/connections", expiresAt: "2026-10-27T12:05:00Z" });
     expect(ok.mock.calls[0][0]).toBe("http://a/customer/social/oauth-intents"); expect(JSON.parse(ok.mock.calls[0][1].body)).toEqual({ tenant_id: "t1", project_id: "p1", brand_id: "b1", platform: "instagram", pkce_challenge: pkce.challenge }); expect(ok.mock.calls[0][1].body).not.toContain(pkce.verifier);
-    const noUrl = reply(200, { intent_id: "i1", state: "s".repeat(43), expires_at: "2026-10-27T12:05:00Z" });
-    await expect(startConnect({ apiBaseUrl: "h", accessToken: "t", scope, provider: "instagram", pkce, fetchImpl: noUrl })).rejects.toMatchObject({ kind: "unavailable", code: "AUTHORIZE_URL_MISSING" });
-    await expect(startConnect({ apiBaseUrl: "h", accessToken: "t", scope, provider: "instagram", pkce, fetchImpl: reply(200, { intent_id: "i", state: "s".repeat(43), authorize_url: "http://insecure.test" }) })).rejects.toMatchObject({ code: "AUTHORIZE_URL_MISSING" });
+  });
+  it("fails closed: not-configured, mismatched or insecure intents never navigate", async () => {
+    const pkce = { verifier: "v".repeat(43), challenge: "c".repeat(43) }; const go = (o) => startConnect({ apiBaseUrl: "h", accessToken: "t", scope, provider: "instagram", pkce, fetchImpl: reply(200, INTENT(pkce, o)) });
+    await expect(go({ authorization_status: "provider_configuration_required", authorize_url: null, redirect_uri: null })).rejects.toMatchObject({ kind: "unavailable", code: "PROVIDER_CONFIGURATION_REQUIRED" });
+    await expect(go({ authorize_url: "http://www.facebook.com/x" })).rejects.toMatchObject({ code: "BAD_URL" });
+    await expect(go({ authorize_url: INTENT(pkce).authorize_url.replace("code_challenge=" + "c".repeat(43), "code_challenge=" + "d".repeat(43)) })).rejects.toMatchObject({ code: "BAD_URL" }); // someone else's challenge
+    await expect(go({ authorize_url: INTENT(pkce).authorize_url.replace(/state=[^&]+/, "state=other") })).rejects.toMatchObject({ code: "BAD_URL" });
+    await expect(go({ redirect_uri: "https://evil.test/cb" })).rejects.toMatchObject({ code: "BAD_URL" }); // does not match the URL's pinned redirect
+    await expect(go({ contract_version: "x" })).rejects.toMatchObject({ code: "BAD_RESPONSE" });
     await expect(startConnect({ apiBaseUrl: "h", accessToken: "t", scope, provider: "myspace", fetchImpl: vi.fn() })).rejects.toMatchObject({ kind: "invalid" });
-    await expect(startConnect({ apiBaseUrl: "h", accessToken: "t", scope, provider: "instagram", pkce, fetchImpl: reply(503, { error: { code: "SOCIAL_NOT_CONFIGURED" } }) })).rejects.toMatchObject({ kind: "unavailable" });
+  });
+  it.each([[503, "SOCIAL_NOT_CONFIGURED", "unavailable"], [503, "OAUTH_CONFIGURATION_UNAVAILABLE", "unavailable"], [422, "PLATFORM_APP_REVIEW_REQUIRED", "permission"], [400, "OAUTH_PKCE_REQUIRED", "stale_attempt"], [404, "RESOURCE_NOT_AVAILABLE", "forbidden"]])("intent %s %s -> %s", async (st, c, kind) => {
+    await expect(startConnect({ apiBaseUrl: "h", accessToken: "t", scope, provider: "instagram", pkce: { verifier: "v".repeat(43), challenge: "c".repeat(43) }, fetchImpl: reply(st, { error: { code: c } }) })).rejects.toMatchObject({ kind });
   });
   it("complete requires the state this browser started and sends intent, state, code and verifier", async () => {
     const pending = { intentId: "i1", state: "s1", verifier: "v".repeat(43), provider: "instagram" };
     await expect(completeConnect({ apiBaseUrl: "h", accessToken: "t", scope, pending, code: "abc", state: "other", fetchImpl: vi.fn() })).rejects.toMatchObject({ code: "STATE_MISMATCH" });
     await expect(completeConnect({ apiBaseUrl: "h", accessToken: "t", scope, pending: null, code: "abc", state: "s1", fetchImpl: vi.fn() })).rejects.toMatchObject({ code: "STATE_MISMATCH" });
-    const f = reply(200, conn()); const c = await completeConnect({ apiBaseUrl: "http://a", accessToken: "t", scope, pending, code: "abc", state: "s1", fetchImpl: f });
-    expect(c).toMatchObject({ id: "c1", status: "connected" }); expect(JSON.parse(f.mock.calls[0][1].body)).toMatchObject({ intent_id: "i1", state: "s1", code: "abc", code_verifier: pending.verifier });
+    await expect(completeConnect({ apiBaseUrl: "h", accessToken: "t", scope, pending: { ...pending, expiresAt: "2026-10-27T12:00:00Z" }, code: "abc", state: "s1", now: Date.parse("2026-10-27T12:00:01Z"), fetchImpl: vi.fn() })).rejects.toMatchObject({ code: "ATTEMPT_EXPIRED" });
+    for (const [st, c, kind] of [[409, "OAUTH_STATE_INVALID", "stale_attempt"], [409, "OAUTH_CONFIGURATION_CHANGED", "stale_attempt"], [422, "PLATFORM_PERMISSION_REQUIRED", "permission"], [422, "OAUTH_ACCESS_DENIED", "permission"], [503, "OAUTH_PROVIDER_UNAVAILABLE", "unconfirmed"], [503, "SOMETHING_ELSE", "unconfirmed"]]) {
+      const e = await completeConnect({ apiBaseUrl: "h", accessToken: "t", scope, pending, code: "abc", state: "s1", fetchImpl: reply(st, { error: { code: c } }) }).catch((x) => x); expect([c, e.kind]).toEqual([c, kind]); expect(e.message).not.toMatch(/Nothing was changed/);
+    }
+    const f = reply(200, conn({ display_name: "Synthetic account" })); const c = await completeConnect({ apiBaseUrl: "http://a", accessToken: "t", scope, pending, code: "abc", state: "s1", fetchImpl: f });
+    expect(c).toMatchObject({ id: "c1", status: "connected", displayName: "Synthetic account", name: "Synthetic account" }); expect(JSON.parse(f.mock.calls[0][1].body)).toMatchObject({ intent_id: "i1", state: "s1", code: "abc", code_verifier: pending.verifier });
     expect(f.mock.calls[0][0]).toBe("http://a/customer/social/oauth-complete");
   });
   it("disconnect: owner-only 404, lost response and wrong status are explained honestly", async () => {

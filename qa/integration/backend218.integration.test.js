@@ -1,5 +1,5 @@
 // @vitest-environment node
-// LOCAL INTEGRATION (BG-STUDIO-023-FE) against bizgenie-api draft PR #218 (BG-STUDIO-021-BE, head 9346055): the routes and response shapes that PR adds
+// LOCAL INTEGRATION (BG-STUDIO-023/024-FE) against bizgenie-api draft PR #218 (head 9346055); the R11 social OAuth part needs #220 (e653ed3): the routes and response shapes that PR adds
 // beyond #217 - nested campaign facts (R1), campaign discovery, creative jobs, social OAuth/dispatch/calendar (R11), persisted learning (R12) and the
 // default-off behaviour of every optional mount. It uses the backend's own Express routers, a throwaway PostgreSQL database, and the backend's own
 // synthetic fixtures (identity, connector, platform). It is NOT staging, uses no real OAuth or provider, and proves SHAPES and AUTHORITY, not product
@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fetchCampaignDetail } from "../../src/premium/campaignManagementClient";
 import { readRecommendation, readSnapshot } from "../../src/intel/performanceEvidence";
-import { cancelDispatch, startConnect, fetchConnections, fetchDispatches, fetchPublishingCalendar, normaliseCalendar, normaliseConnections, normaliseDispatch } from "../../src/premium/socialClient";
+import { cancelDispatch, completeConnect, startConnect, fetchConnections, fetchDispatches, fetchPublishingCalendar, normaliseCalendar, normaliseConnections, normaliseDispatch } from "../../src/premium/socialClient";
 
 const DIR = process.env.BIZGENIE_API_DIR; const URL_ = process.env.TEST_DATABASE_URL;
 const run = DIR && URL_ ? describe : describe.skip;
@@ -112,10 +112,30 @@ run("bizgenie-api #218 routes and shapes", () => {
     expect(normaliseDispatch(enq.body)).toMatchObject({ id: enq.body.dispatch_id, state: "queued" });
     await expect(fetchConnections({ ...fe, accessToken: "other" })).rejects.toMatchObject({ kind: "unavailable" });
     const feCancel = await cancelDispatch({ ...fe, dispatchId: enq.body.dispatch_id }); expect(feCancel.state).toBe("cancelled");
-    // OPEN CONTRACT GAP (documented in docs/studio/BG_STUDIO_024_FE_SOCIAL.md): the real intent response has no authorize_url, so the adapter refuses to start sign-in
-    const rawIntent = await call("POST", "/customer/social/oauth-intents", { ...SC, platform: "instagram", pkce_challenge: "c".repeat(43) });
-    expect(rawIntent.status).toBe(200); expect(Object.keys(rawIntent.body).sort()).toEqual(["expires_at", "intent_id", "state"]);
-    await expect(startConnect({ ...fe, provider: "instagram", pkce: { verifier: "v".repeat(43), challenge: "c".repeat(43) } })).rejects.toMatchObject({ code: "AUTHORIZE_URL_MISSING" });
+    // bizgenie-api #220 (e653ed3): OAuth intent contract. Without reviewed provider configuration the server says so and the adapter refuses to navigate.
+    const ph = { verifier: "v".repeat(43) }; ph.challenge = (await import("node:crypto")).createHash("sha256").update(ph.verifier).digest("base64url");
+    const rawIntent = await call("POST", "/customer/social/oauth-intents", { ...SC, platform: "instagram", pkce_challenge: ph.challenge });
+    expect(rawIntent.status).toBe(200); expect(rawIntent.body).toMatchObject({ contract_version: "social-oauth-intent.v1", authorize_url: null, redirect_uri: null, authorization_status: "provider_configuration_required" });
+    await expect(startConnect({ ...fe, provider: "instagram", pkce: ph })).rejects.toMatchObject({ code: "PROVIDER_CONFIGURATION_REQUIRED" });
+    // With an explicit SYNTHETIC reviewed configuration (the backend's own test shape; vTEST path, example.test redirect - not Meta settings) the full round trip works
+    const ig = f.platforms.instagram; const before = ig.oauth;
+    ig.oauth = { authorization_endpoint: "https://www.facebook.com/vTEST/dialog/oauth", redirect_uri: "https://app.example.test/connections", approved_redirect_uris: ["https://app.example.test/connections"], client_id: "synthetic_app", scopes: ["synthetic.publish", "synthetic.read"], pkce_method: "S256", pkce_support_verified: true, app_review_status: "approved", review_ref: "synthetic_review_only", documentation_ref: "https://example.test/docs" };
+    try {
+      const started = await startConnect({ ...fe, provider: "instagram", pkce: ph }); expect(new URL(started.url).origin).toBe("https://www.facebook.com"); expect(started.pending.redirectUri).toBe("https://app.example.test/connections");
+      const before2 = (await fetchConnections(fe)).connections.length;
+      const done = await completeConnect({ ...fe, pending: started.pending, code: "synthetic_authorization_code", state: started.pending.state });
+      expect(done).toMatchObject({ provider: "instagram", status: "connected", accountId: "synthetic_account" }); expect(done.version).toBeGreaterThanOrEqual(2); // same scoped account: updated, not duplicated
+      expect((await fetchConnections(fe)).connections.length).toBe(before2);
+      await expect(completeConnect({ ...fe, pending: started.pending, code: "synthetic_authorization_code", state: started.pending.state })).rejects.toMatchObject({ kind: "stale_attempt", code: "OAUTH_STATE_INVALID" }); // one-use
+      // a config change after the intent invalidates it
+      const s2 = await startConnect({ ...fe, provider: "instagram", pkce: ph }); ig.oauth = { ...ig.oauth, scopes: ["synthetic.publish", "synthetic.read", "synthetic.extra"] };
+      await expect(completeConnect({ ...fe, pending: s2.pending, code: "c", state: s2.pending.state })).rejects.toMatchObject({ kind: "stale_attempt" });
+      // not approved yet: fail closed
+      ig.oauth = { ...ig.oauth, app_review_status: "pending" }; await expect(startConnect({ ...fe, provider: "instagram", pkce: ph })).rejects.toMatchObject({ kind: "permission", code: "PLATFORM_APP_REVIEW_REQUIRED" });
+      // another tenant's user cannot start an attempt (valid configuration restored first, so the scope check is what answers)
+      ig.oauth = { ...ig.oauth, app_review_status: "approved", scopes: ["synthetic.publish", "synthetic.read"] };
+      await expect(startConnect({ ...fe, accessToken: "other", provider: "instagram", pkce: ph })).rejects.toMatchObject({ kind: "forbidden" });
+    } finally { ig.oauth = before; }
   });
 
   it("R12 learning: objective -> snapshot -> recommendation -> feedback by recommendation_id (no client-side hash); the frontend validators accept the persisted shapes", async () => {

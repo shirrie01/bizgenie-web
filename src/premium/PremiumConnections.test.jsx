@@ -45,6 +45,20 @@ describe("PremiumConnections", () => {
     render(<PremiumConnections enabled session={session} scope={scope} isOwner search="?code=abc&state=zzz" api={{ fetchConnections: async () => conns([]), fetchDispatches: none }} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(/did not match this connection attempt/);
   });
+  it("consent refused on the platform (error=access_denied, no code): nothing is connected, the attempt is cleared, the query is stripped", async () => {
+    sessionStorage.setItem("bizgenie.social.pending", JSON.stringify({ intentId: "i1", state: "s1", verifier: "v".repeat(43), provider: "instagram" }));
+    const complete = vi.fn(); render(<PremiumConnections enabled session={session} scope={scope} isOwner search="?error=access_denied&state=s1" api={{ fetchConnections: async () => conns([]), fetchDispatches: none, completeConnect: complete }} />);
+    expect(await screen.findByText(/Permission was not given on the platform, so nothing was connected/)).toBeInTheDocument(); expect(complete).not.toHaveBeenCalled(); expect(sessionStorage.getItem("bizgenie.social.pending")).toBeNull();
+  });
+  it("an uncertain provider answer is not 'nothing changed': it tells the owner to check accounts first", async () => {
+    sessionStorage.setItem("bizgenie.social.pending", JSON.stringify({ intentId: "i1", state: "s1", verifier: "v".repeat(43), provider: "instagram" }));
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="?code=abc&state=s1" api={{ fetchConnections: async () => conns([]), fetchDispatches: none, completeConnect: vi.fn().mockRejectedValue(new SocialError("The platform did not give a clear answer. Check your connected accounts before starting again.", { kind: "unconfirmed" })) }} />);
+    const warn = await screen.findByText(/Check your connected accounts before starting again/); expect(warn).toHaveClass("ps-warn"); expect(warn.textContent).not.toMatch(/Nothing was changed/);
+  });
+  it("shows the verified display name when there is one, the account id otherwise, and says when permission ended", async () => {
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C({ display_name: "Northgate Leasing" }), C({ connection_id: "c2", platform: "facebook", account_id: "acct_two", status: "expired" })]), fetchDispatches: none }} />);
+    const list = await screen.findByRole("list", { name: "Connected accounts" }); expect(list).toHaveTextContent("Northgate Leasing"); expect(list).toHaveTextContent("acct_two"); expect(list).toHaveTextContent(/permission ended/);
+  });
   it("a member never triggers a callback completion", async () => {
     const complete = vi.fn(); render(<PremiumConnections enabled session={session} scope={scope} isOwner={false} search="?code=abc&state=s1" api={{ fetchConnections: async () => conns([]), fetchDispatches: none, completeConnect: complete }} />);
     await screen.findByText("No accounts are connected yet."); expect(complete).not.toHaveBeenCalled();

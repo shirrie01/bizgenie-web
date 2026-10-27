@@ -8,14 +8,15 @@
 * `qa/integration/backend218.integration.test.js` now also runs the real adapter over HTTP against the real routes (connections, dispatch list, calendar, 404 for another tenant, cancel) and proves the open gap below.
 * Gates-on browser fixtures moved to the real routes.
 
-## Open contract gaps (for Codex; not worked around in the frontend)
-| # | Consumer expects | Backend #218 provides | Needed |
-|---|---|---|---|
-| S1 | A provider **authorize URL** to send the browser to | `POST /oauth-intents` returns only `{intent_id, state, expires_at}` | Return an https `authorize_url` (built server-side from platform config, redirect URI and the stored challenge) or publish the provider config; the adapter already accepts an optional `authorize_url` and otherwise refuses with `AUTHORIZE_URL_MISSING` |
-| S2 | A **display name** for a connected account | `{connection_id, platform, account_id, status, expires_at, version}` only | Optional `display_name`; until then the UI shows the platform account id |
-| S3 | A registered **redirect URI** the app can receive on | not specified | Decide and document (the panel reads `?code&state` on the page that hosts Connections) |
-| S4 | Enqueue UI context | `enqueue` needs `connection_id, campaign_id, variant_id, schedule_id, expected_campaign_version` | The adapter `enqueueDispatch` is tested but **not wired to a screen**: it belongs in the campaign scheduling flow with the workspace calendar (`DEC-025`) |
-| S5 | `platform` set | schema allows instagram, facebook, linkedin, tiktok, youtube; service reads `platforms` config | Operator config decides which are live; the UI lists all five, so the list should come from the server when available |
+## Updated for bizgenie-api #220 (application `e653ed346c41887261ff6861342e3861995edcc0`, head `b289a738e703d323d947020ec5af69a7d5029fc9`)
+The earlier gaps S1–S3 are answered by `docs/studio/BG_STUDIO_025_BACKEND_HANDOFF.md` and are now consumed: the intent response carries `contract_version: social-oauth-intent.v1`, `authorize_url`, `redirect_uri` and `authorization_status` (`ready` | `provider_configuration_required`); connections carry `display_name` and report an expired grant as `expired`.
+* The browser navigates **only** when `authorization_status` is `ready` and the URL is https and consistent with *this* attempt (our S256 challenge, the returned state, the pinned `redirect_uri`, `response_type=code`); otherwise it refuses and says the connection is not set up. `ready` means the server's configuration validated, **not** that Meta approved anything. **No live Meta connection is enabled by this code**: provider settings and approvals are unverified and the integration tests use the backend's own synthetic configuration (vTEST path, example.test redirect).
+* Error wording follows the handoff table: stale or replayed attempt → "start again"; permission/app-review/consent unresolved → not connected; not configured → nothing opened; **OAUTH_PROVIDER_UNAVAILABLE and any other 5xx on complete → never "nothing was changed"**, the owner is told to check connected accounts first.
+* A returned `error=access_denied` without a code clears the local attempt and connects nothing. The verifier is deleted before the code is exchanged and the stored attempt carries its expiry.
+* `display_name` is rendered as text only (max 200, control characters rejected), falling back to the account id. Disconnect is **local** access revocation, not proof the platform token was invalidated, and the screen says posts already published stay.
 
-## Not done / not claimed
-No real platform was contacted. "Connected" in this build means the backend's synthetic connector returned it. Meta Tech Provider access verification is separate and outstanding.
+## Still open (backend / external, not worked around)
+| # | Item |
+|---|---|
+| S4 | Enqueue UI context: `enqueueDispatch` is tested but unwired; it belongs with the schedule flow (see F3) |
+| S5 | Which platforms are live is operator configuration; the UI lists all five. Real Meta flow/permissions/PKCE verification, app approval and redirect registration are external activation blockers |

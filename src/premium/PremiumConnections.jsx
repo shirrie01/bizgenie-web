@@ -34,7 +34,11 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, a
   // Returning from the platform: ?code=...&state=... is accepted only against the attempt this browser started.
   useEffect(() => {
     if (!enabled || !isOwner || handled.current) return;
-    const p = new URLSearchParams(search || ""); const code = p.get("code"); const state = p.get("state"); if (!code || !state) return;
+    const p = new URLSearchParams(search || ""); const code = p.get("code"); const state = p.get("state");
+    if (p.get("error") && !code) { // consent refused or cancelled on the platform: no code exists, so nothing can be connected; the unused intent expires on its own
+      handled.current = true; writePending(null); stripQuery(); setMsg({ kind: "warn", text: "Permission was not given on the platform, so nothing was connected." }); return;
+    }
+    if (!code || !state) return;
     handled.current = true; const pending = readPending(); writePending(null); stripQuery();
     setBusy("complete");
     (api.completeConnect || realComplete)({ ...base, pending, code, state }).then(() => { if (live.current) { setMsg({ kind: "ok", text: `${PROVIDER_LABEL[pending.provider]} is connected.` }); load(); } }).catch((e) => { fail(e); if (live.current) setMsg({ kind: e.kind === "unconfirmed" ? "warn" : "error", text: e.message }); }).finally(() => { if (live.current) setBusy(""); });
@@ -70,6 +74,7 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, a
             <li key={a.id}>
               <strong>{PROVIDER_LABEL[a.provider]}</strong> · {a.name} · <span>{STATUS_TEXT[a.status]}</span>
               {a.status === "connected" && <small> · permission renews by {when(a.expiresAt)}</small>}
+              {a.status === "needs_reauth" && <small> · permission ended {when(a.expiresAt)}</small>}
               {a.status === "needs_reauth" && isOwner && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => connect(a.provider)}>Reconnect</button>}
               {isOwner && a.status !== "revoked" && (confirming === a.id
                 ? <span role="group" aria-label={`Disconnect ${a.name}`}> Disconnect {a.name}? <button type="button" className="ps-primary" disabled={Boolean(busy)} onClick={() => remove(a)}>Yes, disconnect</button> <button type="button" className="secondary" onClick={() => setConfirming("")}>Keep it</button></span>
