@@ -40,7 +40,15 @@ Real defects found and fixed by testing: `sendBeacon` always sends credentials a
 1 Draft PR and exact SHA: section 7. 2 Screenshots: section 5. 3 Test results: section 4. 4 Backend contract and unresolved dependencies: `BG_WEB_001_LEAD_CAPTURE_CONTRACT.md` §5. 5 Hosting and DNS plan: `BG_WEB_001_HOSTING_AND_CUTOVER.md`. 6 Rollback: same document §6. 7 Launch checklist (website vs full product): `BG_WEB_001_LAUNCH_CHECKLIST.md`. 8 Mission Control handoff: section 8. Continuation: `BG_WEB_001_CONTINUATION.md`.
 
 ## 7. Branch, SHA, PR, CI
-Filled in below when the hosted run completes.
+| Item | Value |
+|---|---|
+| Branch | `bg-web-001-public-site`, from `origin/main` `e9e5a1f4` |
+| Draft PR | [#57](https://github.com/shirrie01/bizgenie-web/pull/57) (base `main`) |
+| Tested code SHA | `a21184a24b062329e619fcc21050a08f964c2714` (this report and later commits change only `docs/`) |
+| Website CI | [push run 40428230096](https://github.com/shirrie01/bizgenie-web/actions/runs/40428230096) and [pull-request run 40428236274](https://github.com/shirrie01/bizgenie-web/actions/runs/40428236274): **6/6 jobs success on attempt 1** (unit/contract/build; browser at 1440, 1024, 768, 390, 320). The 1024 and 768 jobs sat in the Chromium apt-install step for about 10 minutes (infrastructure, before any test ran) and then completed; no re-run was used |
+| Existing Frontend CI | [run 47](https://github.com/shirrie01/bizgenie-web/actions/runs/40428236275) success at the same SHA (the app's own tests and build; Premium app unaffected) |
+| Earlier runs | Website CI push run 40427519212 and PR run 40427543083 at `fba9174`: success; Frontend CI run 46: success |
+| Commit-level SHA guard | the website workflow records workflow SHA vs checked-out SHA in every run; these were push/PR runs, so the checked-out commit is the pushed head |
 
 ## 8. Mission Control evidence and task handoff (no write made; not accessible)
 Evidence for BG-WEB-001: branch, PR, CI run, this report, the contract, the hosting plan, the checklist. Suggested rows (by identifier): **WEB-001** public site built (frontend, draft, locally tested, hosted CI recorded); **WEB-002** lead-capture backend (extend paid-beta domain; owner Codex; blocked on founder retention/legal/consent decisions); **WEB-003** company facts and legal review (founder); **WEB-004** brand assets (logo) (founder/design); **WEB-005** host choice, preview, DNS capture and cutover (founder; separate approval); **WEB-006** edge bot/rate protection and alerts (infra); **WEB-007** real-device/AT testing. Link to #191 social pre-launch gate: the website makes **no** claim that a social integration exists.
