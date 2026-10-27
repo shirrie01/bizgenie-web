@@ -33,7 +33,11 @@ export function scheduleFromLocal(localDateTime, timeZone, now = new Date()) {
 }
 
 // The variant's current schedule record from the campaign document, if any.
+// The server's own record of the planned time. bizgenie-api #218 returns it nested on the variant as `current_schedule`
+// ({ schedule_id, revision_id, scheduled_for, timezone }); the earlier pointer form (active_schedule_id + campaign.schedules) is still read if present.
 export function activeSchedule(campaign, variant) {
+  const nested = variant && variant.current_schedule;
+  if (nested && typeof nested.schedule_id === "string" && nested.scheduled_for) return { schedule_id: nested.schedule_id, revision_id: nested.revision_id || null, scheduled_for: nested.scheduled_for, timezone: nested.timezone || "UTC" };
   if (!campaign || !variant || !variant.active_schedule_id || !Array.isArray(campaign.schedules)) return null;
   return campaign.schedules.find((s) => s.schedule_id === variant.active_schedule_id) || null;
 }

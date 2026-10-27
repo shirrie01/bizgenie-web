@@ -12,13 +12,16 @@ const OUTCOMES = [
 ];
 
 export function publicationFor(campaign, variant) {
+  // bizgenie-api #218: the latest (correction-applied) record is nested on the variant, always a customer attestation.
+  const nested = variant && variant.publication;
+  if (nested && typeof nested === "object" && nested.record_id) return { publication_id: nested.record_id, published_at: nested.published_at, publication_url: nested.publication_url || null };
   if (!campaign || !variant || !variant.publication_id || !Array.isArray(campaign.publications)) return null;
   return campaign.publications.find((p) => p.publication_id === variant.publication_id) || null;
 }
 
 export default function ManualPublicationPanel({ campaign, variant, pendingAttemptId = "", state, contentText, onStart, onRecord }) {
   // The real campaign detail does not carry the waiting attempt, so the caller supplies the id it was given when the handoff was prepared.
-  const pending = pendingAttemptId || variant.pending_attempt_id || "";
+  const pending = pendingAttemptId || (variant.manual_publication && variant.manual_publication.attempt_id) || variant.pending_attempt_id || "";
   const mine = state.variantId === variant.variant_id;
   const busy = mine && (state.status === "starting" || state.status === "recording");
   const [outcome, setOutcome] = useState("confirm");

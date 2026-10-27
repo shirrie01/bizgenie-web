@@ -19,6 +19,10 @@ describe("performance evidence (canonical reference models)", () => {
     expect(() => readSnapshot({ ...snapshotAvailable(), contract_version: "campaign-results.v1" })).toThrow(EvidenceShapeError);
     expect(() => readSnapshot(null)).toThrow(EvidenceShapeError);
   });
+  it("accepts rows without a row-level version (the persisted snapshot) but refuses a wrong one", () => {
+    const { contract_version, ...bare } = observationRow(4); expect(contract_version).toBe("performance-observation.v1");
+    expect(readObservationRow(bare)).not.toBeNull(); expect(readObservationRow({ ...bare, contract_version: "performance-observation.v2" })).toBeNull();
+  });
   it("never shows a customer attestation as platform data", () => {
     const bad = observationRow(4, { source: { kind: "customer_attestation", source_id: "x", account_id: "y", record_id: "z" } });
     expect(readObservationRow(bad)).toBeNull();
@@ -47,9 +51,15 @@ describe("performance evidence (canonical reference models)", () => {
     expect(text).toMatch(/observed change only/); expect(text).toMatch(/does not show what caused it/); expect(text).not.toMatch(/\bcaused by\b|will increase|forecast to/i);
     for (const bad of [{ causal_claim: true }, { confidence: "high" }, { requires_customer_acceptance: false }, { kind: "predict" }, { evidence: ["x"] }]) expect(() => readRecommendation(recommendation(bad))).toThrow(EvidenceShapeError);
   });
-  it("builds feedback only from a server-supplied hash", () => {
-    expect(buildFeedback("a".repeat(64), "accepted")).toEqual({ recommendation_hash: "a".repeat(64), decision: "accepted" });
-    expect(buildFeedback("nope", "accepted")).toBeNull(); expect(buildFeedback("a".repeat(64), "maybe")).toBeNull();
+  it("builds the feedback body the backend accepts: recommendation_id + decision + version + one idempotency key; no hash", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    expect(buildFeedback(id, "accepted", { idempotencyKey: "k1" })).toEqual({ recommendation_id: id, decision: "accepted", expected_version: 0, idempotency_key: "k1" });
+    expect(buildFeedback("not-a-uuid", "accepted", { idempotencyKey: "k" })).toBeNull(); expect(buildFeedback(id, "maybe", { idempotencyKey: "k" })).toBeNull(); expect(buildFeedback(id, "accepted")).toBeNull();
+    expect(buildFeedback(id, "accepted", { expectedVersion: -1, idempotencyKey: "k" })).toBeNull();
+  });
+  it("keeps the persisted recommendation id and evidence state", () => {
+    const r = readRecommendation(recommendation({ recommendation_id: "00000000-0000-4000-8000-000000000002", evidence_state: "unavailable", created_at: "2026-10-26T00:00:00Z" }));
+    expect(r).toMatchObject({ id: "00000000-0000-4000-8000-000000000002", evidenceState: "unavailable" }); expect(readRecommendation(recommendation()).id).toBeNull();
   });
   it("labels attribution", () => { expect(ATTRIBUTION_LABEL.paid).toBe("Paid"); });
 });

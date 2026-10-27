@@ -788,6 +788,7 @@ export default function App() {
   }
   const pendingAttemptFor = (variant) => {
     const campaign = campaignState.campaign; if (!campaign) return "";
+    if (variant.manual_publication && variant.manual_publication.attempt_id) return variant.manual_publication.attempt_id; // #218: the server says a handoff is waiting
     if (variant.pending_attempt_id) return variant.pending_attempt_id;
     if (manualState.variantId === variant.variant_id && ["prepared", "recording", "error"].includes(manualState.status) && manualState.attemptId) return manualState.attemptId;
     const mem = recall({ tenantId: session.tenantId, projectId: session.projectId }, "attempt", campaign.campaign_id, variant.variant_id); return mem && mem.attempt_id ? mem.attempt_id : "";

@@ -340,3 +340,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-exp-list li { border: 1px solid var(--line, #d9dfe3); border-radius: 8px; padding: 10px 12px; }
 .ps-exp-list textarea, .ps-growth textarea, .ps-growth input:not([type="checkbox"]), .ps-growth select { max-width: 100%; box-sizing: border-box; width: 100%; }
 .ps-fact { margin: 8px 0; }
+
+/* An inline text link that is a button (used inside sentences in the Growth Control Centre). Without this it inherited the generic pill-button look. */
+button.link { all: unset; display: inline; color: var(--ps-accent, #0b4943); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font: inherit; padding: 4px 0; }
+button.link:hover { text-decoration-thickness: 2px; }
+button.link:focus-visible { outline: 3px solid #0b4943; outline-offset: 2px; border-radius: 3px; }

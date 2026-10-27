@@ -2,7 +2,7 @@
 // The API and Supabase endpoints are fully MOCKED in the browser (no network, no credentials): this is NOT a deployed or
 // staging journey. Build with VITE_PREMIUM_STUDIO_ENABLED=true and placeholder VITE_* values.
 // For each of four businesses (vehicle leasing, professional services, aesthetics, fragrance, drinks) it opens every workspace
-// section and proves: the business's own name appears, no OTHER business's name or sector language appears, "Fonzo"
+// section, as BOTH the workspace owner and a read-only member (BG-STUDIO-023-FE), and proves: the business's own name appears, no OTHER business's name or sector language appears, "Fonzo"
 // appears only for the drinks business that is genuinely called Fonzo, there is no horizontal overflow, and no page error.
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
@@ -32,7 +32,7 @@ const SECTOR_TERMS = {
   beverage: [/\bflavours?\b/i, /\bcans\b/i, /\bsoft drinks?\b/i], perfume: [/\bfragrances?\b/i, /\bperfumes?\b/i, /\bscents?\b/i], neutral: [], professional_services: [/\badvisory\b/i, /\bexpertise\b/i],
 };
 
-const workspace = (b) => ({ tenant_id: `t-${b.id}`, tenant_name: `${b.name} group`, project_id: `p-${b.id}`, project_name: `${b.name} campaigns`, brand_id: `b-${b.id}`, brand_name: b.name, brand_status: 'approved', membership_role: 'owner' });
+const workspace = (b, role = 'owner') => ({ tenant_id: `t-${b.id}`, tenant_name: `${b.name} group`, project_id: `p-${b.id}`, project_name: `${b.name} campaigns`, brand_id: `b-${b.id}`, brand_name: b.name, brand_status: 'approved', membership_role: role });
 const onboardingDoc = (b, w) => ({
   contract_version: 'workspace-onboarding.v1', tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id, version: 3, status: 'completed',
   sector: { key: b.sector, source: b.shown ? 'inferred' : 'customer' }, industry_text: null, channels: { values: ['email'], source: 'customer' }, current_step: 6, draft: {},
@@ -40,8 +40,8 @@ const onboardingDoc = (b, w) => ({
 });
 const session = (w) => JSON.stringify({ access_token: `tok-${w.brand_id}`, refresh_token: 'refresh-x', token_type: 'bearer', expires_in: 99999, expires_at: 4102444800, user: { id: 'u', app_metadata: { tenant_id: w.tenant_id, project_id: w.project_id, brand_id: w.brand_id } } });
 
-async function open(page, b) {
-  const w = workspace(b); const errors = []; const calls = [];
+async function open(page, b, role = 'owner') {
+  const w = workspace(b, role); const errors = []; const calls = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.addInitScript(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [session(w)]);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
@@ -59,16 +59,30 @@ async function open(page, b) {
   return { errors, calls, w };
 }
 
-for (const b of BUSINESSES) {
-  test(`${b.id}: every workspace section shows only this business, in its own language, with no overflow`, async ({ page }) => {
-    const { errors } = await open(page, b);
+const OBJECTIVE = { leasing: 'leads', prof: 'bookings', aesthetics: 'bookings', fragrance: 'sales', drinks: 'distributor' };
+for (const role of ['owner', 'member']) for (const b of BUSINESSES) {
+  test(`${b.id} (${role}): every workspace section shows only this business, in its own language, with no overflow`, async ({ page }) => {
+    const { errors } = await open(page, b, role);
     await page.goto('/');
     await expect(page.getByRole('heading', { name: `Welcome back, ${b.name}.` })).toBeVisible();
     const nav = page.getByRole('navigation', { name: /workspace sections/i });
     const others = BUSINESSES.filter((o) => o.id !== b.id);
-    for (const view of ['Overview', 'Set up', 'Campaign Studio', 'Calendar', 'Brand', 'Plan and billing', 'Workspaces']) {
+    for (const view of ['Overview', 'Growth centre', 'Set up', 'Campaign Studio', 'Calendar', 'Brand', 'Plan and billing', 'Workspaces']) {
       await nav.getByRole('button', { name: view, exact: true }).click();
       await page.waitForTimeout(250);
+      if (view === 'Growth centre') {
+        // goal-first strategy read for THIS industry, then the role rules of the other tabs
+        const tabs = page.getByRole('group', { name: 'Growth sections' });
+        await tabs.getByRole('button', { name: 'Strategy', exact: true }).click();
+        await page.getByLabel('Objective').selectOption(OBJECTIVE[b.id]);
+        await expect(page.getByText('BizGenie does not forecast results.')).toBeVisible();
+        if (b.id === 'drinks') await expect(page.getByText(/Trade buyers/)).toBeVisible();
+        await tabs.getByRole('button', { name: 'Experiments', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Add experiment' })).toHaveCount(role === 'owner' ? 1 : 0);
+        await tabs.getByRole('button', { name: 'Product details', exact: true }).click();
+        if (role === 'member') await expect(page.getByLabel('Website address')).toBeDisabled(); else await expect(page.getByLabel('Website address')).toBeEnabled();
+        await tabs.getByRole('button', { name: 'Strategy', exact: true }).click();
+      }
       const text = await page.locator('main').innerText();
       for (const o of others) {
         expect(text, `${b.id}/${view} must not mention ${o.name}`).not.toContain(o.name);
@@ -89,7 +103,7 @@ for (const b of BUSINESSES) {
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
       expect(overflow, `${b.id}/${view}: horizontal overflow`).toBe(false);
       expect(await axeViolations(page), `${b.id}/${view}: axe`).toEqual([]);
-      if (EVIDENCE) { fs.mkdirSync(EVIDENCE, { recursive: true }); await page.screenshot({ path: `${EVIDENCE}/${W}-${b.id}-${view.replace(/\W+/g, '_')}.png`, fullPage: true }); }
+      if (EVIDENCE) { fs.mkdirSync(EVIDENCE, { recursive: true }); await page.screenshot({ path: `${EVIDENCE}/${W}-${b.id}-${role}-${view.replace(/\W+/g, '_')}.png`, fullPage: true }); }
     }
     expect(errors).toEqual([]);
   });
