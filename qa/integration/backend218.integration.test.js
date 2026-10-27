@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fetchCampaignDetail } from "../../src/premium/campaignManagementClient";
 import { readRecommendation, readSnapshot } from "../../src/intel/performanceEvidence";
+import { cancelDispatch, startConnect, fetchConnections, fetchDispatches, fetchPublishingCalendar, normaliseCalendar, normaliseConnections, normaliseDispatch } from "../../src/premium/socialClient";
 
 const DIR = process.env.BIZGENIE_API_DIR; const URL_ = process.env.TEST_DATABASE_URL;
 const run = DIR && URL_ ? describe : describe.skip;
@@ -103,7 +104,18 @@ run("bizgenie-api #218 routes and shapes", () => {
     const cal = await call("GET", `/customer/social/calendar?${q({ ...SC, from, to })}`);
     expect(cal.body.contract_version).toBe("publishing-calendar.v1"); expect(cal.body.entries.find((e) => e.dispatch_id === enq.body.dispatch_id)).toMatchObject({ state: "queued", evidence_kind: null });
     expect((await call("GET", `/customer/social/calendar?${q({ ...SC, from, to: new Date(Date.now() + 200 * 86400000).toISOString() })}`)).status).toBe(400); // window over 93 days
-    const cancel = await call("POST", `/customer/social/dispatches/${enq.body.dispatch_id}/cancel`, SC); expect(cancel.status).toBe(200); expect(cancel.body.state).toBe("cancelled");
+    // BG-STUDIO-024-FE: the real frontend adapter, over real HTTP, against these same responses
+    const fe = { apiBaseUrl: base, accessToken: "ok", scope: { tenantId: SC.tenant_id, projectId: SC.project_id, brandId: SC.brand_id } };
+    const feConns = await fetchConnections(fe); expect(feConns.skipped).toBe(0); expect(feConns.connections[0]).toMatchObject({ provider: "instagram", status: "connected", version: 1 });
+    const feList = await fetchDispatches(fe); expect(feList.skipped).toBe(0); expect(feList.items.find((i) => i.id === enq.body.dispatch_id)).toMatchObject({ state: "queued", platformVerified: false, postUrl: "" });
+    const feCal = await fetchPublishingCalendar({ ...fe, from, to }); expect(feCal.skipped).toBe(0); expect(feCal.entries.find((e) => e.id === enq.body.dispatch_id)).toMatchObject({ deliveryState: "queued" });
+    expect(normaliseDispatch(enq.body)).toMatchObject({ id: enq.body.dispatch_id, state: "queued" });
+    await expect(fetchConnections({ ...fe, accessToken: "other" })).rejects.toMatchObject({ kind: "unavailable" });
+    const feCancel = await cancelDispatch({ ...fe, dispatchId: enq.body.dispatch_id }); expect(feCancel.state).toBe("cancelled");
+    // OPEN CONTRACT GAP (documented in docs/studio/BG_STUDIO_024_FE_SOCIAL.md): the real intent response has no authorize_url, so the adapter refuses to start sign-in
+    const rawIntent = await call("POST", "/customer/social/oauth-intents", { ...SC, platform: "instagram", pkce_challenge: "c".repeat(43) });
+    expect(rawIntent.status).toBe(200); expect(Object.keys(rawIntent.body).sort()).toEqual(["expires_at", "intent_id", "state"]);
+    await expect(startConnect({ ...fe, provider: "instagram", pkce: { verifier: "v".repeat(43), challenge: "c".repeat(43) } })).rejects.toMatchObject({ code: "AUTHORIZE_URL_MISSING" });
   });
 
   it("R12 learning: objective -> snapshot -> recommendation -> feedback by recommendation_id (no client-side hash); the frontend validators accept the persisted shapes", async () => {
