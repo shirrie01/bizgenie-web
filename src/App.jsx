@@ -1,5 +1,5 @@
 import BrandBrainProfile from "./BrandBrainProfile";
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCustomerSession, refreshCustomerSession } from "./session";
 import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
@@ -15,7 +15,7 @@ const GenerateWithQuote = lazy(() => import("./premium/GenerateWithQuote"));
 const CreativeStudio = lazy(() => import("./premium/CreativeStudio"));
 import { isSocialApiEnabled } from "./premium/socialClient";
 import { isMediaIntakeApiEnabled } from "./premium/mediaIntakeClient";
-import { isAnalyticsApiEnabled } from "./premium/insightsClient";
+import { isAnalyticsApiEnabled, makeInsightsApi } from "./premium/insightsClient";
 import { isCustomerMediaApiEnabled } from "./premium/creativeProductionClient";
 import { isCreditPreviewApiEnabled } from "./premium/creditPreviewClient";
 import { requestCostCheck } from "./premium/costCheck";
@@ -404,6 +404,7 @@ export default function App() {
   const [manualState, setManualState] = useState({ status: "idle", variantId: "", attemptId: "", url: "", error: "" });
   const [calendarState, setCalendarState] = useState({ status: "idle", entries: [], error: "" });
   const [workspaceCalendarState, setWorkspaceCalendarState] = useState(WS_CAL_IDLE); // BG-STUDIO-018-FE
+  const insightsApi = useMemo(() => (isAnalyticsApiEnabled() ? makeInsightsApi({ apiBaseUrl: API_BASE_URL }) : {}), []); // BG-STUDIO-027-FE: real #220 learning routes
   const [scheduleState, setScheduleState] = useState({ status: "idle", variantId: "", error: "" });
   const [campaignAdmin, setCampaignAdmin] = useState({ status: "idle", id: "", kind: "", message: "", error: "" }); // BG-STUDIO-019-FE
   const [resultsState, setResultsState] = useState({ status: "idle", entries: [], variantId: "", metric: "views", value: "", unit: "count", observedAt: "", note: "", error: "" });
@@ -1415,7 +1416,7 @@ export default function App() {
           brand: brandSection,
           media: <Lazy><PremiumMedia enabled={isMediaIntakeApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
           connections: <Lazy><PremiumConnections enabled={isSocialApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
-          insights: <Lazy><PremiumInsights enabled={isAnalyticsApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaignId={campaignState.campaign ? campaignState.campaign.campaign_id : ""} campaignName={campaignState.campaign ? campaignState.campaign.name : ""} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
+          insights: <Lazy><PremiumInsights enabled={isAnalyticsApiEnabled()} api={insightsApi} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaignId={campaignState.campaign ? campaignState.campaign.campaign_id : ""} campaignName={campaignState.campaign ? campaignState.campaign.name : ""} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
           account: <Lazy><PremiumBilling session={session} isOwner={roleState.role === "owner"} /></Lazy>,
         }}
       />

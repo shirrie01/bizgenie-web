@@ -56,10 +56,10 @@ export function readObservationRow(row) {
 //   unavailable : the server says why (stale | missing_or_retracted)
 export function readSnapshot(body) {
   if (!body || body.contract_version !== SNAPSHOT_VERSION || !["available", "unavailable"].includes(body.state) || !Array.isArray(body.observations)) throw new EvidenceShapeError("SNAPSHOT_INVALID");
-  if (body.state === "unavailable") return { state: "unavailable", reason: body.reason === "stale" ? "stale" : "missing_or_retracted", observations: [], skipped: 0, snapshotHash: String(body.snapshot_hash || "") };
+  if (body.state === "unavailable") return { state: "unavailable", reason: ["stale", "source_unavailable", "limit_exceeded"].includes(body.reason) ? body.reason : "missing_or_retracted", observations: [], skipped: 0, snapshotHash: String(body.snapshot_hash || ""), snapshotId: typeof body.snapshot_id === "string" ? body.snapshot_id : "" };
   const observations = []; let skipped = 0;
   for (const row of body.observations) { const r = readObservationRow(row); if (r && !r.superseded && !r.retracted) observations.push(r); else skipped += 1; }
-  return { state: observations.length ? "available" : "unavailable", reason: observations.length ? null : "missing_or_retracted", observations, skipped, snapshotHash: String(body.snapshot_hash || "") };
+  return { state: observations.length ? "available" : "unavailable", reason: observations.length ? null : "missing_or_retracted", observations, skipped, snapshotHash: String(body.snapshot_hash || ""), snapshotId: typeof body.snapshot_id === "string" ? body.snapshot_id : "" };
 }
 
 // evidence-recommendation.v1. Refused unless it says, in the contract's own words, that it is an observed change and not a cause.
@@ -77,6 +77,9 @@ export function readRecommendation(body) {
     // present on persisted recommendations (bizgenie-api #218); absent on the in-process reference object
     id: typeof body.recommendation_id === "string" ? body.recommendation_id : null,
     evidenceState: body.evidence_state === "current" || body.evidence_state === "unavailable" ? body.evidence_state : null,
+    // bizgenie-api #220 GET /customer/insights/recommendations: the customer's last decision (or "invalidated" once its evidence stopped being current) and its version
+    decision: ["accepted", "rejected", "invalidated"].includes(body.decision) ? body.decision : null,
+    feedbackVersion: Number.isSafeInteger(body.feedback_version) && body.feedback_version >= 0 ? body.feedback_version : 0,
   };
 }
 
