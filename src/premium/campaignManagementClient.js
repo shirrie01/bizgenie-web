@@ -95,6 +95,14 @@ export async function addContentItem({ apiBaseUrl, accessToken, scope, campaign,
   return send(fetchImpl, `${apiBaseUrl}/customer/campaigns/${campaign.campaign_id}/content-items`, { method: "POST", headers: headers(accessToken), body: JSON.stringify({ ...scopeOf(scope), idempotency_key: await campaignKey(campaign, "add-item", `${format}:${platform}:${pl}:${n}:${d}`), expected_campaign_version: campaign.version, name: n, format, platform, placement: pl, destination_label: d }) }, "Adding it");
 }
 
+// Send the variant's CURRENT revision for review: POST /customer/campaigns/:id/variants/:variantId/review (strict body: scope, idempotency_key, expected_campaign_version,
+// revision_id). It moves a draft to "review" so the existing preview, acknowledgement and approval steps can run; it approves and publishes nothing. The revision must be the
+// one the server reports as current (an attached creative's association.revision_id), so a newer edit makes the server refuse with VERSION_CONFLICT instead of reviewing stale work.
+export async function submitForReview({ apiBaseUrl, accessToken, scope, campaign, variant, revisionId, fetchImpl = (...a) => fetch(...a) }) {
+  if (!revisionId || !/^[0-9a-f-]{36}$/i.test(revisionId)) throw new CampaignApiError("There is no saved version to send for review.", { kind: "invalid", code: "VALIDATION_ERROR" });
+  return send(fetchImpl, `${apiBaseUrl}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/review`, { method: "POST", headers: headers(accessToken), body: JSON.stringify({ ...scopeOf(scope), idempotency_key: await campaignKey(campaign, "submit-review", `${variant.variant_id}:${revisionId}`), expected_campaign_version: campaign.version, revision_id: revisionId }) }, "Sending for review");
+}
+
 // Remove the planned time of a scheduled variant. The route is the existing `unschedule` command exposed over HTTP in the backend draft (PR #216,
 // docs/studio/BG_STUDIO_019_CAMPAIGN_MANAGEMENT.md). The ACTIVE schedule id (variant.active_schedule_id, or schedule_id from the workspace calendar) makes
 // a lost-response retry exact. Approval and history are kept by the server; nothing is published or un-published.

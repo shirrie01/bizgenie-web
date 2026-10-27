@@ -34,7 +34,7 @@ describe("CreativeStudio (quote/confirm based)", () => {
     mount({ onFinished, canAttach: true }, { confirmGenerationQuote: async () => ({ jobId: "quoted:j", quoteId: Q, reservedCredits: 3, status: "queued", replay: false }), fetchQuoteStatus: async () => status("succeeded"), fetchCreativeJob: async () => normaliseJob(JOB()), fetchCreativeJobs: async () => normaliseJobList({ contract_version: "creative-job-list.v1", jobs: [], next_cursor: null }), attachCreativeJob: attach }); open();
     fireEvent.change(screen.getByLabelText("Brief"), { target: { value: "A calm product shot" } }); await waitFor(() => expect(screen.getByRole("button", { name: /Get the price/ })).toBeEnabled()); fireEvent.click(screen.getByRole("button", { name: /Get the price/ })); await screen.findByRole("group", { name: "Price" });
     fireEvent.click(screen.getByRole("button", { name: /Confirm and set aside/ }));
-    expect(await screen.findByText(/Finished\. 3 credits used/)).toBeInTheDocument(); expect(screen.getByLabelText("Brief")).toBeDisabled();
+    expect(await screen.findByText(/3 credits used\./)).toBeInTheDocument(); expect(screen.getByLabelText("Brief")).toBeDisabled();
     expect(await screen.findByLabelText("Image result")).toBeInTheDocument(); expect(screen.getAllByText(/Finished is not approved and not published/).length).toBeGreaterThan(0); expect(screen.queryByRole("img")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Attach to this post" })); expect(await screen.findByText(/Attached to the post/)).toBeInTheDocument();
     expect(attach.mock.calls[0][0]).toMatchObject({ jobId: "quoted:j" }); await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1));

@@ -24,6 +24,7 @@ import { forget, recall, remember } from "./premium/rememberedFacts";
 import { addContentItem, fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived, unscheduleVariant } from "./premium/campaignManagementClient";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
+import ApprovedCreative from "./ApprovedCreative";
 import { operationKey } from "./operationKey";
 function Lazy({ children }) { return <Suspense fallback={<span className="visually-hidden" role="status">Loading…</span>}>{children}</Suspense>; }
 const AddCreativeItem = lazy(() => import("./premium/AddCreativeItem"));
@@ -990,7 +991,7 @@ export default function App() {
                 {item.variants.map((variant) => (
                   <div key={variant.variant_id}>
                     {!["review", "approved"].includes(variant.workflow) && <p>{creativeAsText(variant.current_content) || (variant.workflow === "draft" ? "Draft ready to generate." : variant.workflow)}</p>}
-                    {variant.workflow === "approved" && <CreativePreviewCard variant={variant} />}
+                    {variant.workflow === "approved" && (campaignState.campaign && variant.current_content && Array.isArray(variant.current_content.asset_refs) && variant.current_content.asset_refs.length ? <ApprovedCreative apiBaseUrl={API_BASE_URL} session={session} campaign={campaignState.campaign} variant={variant} onReload={premiumReloadCampaign} /> : <CreativePreviewCard variant={variant} />)}
                     <small>{variant.destination_label}</small>
                     {variant.workflow === "draft" && (premiumEnabled ? (
                       item.format === "text" ? (

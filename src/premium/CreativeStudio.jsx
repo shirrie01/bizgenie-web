@@ -40,8 +40,8 @@ export default function CreativeStudio({ enabled, session, scope, campaign, vari
           )}
           <p className="ps-hint">{HYBRID_BLOCKER}</p>
           <QuotedGeneration key={`${session.tenantId}:${variant.variant_id}`} enabled session={session} inputs={inputs} label={`Get the price for the ${KIND_LABEL[format].toLowerCase()}`} api={api} pollMs={pollMs} onLockChange={setLocked} onSessionEnded={onSessionEnded} onSettled={(s) => { setFinished(s); }} />
-          <CreativeJobsList session={session} scope={scope} campaign={campaign} variant={variant} canAttach={canAttach} api={api} reloadKey={reload + (finished ? 1 : 0)} onAttached={(job) => { setReload((n) => n + 1); return onFinished ? onFinished(job) : undefined; }} onSessionEnded={onSessionEnded} />
-          {finished && finished.jobId && ["succeeded", "failed", "cancelled"].includes(finished.state) && <CreativeJobResult key={finished.jobId} jobId={finished.jobId} session={session} scope={scope} campaign={campaign} variant={variant} canAttach={canAttach} api={api} onAttached={(job) => { setReload((n) => n + 1); return onFinished ? onFinished(job) : undefined; }} onSessionEnded={onSessionEnded} />}
+          <CreativeJobsList session={session} scope={scope} campaign={campaign} variant={variant} canAttach={canAttach} api={api} reloadKey={reload + (finished ? 1 : 0)} onAttached={(job) => { setReload((n) => n + 1); return onFinished ? onFinished(job) : undefined; }} onSubmitted={() => (onFinished ? onFinished() : undefined)} onSessionEnded={onSessionEnded} />
+          {finished && finished.jobId && ["succeeded", "failed", "cancelled"].includes(finished.state) && <CreativeJobResult key={finished.jobId} jobId={finished.jobId} session={session} scope={scope} campaign={campaign} variant={variant} canAttach={canAttach} api={api} onAttached={(job) => { setReload((n) => n + 1); return onFinished ? onFinished(job) : undefined; }} onSubmitted={() => (onFinished ? onFinished() : undefined)} onSessionEnded={onSessionEnded} />}
         </div>
       )}
     </details>

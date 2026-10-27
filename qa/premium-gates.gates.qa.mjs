@@ -173,7 +173,7 @@ test('creative: add an image item, get a binding price, confirm, follow the job 
   await checks(page, 'creative-price');
   await page.getByRole('button', { name: /Confirm and set aside 3 credits/ }).click();
   await expect.poll(() => log.bodies[`POST /customer/generation-quotes/${QID}/confirm`]).toMatchObject({ max_credits: 3, confirmed: true });
-  await expect(page.getByText(/Finished\. 3 credits used/)).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText(/3 credits used\./)).toBeVisible({ timeout: 20000 });
   await expect(page.getByText(/Finished is not approved and not published/).first()).toBeVisible();
   const result = page.getByLabel('Image result').first();
   await expect(result).toContainText(/stored privately/);
@@ -188,7 +188,7 @@ test('creative: add an image item, get a binding price, confirm, follow the job 
   await page.reload(); await welcome(page);
   await nav(page).getByRole('button', { name: 'Campaign Studio', exact: true }).click();
   await page.getByText('Create the image for this post').click();
-  await expect(page.getByText(/Finished\. 3 credits used/)).toBeVisible(); // the same job is read back from the server
+  await expect(page.getByText(/3 credits used\./)).toBeVisible(); // the same job is read back from the server
   expect(log.quoteRequests).toBe(quotesBefore); // a reload never asks for a new price
   expect(log.errors).toEqual([]);
 });

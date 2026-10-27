@@ -14,6 +14,6 @@ export const isCustomerMediaApiEnabled = (env = import.meta.env) => {
 export const KIND_LABEL = { image: "Image", video: "Video" };
 export const VIDEO_QUALITIES = ["normal", "premium"];
 export const executionClassFor = (format, quality = "normal") => (format === "video" ? `video.${VIDEO_QUALITIES.includes(quality) ? quality : "normal"}` : "image.normal");
-export const HYBRID_BLOCKER = "Hybrid (your own photos or videos combined with AI) is not available yet. It needs a way to add your own media with proof of your rights, private storage, and an AI composition step, and none of those exist in BizGenie yet.";
+export const HYBRID_BLOCKER = "Hybrid (your own photos or videos combined with AI) is not available yet. You can add your own media in Your media, but the step that combines it with AI creative is not finished.";
 export const ATTACH_BLOCKER = "It was created and stored privately. Showing it here for your review needs one more step on BizGenie's side (attaching the result to the campaign), which is not built yet, so nothing is shown and nothing is approved.";
 export const WRONG_FORMAT = "This item is text. Images and videos are made for image and video items: add one to this campaign first.";
