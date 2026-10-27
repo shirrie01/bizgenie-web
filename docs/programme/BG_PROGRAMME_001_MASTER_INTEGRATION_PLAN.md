@@ -1,0 +1,3 @@
+# BG-PROGRAMME-001 — master integration plan (superseded)
+
+Corrected 27 Oct 2026. The earlier sequence, stop-doing list and windowed plan are **withdrawn** (they treated Hybrid and social as deferrable and proposed a reduced launch). The single authoritative plan is `BG_PROGRAMME_001_EXECUTION_HANDOVER.md`: exact SHAs, smallest safe candidate (api #218 + web #56 with gates OFF), migration rehearsal, contract mismatches, evidence classes H/L/D and bounded tasks B1–B8, F1–F6, M1, D1 in dependency order. Release control: exact-SHA hosted CI via dispatch, gates OFF at merge, per-gate enablement in an approved environment, rollback = revert merge + gate off. Nothing executed.
