@@ -10,7 +10,7 @@
 | Frontend draft stack | #53 `ac2c14f`, #54 `7816777`, #55 `1b43ce3`; this work is #56 on branch `bg-studio-023-fe-acceptance` |
 | Backend drafts | #217 `23f49038…` and **#218 `9346055a4b0c2057f8ab13274396ecf502296ed6`** (BG-STUDIO-021-BE; new since the last frontend report) |
 | Newer work superseding the handover | none found (frontend open PRs #46–#56; backend #211–#218) |
-| Tested frontend SHA | `611d115a28dbf3826dd5d53817c583dd4d36b434` |
+| Tested frontend SHAs | `611d115a28dbf3826dd5d53817c583dd4d36b434` (run 41) and `cf5fec937087bdafcf4cd43d0471622698099886` (run 42, adds the CSS link fix) |
 | Draft PR | [#56](https://github.com/shirrie01/bizgenie-web/pull/56) |
 | Hosted CI | [run 41](https://github.com/shirrie01/bizgenie-web/actions/runs/40423781584) at the exact SHA (`ref` = `expected_sha` = `611d115…`; SHA guard passed): **13 of 13 jobs success on attempt 1** (no infrastructure re-run needed) |
 
@@ -81,7 +81,7 @@ The six original intelligence documents (`90_INTEL__BizGenie_Market_Intelligence
 
 **Run 41, SHA `611d115a28dbf3826dd5d53817c583dd4d36b434`: 13/13 jobs green, attempt 1** (unit-build; app-a11y, preview and premium-browser at 1440/768/390/320 including the gates-on and the five-industry owner/member specs).
 
-**Follow-up commit after the tested SHA (code, not docs):** `button.link` style added to `src/styles.css`. Found while taking public-site screenshots: the Growth centre's inline text-link buttons had no style and rendered as large black pills inside sentences (a visual defect not caught by the accessibility checks). It is a CSS-only change; it was checked by re-running the five-industry spec locally (57/57 at 1440) and has its own hosted run, recorded below.
+**Follow-up commit after the tested SHA (code, not docs):** `button.link` style added to `src/styles.css`. Found while taking public-site screenshots: the Growth centre's inline text-link buttons had no style and rendered as large black pills inside sentences (a visual defect not caught by the accessibility checks). It is a CSS-only change; it was checked by re-running the five-industry spec locally (57/57 at 1440) and has its own hosted run: **[run 42](https://github.com/shirrie01/bizgenie-web/actions/runs/40425066400), SHA `cf5fec937087bdafcf4cd43d0471622698099886`, 13/13 jobs green on attempt 1.** Final PR head for code is `cf5fec9`; later commits on this branch are documentation only.
 
 ## 8. Remaining blockers
 
