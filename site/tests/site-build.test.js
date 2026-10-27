@@ -26,7 +26,7 @@ describe("pages", () => {
     for (const s of d.querySelectorAll("script")) expect(s.getAttribute("src")).toBeTruthy();
     expect(d.querySelectorAll("[style]")).toHaveLength(0); expect(html).not.toMatch(/\son[a-z]+\s*=/i);
     for (const el of d.querySelectorAll("[src],[href]:not(link[rel=canonical])")) { const v = el.getAttribute("src") || el.getAttribute("href"); expect(v, v).toMatch(/^(\/|#|mailto:)/); }
-    expect(html).not.toMatch(/(src|href|action)="https?:/i); // visible words such as Facebook in the FAQ are fine; resources are not
+    expect(html.replace(/<link rel="canonical"[^>]*>/, "")).not.toMatch(/(src|href|action)="https?:/i); // visible words such as Facebook in the FAQ are fine; resources are not
   });
   it("every internal link and anchor resolves", () => {
     for (const rel of PAGES) for (const a of dom(rel).querySelectorAll("a[href^='/'],a[href^='#']")) {
