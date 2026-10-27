@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import MediaPreview from "../MediaPreview";
+import { submitForReview as realSubmit } from "./campaignManagementClient";
 import { attachCreativeJob as realAttach, cancelCreativeJob as realCancel, fetchCreativeJob as realFetch } from "./creativeJobsClient";
 
 // One finished (or running) generation, as the server describes it (BG-STUDIO-025-FE). Text and media can be attached to the post they were made for; a strategy
@@ -10,7 +11,7 @@ const STATE_TEXT = { queued: "Waiting to start", claimed: "Starting", calling: "
 const ACTIVE = ["queued", "claimed", "calling", "recovery_required"];
 const APPROVAL_TEXT = { approved: "Approved for this version", published: "Published", not_approved: "Not approved yet" };
 
-export default function CreativeJobResult({ jobId, session, scope, campaign, variant, canAttach = false, api = {}, pollMs = 3000, onAttached, onSessionEnded }) {
+export default function CreativeJobResult({ jobId, session, scope, campaign, variant, canAttach = false, api = {}, pollMs = 3000, onAttached, onSubmitted, onSessionEnded }) {
   const [s, setS] = useState({ status: "loading", job: null, error: "" });
   const [msg, setMsg] = useState({ kind: "", text: "" }); const [busy, setBusy] = useState("");
   const live = useRef(true); const seq = useRef(0);
@@ -30,6 +31,7 @@ export default function CreativeJobResult({ jobId, session, scope, campaign, var
 
   const run = async (name, work) => { if (busy) return; setBusy(name); setMsg({ kind: "", text: "" }); try { await work(); } catch (e) { fail(e); if (live.current) setMsg({ kind: e.kind === "unconfirmed" ? "warn" : "error", text: e.message }); } finally { if (live.current) setBusy(""); } };
   const attach = () => run("attach", async () => { const job = await (api.attachCreativeJob || realAttach)({ ...base, jobId }); if (!live.current) return; setS({ status: "ready", job, error: "" }); setMsg({ kind: "ok", text: "Attached to the post. Review it below before it can be approved." }); if (onAttached) await onAttached(job); });
+  const submit = () => run("review", async () => { await (api.submitForReview || realSubmit)({ apiBaseUrl: API(), accessToken: session.accessToken, scope, campaign, variant, revisionId: s.job.association.revisionId }); if (!live.current) return; setMsg({ kind: "ok", text: "Sent for review. Preview it and decide below; sending for review approves and publishes nothing." }); if (onSubmitted) await onSubmitted(); });
   const cancel = () => run("cancel", async () => { await (api.cancelCreativeJob || realCancel)({ ...base, jobId }); if (live.current) { setMsg({ kind: "ok", text: "Cancelled. You were not charged." }); load(); } });
 
   if (s.status === "loading") return <p role="status">Loading the result…</p>;
@@ -72,6 +74,7 @@ export default function CreativeJobResult({ jobId, session, scope, campaign, var
       {j.state === "succeeded" && j.outputs.length === 0 && <p className="ps-hint">The job finished, but nothing that can be shown came with it.</p>}
       {a && <p role="status"><strong>{a.current ? APPROVAL_TEXT[a.approval] : "Replaced by a newer version of the post"}.</strong>{a.current ? " Approval applies only to the current version." : ""}</p>}
       {j.canAttach && canAttach && <button type="button" className="ps-primary" disabled={Boolean(busy)} onClick={attach}>{busy === "attach" ? "Attaching…" : "Attach to this post"}</button>}
+      {a && a.current && a.approval === "not_approved" && canAttach && variant && variant.workflow === "draft" && inCurrent((j.outputs.find((o) => o.type === "media") || {}).assetId) && <button type="button" className="ps-primary" disabled={Boolean(busy)} onClick={submit}>{busy === "review" ? "Sending…" : "Send for review"}</button>}
       {j.canAttach && !canAttach && <p className="ps-hint">Only the workspace owner can attach a result to a post.</p>}
       {!j.canAttach && !a && j.state === "succeeded" && j.outputs.length > 0 && j.outputs.every((o) => !o.attachable) && <p className="ps-hint">Nothing here can be attached to a post.</p>}
       {j.canCancel && canAttach && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={cancel}>Cancel before it starts</button>}

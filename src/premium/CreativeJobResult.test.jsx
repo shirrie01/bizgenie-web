@@ -32,6 +32,23 @@ describe("CreativeJobResult", () => {
     mount({ fetchCreativeJob: async () => J({ kind: "text", execution_class: "text.standard", outputs: [{ output_type: "text", content: { title: null, body: "A short draft", caption: null, alt_text: null, asset_refs: [] }, provenance: { origin: "ai_generated" } }] }) });
     expect(await screen.findByLabelText("Written draft")).toHaveTextContent("A short draft"); expect(screen.getByRole("button", { name: "Attach to this post" })).toBeInTheDocument();
   });
+  it("after attach, the owner can send the current version for review (never approve or publish); a member cannot; it is offered only while the post is still a draft carrying this asset", async () => {
+    const REV = "55555555-5555-4555-8555-555555555555"; const withAsset = { variant_id: "v1", workflow: "draft", current_content: { asset_refs: [{ asset_id: ASSET, role: "primary" }] } };
+    const attached = J({ association: { ...ASSOC, revision_id: REV } }); const submit = vi.fn(async () => ({})); const onSubmitted = vi.fn();
+    const { unmount } = mount({ fetchCreativeJob: async () => attached, submitForReview: submit }, { variant: withAsset, onSubmitted });
+    fireEvent.click(await screen.findByRole("button", { name: "Send for review" })); expect(await screen.findByText(/Sent for review\. Preview it and decide below; sending for review approves and publishes nothing/)).toBeInTheDocument();
+    expect(submit.mock.calls[0][0]).toMatchObject({ revisionId: REV, variant: withAsset, campaign }); expect(onSubmitted).toHaveBeenCalled(); unmount();
+    mount({ fetchCreativeJob: async () => attached }, { variant: withAsset, canAttach: false }); await screen.findByLabelText("Image result"); expect(screen.queryByRole("button", { name: "Send for review" })).toBeNull(); cleanup();
+    mount({ fetchCreativeJob: async () => attached }, { variant: { ...withAsset, workflow: "review" } }); await screen.findByLabelText("Image result"); expect(screen.queryByRole("button", { name: "Send for review" })).toBeNull(); cleanup();
+    mount({ fetchCreativeJob: async () => attached }, { variant: { variant_id: "v1", workflow: "draft", current_content: { asset_refs: [] } } }); await screen.findByLabelText("Image result"); expect(screen.queryByRole("button", { name: "Send for review" })).toBeNull();
+  });
+  it("a failed send for review is explained and can be retried", async () => {
+    const withAsset = { variant_id: "v1", workflow: "draft", current_content: { asset_refs: [{ asset_id: ASSET, role: "primary" }] } };
+    const submit = vi.fn().mockRejectedValueOnce(Object.assign(new Error("Sending for review may or may not have been saved."), { kind: "unconfirmed" })).mockResolvedValue({});
+    mount({ fetchCreativeJob: async () => J({ association: { ...ASSOC, revision_id: "55555555-5555-4555-8555-555555555555" } }), submitForReview: submit }, { variant: withAsset });
+    fireEvent.click(await screen.findByRole("button", { name: "Send for review" })); expect(await screen.findByText(/may or may not have been saved/)).toHaveClass("ps-warn");
+    fireEvent.click(screen.getByRole("button", { name: "Send for review" })); expect(await screen.findByText(/Sent for review/)).toBeInTheDocument();
+  });
   it("a member sees the result but cannot attach", async () => { mount({ fetchCreativeJob: async () => J() }, { canAttach: false }); expect(await screen.findByText(/Only the workspace owner can attach/)).toBeInTheDocument(); expect(screen.queryByRole("button", { name: "Attach to this post" })).toBeNull(); });
   it("an attachment replaced by a newer version of the post is not shown as current", async () => {
     mount({ fetchCreativeJob: async () => J({ association: { ...ASSOC, current: false, approval: "approved" } }) });

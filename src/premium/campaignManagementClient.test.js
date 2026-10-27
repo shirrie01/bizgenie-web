@@ -132,4 +132,15 @@ describe("addContentItem (BG-STUDIO-021-FE)", () => {
     const f = vi.fn(); const { addContentItem } = await import("./campaignManagementClient");
     await expect(addContentItem({ apiBaseUrl: "h", accessToken: "t", scope: { tenantId: "t", projectId: "p" }, campaign, name: "n", format: "image", platform: "instagram", placement: "feed", destinationLabel: "d", ...over, fetchImpl: f })).rejects.toMatchObject({ kind: "invalid" }); expect(f).not.toHaveBeenCalled();
   });
+  it("submitForReview posts the strict review body for the current revision with a stable key and returns the campaign", async () => {
+    const { submitForReview } = await import("./campaignManagementClient");
+    const REV = "55555555-5555-4555-8555-555555555555"; const campaign = { campaign_id: "c1", version: 4 }; const variant = { variant_id: "v1" };
+    const ok = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ campaign: { campaign_id: "c1", version: 5 } }) }));
+    const r = await submitForReview({ apiBaseUrl: "http://a", accessToken: "t", scope: { tenantId: "t", projectId: "p" }, campaign, variant, revisionId: REV, fetchImpl: ok });
+    expect(r.version).toBe(5); expect(ok.mock.calls[0][0]).toBe("http://a/customer/campaigns/c1/variants/v1/review"); const body = JSON.parse(ok.mock.calls[0][1].body);
+    expect(body).toMatchObject({ tenant_id: "t", project_id: "p", expected_campaign_version: 4, revision_id: REV }); expect(Object.keys(body).sort()).toEqual(["expected_campaign_version", "idempotency_key", "project_id", "revision_id", "tenant_id"]);
+    await submitForReview({ apiBaseUrl: "http://a", accessToken: "t", scope: { tenantId: "t", projectId: "p" }, campaign, variant, revisionId: REV, fetchImpl: ok }); expect(JSON.parse(ok.mock.calls[1][1].body).idempotency_key).toBe(body.idempotency_key); // a retry is the same request
+    await expect(submitForReview({ apiBaseUrl: "h", accessToken: "t", scope: { tenantId: "t", projectId: "p" }, campaign, variant, revisionId: "", fetchImpl: ok })).rejects.toMatchObject({ kind: "invalid" });
+    await expect(submitForReview({ apiBaseUrl: "h", accessToken: "t", scope: { tenantId: "t", projectId: "p" }, campaign, variant, revisionId: REV, fetchImpl: async () => ({ ok: false, status: 409, json: async () => ({ error: { code: "VERSION_CONFLICT" } }) }) })).rejects.toMatchObject({ kind: "conflict" });
+  });
 });
