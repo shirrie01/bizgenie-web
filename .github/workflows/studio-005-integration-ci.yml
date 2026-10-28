@@ -4,7 +4,7 @@
 name: Studio 005 integration CI
 on:
   push:
-    branches: [bg-studio-005-integration-rehearsal]
+    branches: [bg-studio-005-integration-rehearsal, bg-studio-028-fe-integrated-acceptance]
   workflow_dispatch:
     inputs:
       ref:
