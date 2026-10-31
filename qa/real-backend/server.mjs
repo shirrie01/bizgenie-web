@@ -40,7 +40,10 @@ await pool.query("update commercial_policies set status='active' where policy_id
 await pool.query("insert into tenant_entitlements(entitlement_id,tenant_id,policy_id,plan_code,status,starts_at,reference_period_start,reference_period_end,included_monthly_credit_grant)values('synthetic_entitlement','tenant_a','synthetic_policy','standard','active','2026-01-01','2026-10-01','2027-12-01',100)");
 await pool.query("insert into credit_accounts(account_id,tenant_id)values('synthetic_account','tenant_a')");
 const billing = new PostgresBillingRepository({ pool, now: realNow }); const billingService = new BillingService({ repository: billing, now: realNow });
-await billingService.adjustCredits({ tenantId: "tenant_a", amount: 100, direction: "credit", transactionCorrelationId: "seed", idempotencyKey: "seed" });
+// In REAL mode the tenant is seeded with exactly the credits the approved run needs (default 8 = one 2-credit image + one 6-credit video in this harness's synthetic tariff). Credit
+// reservation happens BEFORE any provider call, so a third generation is refused by the product itself (insufficient credits): a spend ceiling that does not depend on any provider setting.
+const DEMO_CREDITS = Number(process.env.RB_DEMO_CREDITS || 8);
+await billingService.adjustCredits({ tenantId: "tenant_a", amount: process.env.RB_PROVIDERS === "real" ? DEMO_CREDITS : 100, direction: "credit", transactionCorrelationId: "seed", idempotencyKey: "seed" });
 const campaigns = new PostgresCampaignRepository({ pool, now: realNow, resolvePreviewReceipt: previewReceipt, validatePreview: async () => true });
 const registry = new PostgresPreviewRegistry({ pool, now: realNow }); campaigns.resolvePreviewReceipt = registry.resolvePreviewReceipt.bind(registry); campaigns.validatePreview = registry.validatePreview.bind(registry);
 // REAL PROVIDER MODE (RB_PROVIDERS=real): the backend's own production media composition (src/activation/productionComposition.js) gives the real OpenAI image provider, the real
