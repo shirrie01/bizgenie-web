@@ -55,3 +55,6 @@ The "no" cells that are launch-mandatory (Instagram video, Facebook image/video,
 
 ## 7. Decisions needed
 (a) Approve the isolated environment and the one-image/one-video paid run and its cap. (b) Confirm who owns the platform developer apps. (c) Confirm Veo output validation (codec/aspect/duration check before use) is required before launch. (d) Confirm the missing preview profiles are launch scope (they follow from the mandatory platforms × formats).
+
+## 8. CI finding on 31 Oct (fixed in this branch)
+The exact-SHA run on this branch failed two default-build browser tests (`premium-journey`: returning-customer calendar, workspace switch) at every width. Cause: the fixtures place a post "2 days ahead" and the default calendar shows only the current month, so on 30–31 October the entry fell into November and was not on screen. It is a date-dependent **test** defect, not a product regression (it also reproduced locally once the clock reached 31 Oct). Fix: fixture dates never pass the end of the current month (`premium-journey` and the gates spec). Gates-off 57/57 and gates-on 15/15 at all five widths after the fix. The same fragile fixture exists in the #56 base test file and will fail on any CI run from 30 Oct to the end of each month until the fix is carried down.

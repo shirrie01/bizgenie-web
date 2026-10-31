@@ -15,7 +15,8 @@ const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers
 const CID = '33333333-3333-4333-8333-333333333333';
 const VID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const QID = '44444444-4444-4444-8444-444444444444';
-const SCHED_AT = new Date(Date.now() + 2 * 86400000).toISOString();
+// never past the end of the current month (the default month view shows only this month; a +2 day entry vanished from it on the last days of a month)
+const SCHED_AT = (() => { const d = new Date(); const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); d.setUTCDate(Math.min(d.getUTCDate() + 2, last)); d.setUTCHours(10, 0, 0, 0); return d.toISOString(); })();
 const mkWs = (role) => ({ tenant_id: 't1', tenant_name: 'Northgate Group', project_id: 'p1', project_name: 'Northgate campaigns', brand_id: 'b1', brand_name: 'Northgate Vehicle Leasing', brand_status: 'approved', membership_role: role });
 const sess = JSON.stringify({ access_token: 'tok-b1', refresh_token: 'r', token_type: 'bearer', expires_in: 99999, expires_at: 4102444800, user: { id: 'u', app_metadata: { tenant_id: 't1', project_id: 'p1', brand_id: 'b1' } } });
 const onboarding = { contract_version: 'workspace-onboarding.v1', tenant_id: 't1', project_id: 'p1', brand_id: 'b1', version: 3, status: 'completed', sector: { key: 'leasing', source: 'customer' }, industry_text: null, channels: { values: ['email'], source: 'customer' }, current_step: 6, draft: {}, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] }, completed_at: '2026-10-24T10:00:00.000Z', updated_at: '2026-10-24T10:00:00.000Z' };

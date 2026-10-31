@@ -17,7 +17,8 @@ const WS = {
   a: { tenant_id: 't1', tenant_name: 'Group', project_id: 'pa', project_name: 'A', brand_id: 'ba', brand_name: 'Northgate Vehicle Leasing', brand_status: 'approved', membership_role: 'owner' },
   b: { tenant_id: 't1', tenant_name: 'Group', project_id: 'pb', project_name: 'B', brand_id: 'bb', brand_name: 'Brookside Aesthetics', brand_status: 'approved', membership_role: 'owner' },
 };
-const when = (days) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + days); d.setUTCHours(10, 0, 0, 0); return d.toISOString(); };
+// 'days' ahead, but never past the end of the CURRENT month: the default month view only shows this month, so an entry 2 days ahead vanished from it on the last days of a month (CI broke on 31 Oct).
+const when = (days) => { const d = new Date(); const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); d.setUTCDate(Math.min(d.getUTCDate() + days, last)); d.setUTCHours(10, 0, 0, 0); return d.toISOString(); };
 const DATA = {
   ba: { desc: 'We lease cars and vans to small businesses.', sector: 'leasing', camp: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Northgate spring leasing', content: 'Lease offer post', platform: 'instagram', label: 'Instagram', at: when(2) } },
   bb: { desc: 'An aesthetics clinic offering facials and consultations.', sector: 'aesthetics', camp: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Brookside glow campaign', content: 'Consultation reminder', platform: 'email', label: 'Email', at: when(3) } },
