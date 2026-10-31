@@ -92,3 +92,21 @@ describe("connect", () => {
     expect(f.mock.calls[0][0]).toBe("http://a/customer/social/connections/c1/disconnect");
   });
 });
+
+describe("TikTok draft uploads (BG-SOCIAL-001): an uploaded draft is never a publication", () => {
+  const draft = (o = {}) => dsp({ dispatch_id: "dd", state: "uploaded", operation_kind: "draft_upload", creator_action_required: true, uploaded_at: "2026-11-01T10:05:00Z", publication_id: null, publication_url: null, published_at: null, evidence_kind: null, ...o });
+  it("is kept (not silently dropped) and described as a draft awaiting the creator", () => {
+    const r = normaliseDispatches({ dispatches: [draft()], next_cursor: null });
+    expect(r.items).toHaveLength(1); expect(r.skipped).toBe(0);
+    expect(r.items[0]).toMatchObject({ state: "uploaded", operationKind: "draft_upload", creatorActionRequired: true, platformVerified: false, postUrl: "", publishedAt: null, uploadedAt: "2026-11-01T10:05:00Z" });
+  });
+  it("can never be platform-verified, even if the server wrongly sends publication evidence with it", () => {
+    const [d] = normaliseDispatches({ dispatches: [draft({ publication_url: "https://tiktok.example/@x/video/1", evidence_kind: "platform_api", published_at: "2026-11-01T10:06:00Z" })], next_cursor: null }).items;
+    expect(d.platformVerified).toBe(false); expect(d.postUrl).toBe(""); expect(d.publishedAt).toBeNull();
+  });
+  it("only claims the creator still has to act when the server says so", () => {
+    expect(normaliseDispatches({ dispatches: [draft({ creator_action_required: false })] }).items[0].creatorActionRequired).toBe(false);
+    expect(normaliseDispatches({ dispatches: [draft({ operation_kind: "publish" })] }).items[0].creatorActionRequired).toBe(false);
+    expect(normaliseDispatches({ dispatches: [dsp({ state: "queued" })] }).items[0]).toMatchObject({ operationKind: "publish", creatorActionRequired: false, uploadedAt: null });
+  });
+});

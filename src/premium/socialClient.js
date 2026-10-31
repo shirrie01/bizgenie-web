@@ -31,7 +31,8 @@ export class SocialError extends Error {
 export const PROVIDERS = ["instagram", "facebook", "linkedin", "tiktok", "youtube"];
 export const PROVIDER_LABEL = { instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube" };
 const CONNECTION_STATUS = { active: "connected", revoked: "revoked", expired: "needs_reauth" };
-const DISPATCH_STATE = ["queued", "claimed", "sending", "reconciliation_required", "published", "failed", "cancelled"];
+// "uploaded" (BG-SOCIAL-001) means a DRAFT reached the creator's platform inbox and awaits their own action. It is never a publication: it can never be platform-verified or carry a post link.
+const DISPATCH_STATE = ["queued", "claimed", "sending", "reconciliation_required", "published", "uploaded", "failed", "cancelled"];
 const str = (v) => typeof v === "string" && v.trim().length > 0; const https = (v) => { try { return new URL(v).protocol === "https:"; } catch { return false; } };
 const bad = () => new SocialError("The server's answer was not in the expected form, so nothing is shown from it.", { kind: "invalid", code: "BAD_RESPONSE" });
 const q = (scope, extra = {}) => new URLSearchParams({ tenant_id: scope.tenantId, project_id: scope.projectId, brand_id: scope.brandId, ...extra });
@@ -51,7 +52,11 @@ export function normaliseConnections(b) {
 export function normaliseDispatch(d) {
   if (!d || !str(d.dispatch_id) || !str(d.campaign_id) || !str(d.variant_id) || !DISPATCH_STATE.includes(d.state)) return null;
   const verified = d.state === "published" && d.evidence_kind === "platform_api" && https(d.publication_url);
-  return { id: d.dispatch_id, campaignId: d.campaign_id, variantId: d.variant_id, state: d.state, scheduledFor: Number.isFinite(Date.parse(d.scheduled_for)) ? d.scheduled_for : null, platformVerified: verified, postUrl: verified ? new URL(d.publication_url).toString() : "", publishedAt: verified && Number.isFinite(Date.parse(d.published_at)) ? d.published_at : null };
+  return { id: d.dispatch_id, campaignId: d.campaign_id, variantId: d.variant_id, state: d.state, scheduledFor: Number.isFinite(Date.parse(d.scheduled_for)) ? d.scheduled_for : null, platformVerified: verified, postUrl: verified ? new URL(d.publication_url).toString() : "", publishedAt: verified && Number.isFinite(Date.parse(d.published_at)) ? d.published_at : null,
+    operationKind: d.operation_kind === "draft_upload" ? "draft_upload" : "publish",
+    // true only for an uploaded draft the backend says still awaits the creator; anything else is false, never guessed
+    creatorActionRequired: d.state === "uploaded" && d.operation_kind === "draft_upload" && d.creator_action_required !== false,
+    uploadedAt: d.state === "uploaded" && Number.isFinite(Date.parse(d.uploaded_at)) ? d.uploaded_at : null };
 }
 export function normaliseDispatches(b) {
   if (!b || !Array.isArray(b.dispatches)) throw bad();

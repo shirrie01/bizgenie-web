@@ -36,3 +36,12 @@ describe("fetchDeliveryOverlay", () => {
     await expect(fetchDeliveryOverlay({ apiBaseUrl: "h", accessToken: "t", scope: { tenantId: "t", projectId: "p", brandId: "b" }, from: "a", to: "b", fetchImpl: f, maxPages: 3 })).rejects.toThrow(/more pages/);
   });
 });
+
+describe("TikTok draft delivery states (BG-SOCIAL-001)", () => {
+  it("labels uploading / awaiting the creator / creator-completed honestly and never as published", () => {
+    for (const [deliveryState, text] of [["uploading", /uploaded to TikTok as a draft/i], ["awaiting_creator_action", /BizGenie has not published it/i], ["creator_completed_visibility_unverified", /cannot see whether or when it went live/i]]) {
+      const r = applyDeliveryOverlay([item()], [disp({ state: "uploaded", deliveryState })]);
+      expect(r.items[0].delivery.state).toBe(deliveryState); expect(r.items[0].delivery.label).toMatch(text); expect(r.items[0].delivery.label).not.toMatch(/^published/i); expect(r.dropped).toBe(0);
+    }
+  });
+});
