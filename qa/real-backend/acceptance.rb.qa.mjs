@@ -194,3 +194,27 @@ test('VIDEO rehearsal (stand-in transport): TikTok video -> price -> confirm -> 
   // (with H.264 support the element may be re-rendered once after approval, so playback is retried)
   expect(seen.bad).toEqual([]); await checks(page, 'video-approved'); expect(seen.errors).toEqual([]);
 });
+
+// FAILURE PATH, end to end: the stand-in provider returns a video the product must refuse (it has an audio track). The backend measures the real bytes, rejects them, releases the
+// reservation and settles nothing; the customer sees why, is told they were not charged, and the failed job is still there after a reload.
+test('VIDEO rejected by media validation: reason shown, no charge, still visible after reload', async ({ page }) => {
+  const seen = await open(page); await page.goto('/'); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Campaign Studio', exact: true }).click();
+  await page.getByText('Add an image or video to this campaign').click();
+  await page.getByLabel('Name', { exact: true }).fill('Rejected reel'); await page.getByRole('radio', { name: 'Video' }).check(); await page.getByLabel('Platform', { exact: true }).selectOption('tiktok'); await page.getByLabel('Where on the platform').fill('feed'); await page.getByLabel('Account or page').fill('Northgate TikTok');
+  await page.getByRole('button', { name: 'Add to the campaign' }).click();
+  const vp = () => page.locator('details.ps-creative').filter({ hasText: 'Create the video for this post' }).last();
+  await vp().getByText('Create the video for this post').click();
+  await vp().getByLabel('Brief', { exact: true }).fill('BG-REJECT a vertical reveal');
+  await vp().getByRole('button', { name: /Get the price for the video/ }).click();
+  await expect(vp().getByRole('group', { name: 'Price' })).toContainText('6 credits');
+  await vp().getByRole('button', { name: /Confirm and set aside 6 credits/ }).click();
+  await expect(vp().getByText(/did not pass BizGenie.s format and quality checks/).first()).toBeVisible({ timeout: 90000 });
+  await expect(vp().getByText(/You were not charged/).first()).toBeVisible(); await checks(page, 'video-rejected');
+  expect(seen.errors.filter((e) => !/VIDEO_OUTPUT_INVALID|502|failed/i.test(String(e)))).toEqual([]);
+  await page.reload(); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Campaign Studio', exact: true }).click();
+  await vp().getByText('Create the video for this post').click();
+  await expect(vp().getByText(/Not made/).first()).toBeVisible({ timeout: 30000 });
+  await expect(vp().getByText(/did not pass BizGenie.s format and quality checks/).first()).toBeVisible();
+});

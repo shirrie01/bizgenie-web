@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import MediaPreview from "../MediaPreview";
 import { submitForReview as realSubmit } from "./campaignManagementClient";
-import { attachCreativeJob as realAttach, cancelCreativeJob as realCancel, fetchCreativeJob as realFetch } from "./creativeJobsClient";
+import { attachCreativeJob as realAttach, cancelCreativeJob as realCancel, fetchCreativeJob as realFetch, failureReason } from "./creativeJobsClient";
 
 // One finished (or running) generation, as the server describes it (BG-STUDIO-025-FE). Text and media can be attached to the post they were made for; a strategy
 // plan is shown as a plan and offers no attach. "Finished" is not approved and not published: approval and publication are shown only as the server reports them
@@ -43,7 +43,7 @@ export default function CreativeJobResult({ jobId, session, scope, campaign, var
       <p><strong>{STATE_TEXT[j.state]}.</strong> {j.state === "succeeded" ? "Finished is not approved and not published." : null}</p>
       {s.error && <p className="ps-warn" role="status">{s.error} Showing the last known state.</p>}
       {msg.text && <p className={msg.kind === "error" ? "error" : msg.kind === "warn" ? "ps-warn" : ""} role={msg.kind === "ok" ? "status" : "alert"}>{msg.text}</p>}
-      {j.state === "failed" && <p className="error" role="alert">It could not be made. You were not charged. {j.retry === "new_quote" ? "Get a new price to try again." : ""}</p>}
+      {j.state === "failed" && <p className="error" role="alert">It could not be made. {failureReason(j.errorCode)} You were not charged. {j.retry === "new_quote" ? "Get a new price to try again." : ""}</p>}
       {j.state === "recovery_required" && <p className="ps-hint">BizGenie is checking the result with the provider. Do not start it again; nothing is sent twice.</p>}
       {j.outputs.map((o, i) => {
         if (o.type === "strategy_plan") return (
