@@ -1,0 +1,186 @@
+# Isolated CI for the BG-STUDIO-005 integration rehearsal. It exists only on the rehearsal branch, runs on pushes to
+# it, and can be dispatched with a `ref` to test the exact head of any other branch. No deployment, no secrets,
+# no network beyond npm/Playwright downloads; the app's API and session are mocked in the browser.
+name: Studio 005 integration CI
+on:
+  push:
+    branches: [bg-studio-005-integration-rehearsal, bg-studio-028-fe-integrated-acceptance]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or SHA to test (default: this branch)'
+        required: false
+        default: ''
+      expected_sha:
+        description: 'Optional: fail unless the checked-out commit equals this SHA'
+        required: false
+        default: ''
+jobs:
+  unit-build:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow/dispatch SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+  preview-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ['1440x900', '768x1024', '390x844', '320x568']
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow/dispatch SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
+        timeout-minutes: 12
+        run: |
+          # apt fetches from azure.archive.ubuntu.com stalled for minutes per package in runs 21 and 22 (no retries and a
+          # long default timeout). Fail a stalled fetch fast and retry it; the same packages are still installed.
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          npx playwright install --with-deps chromium
+      - name: Serve isolated preview
+        run: python3 -m http.server 4178 --bind 127.0.0.1 &
+      - name: Run preview browser checks (v1 + v3)
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
+        run: |
+          FILES=""; for f in studio-preview/browser.check.mjs studio-preview/v3/browser.check.mjs; do [ -f "$f" ] && FILES="$FILES $f"; done
+          if [ -z "$FILES" ] || [ ! -f studio-preview/playwright.config.mjs ]; then echo "no preview browser checks at this ref" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          npx playwright test $FILES --config studio-preview/playwright.config.mjs
+  app-a11y-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ['1440x900', '768x1024', '390x844', '320x568']
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow/dispatch SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - name: Skip when this ref has no app browser checks
+        id: has
+        run: test -f qa/playwright.config.mjs && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
+      - if: steps.has.outputs.run == 'true'
+        run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - if: steps.has.outputs.run == 'true'
+        name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
+        timeout-minutes: 12
+        run: |
+          # apt fetches from azure.archive.ubuntu.com stalled for minutes per package in runs 21 and 22 (no retries and a
+          # long default timeout). Fail a stalled fetch fast and retry it; the same packages are still installed.
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          npx playwright install --with-deps chromium
+      - if: steps.has.outputs.run == 'true'
+        name: Build with placeholder public values (API is mocked in the browser)
+        env:
+          VITE_SUPABASE_URL: http://supabase.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
+          VITE_BIZGENIE_API_URL: http://api.test
+        run: npm run build
+      - if: steps.has.outputs.run == 'true'
+        run: npx vite preview --port 4179 --strictPort --host 127.0.0.1 &
+      - if: steps.has.outputs.run == 'true'
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
+        run: npx playwright test --config qa/playwright.config.mjs
+  premium-browser:
+    # BG-STUDIO-008-FE: the flag-ON production build, real browser, mocked API and session (no network, no secrets).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ['1440x900', '768x1024', '390x844', '320x568']
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow/dispatch SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - name: Skip when this ref has no premium browser checks
+        id: has
+        run: test -f qa/premium.playwright.config.mjs && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
+      - if: steps.has.outputs.run == 'true'
+        run: npm install --no-save --package-lock=false @playwright/test@1.56.1 axe-core@4.10.2
+      - if: steps.has.outputs.run == 'true'
+        name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
+        timeout-minutes: 12
+        run: |
+          # apt fetches from azure.archive.ubuntu.com stalled for minutes per package in runs 21 and 22 (no retries and a
+          # long default timeout). Fail a stalled fetch fast and retry it; the same packages are still installed.
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          npx playwright install --with-deps chromium
+      - if: steps.has.outputs.run == 'true'
+        name: Build with the flag ON and placeholder public values (API and session are mocked in the browser)
+        env:
+          VITE_PREMIUM_STUDIO_ENABLED: 'true'
+          VITE_SUPABASE_URL: http://supabase.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
+          VITE_BIZGENIE_API_URL: http://api.test
+        run: npx vite build --outDir dist-premium
+      - if: steps.has.outputs.run == 'true'
+        run: npx vite preview --outDir dist-premium --port 4180 --strictPort --host 127.0.0.1 &
+      - if: steps.has.outputs.run == 'true'
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
+        run: npx playwright test --config qa/premium.playwright.config.mjs
+      - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
+        name: Build with the BG-STUDIO-019 capability gates ON (plan catalogue, billing management, credit preview, binding quotes, customer image/video, workspace calendar API; all mocked in the browser)
+        env:
+          VITE_PREMIUM_STUDIO_ENABLED: 'true'
+          VITE_PLAN_CATALOGUE_API: 'true'
+          VITE_BILLING_MANAGEMENT_API: 'true'
+          VITE_CREDIT_PREVIEW_API: 'true'
+          VITE_GENERATION_QUOTE_API: 'true'
+          VITE_WORKSPACE_CALENDAR_API: 'true'
+          VITE_SOCIAL_ACCOUNTS_API: 'true'
+          VITE_CUSTOMER_MEDIA_INTAKE_API: 'true'
+          VITE_ANALYTICS_API: 'true'
+          VITE_CUSTOMER_MEDIA_API: 'true'
+          VITE_SUPABASE_URL: http://supabase.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
+          VITE_BIZGENIE_API_URL: http://api.test
+        run: npx vite build --outDir dist-gates
+      - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
+        run: npx vite preview --outDir dist-gates --port 4181 --strictPort --host 127.0.0.1 &
+      - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
+        name: Premium browser checks with the capability gates ON
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
+        run: npx playwright test --config qa/premium-gates.playwright.config.mjs

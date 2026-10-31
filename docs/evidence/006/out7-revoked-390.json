@@ -1,0 +1,46 @@
+{
+ "390": [
+  [
+   "revoked-message",
+   "A referenced visual is not available\nIt may have been removed or you may not have access. It has not been reviewed in this view."
+  ],
+  [
+   "media-requests-made",
+   0
+  ],
+  [
+   "no-media-element",
+   0
+  ],
+  [
+   "review-note",
+   [
+    "Step 1 of 3: render a preview of this content.",
+    "An image or video is attached but couldn’t be displayed here. Acknowledging covers the text and the preview receipt only."
+   ]
+  ],
+  [
+   "real-writes",
+   []
+  ],
+  [
+   "blobs",
+   {
+    "created": 0,
+    "revoked": 0
+   }
+  ],
+  [
+   "aborted-media-requests",
+   []
+  ],
+  [
+   "media-calls",
+   ""
+  ],
+  [
+   "overflow",
+   false
+  ]
+ ]
+}

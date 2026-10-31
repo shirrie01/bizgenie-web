@@ -23,7 +23,10 @@ function safeCheckoutUrl(value) {
   return url.toString();
 }
 
-export async function startStandardCheckout({ accessToken, tenantId }) {
+// `planCode` defaults to the one plan the app has always offered; a server-owned catalogue (BG-STUDIO-019-FE) may name another. The backend
+// validates the code and maps it to its own approved Stripe Price: the browser never supplies a price.
+export async function startStandardCheckout({ accessToken, tenantId, planCode = "standard" }) {
+  if (!/^[a-z0-9_-]{1,32}$/.test(planCode)) throw new Error("Choose a plan from the list.");
   if (!accessToken || !tenantId) throw new Error("Sign in to start checkout.");
 
   const response = await fetch(`${API_BASE_URL}/billing/stripe/checkout`, {
@@ -33,7 +36,7 @@ export async function startStandardCheckout({ accessToken, tenantId }) {
       // This selector is derived only from trusted Supabase app_metadata.
       // The backend remains authority and re-authorizes owner membership.
       tenant_id: tenantId,
-      plan_code: "standard",
+      plan_code: planCode,
       request_id: requestId(),
     }),
   });
@@ -58,7 +61,7 @@ export async function readCustomerBillingState({ accessToken, tenantId }) {
   if (!response.ok) {
     if (response.status === 401) throw new Error("Sign in again to check your billing status.");
     if (response.status === 404) throw new Error("Billing access could not be verified. Please do not start another checkout.");
-    throw new Error("Billing status could not be checked yet.");
+    throw new Error("We can't check your subscription right now. Please try again.");
   }
 
   return response.json();
