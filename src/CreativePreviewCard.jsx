@@ -22,13 +22,46 @@ export function normalizeCreative(content) {
   return { title: clean(content.title), body: clean(content.body), caption: clean(content.caption), altText: clean(content.alt_text), assets };
 }
 
+const num = (v) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
+function normalizeFacts(m) {
+  const width = num(m.width), height = num(m.height), seconds = num(m.duration_ms) === null ? null : m.duration_ms / 1000, bytes = num(m.byte_size);
+  return { width, height, seconds, bytes };
+}
+// The backend's verdict (BG-LAUNCH-002): only an explicit `suitable: true` counts as a fit; anything missing or unknown is "not checked".
+function normalizeFit(fit) {
+  if (!fit || typeof fit !== "object") return { state: "unchecked", reasons: [] };
+  const reasons = Array.isArray(fit.reasons) ? fit.reasons.filter((r) => r && typeof r.code === "string").slice(0, 8).map((r) => ({ code: r.code, detail: typeof r.detail === "string" ? r.detail.slice(0, 120) : "" })) : [];
+  if (fit.status === "suitable" && fit.suitable === true) return { state: "suitable", reasons: [], profile: typeof fit.profile_id === "string" ? fit.profile_id : "" };
+  if (fit.status === "not_suitable" && fit.suitable === false) return { state: "not_suitable", reasons, profile: typeof fit.profile_id === "string" ? fit.profile_id : "" };
+  if (fit.status === "no_profile") return { state: "no_profile", reasons: [] };
+  return { state: "unchecked", reasons: [] };
+}
+
+// Plain-English wording for the backend's reason codes (an unknown code still shows, generically).
+export const FIT_REASONS = {
+  MEDIA_KIND_MISMATCH: "This is the wrong kind of media for this slot.",
+  DIMENSIONS_UNKNOWN: "The size of this file is unknown, so it cannot be checked.",
+  DIMENSIONS_TOO_SMALL: "The picture is smaller than this placement needs.",
+  ASPECT_RATIO_UNSUPPORTED: "The shape (aspect ratio) is outside what this placement accepts.",
+  FILE_TOO_LARGE: "The file is larger than this placement allows.",
+  DURATION_UNKNOWN: "The length of this video is unknown, so it cannot be checked.",
+  DURATION_UNSUPPORTED: "The video length is outside what this placement accepts.",
+  CONTAINER_UNSUPPORTED: "The file format is not supported.",
+  VIDEO_CODEC_UNSUPPORTED: "The video encoding is not supported.",
+  AUDIO_UNSUPPORTED: "This placement expects a video without an audio track.",
+  MIME_TYPE_UNSUPPORTED: "The file type is not supported.",
+  NO_MEDIA_PROFILE: "No requirements are defined for this placement yet.",
+};
+export const fitReasonText = (code) => FIT_REASONS[code] || "This file does not meet the placement's requirements.";
+
 // Shape returned by GET .../creative-preview (campaign-creative-preview.v1): copy + media statuses.
 export function normalizePreview(preview) {
   const copy = preview?.copy || {};
   const media = Array.isArray(preview?.media) ? preview.media.filter((m) => m && typeof m.asset_id === "string") : [];
   return {
     title: clean(copy.title), body: clean(copy.body), caption: clean(copy.caption), altText: clean(copy.alt_text),
-    media: media.map((m) => ({ id: m.asset_id, role: m.role === "primary" ? "primary" : "supporting", kind: m.media_kind === "image" || m.media_kind === "video" ? m.media_kind : "", status: m.status, reason: m.reason })),
+    media: media.map((m) => ({ id: m.asset_id, role: m.role === "primary" ? "primary" : "supporting", kind: m.media_kind === "image" || m.media_kind === "video" ? m.media_kind : "", status: m.status, reason: m.reason,
+      facts: normalizeFacts(m), fit: normalizeFit(m.platform_suitability) })),
     revisionNumber: Number.isInteger(preview?.revision_number) ? preview.revision_number : null,
   };
 }
@@ -50,6 +83,23 @@ const shortId = (id) => String(id).slice(0, 8);
 // PRIVATE_MEDIA_DELIVERY_UNAVAILABLE; once delivery exists that is the case to try. A revoked or foreign
 // reference (ASSET_NOT_AVAILABLE) is never requested.
 export const canAttemptMedia = (media) => (media.kind === "image" || media.kind === "video") && (media.status === "available" || media.reason === "PRIVATE_MEDIA_DELIVERY_UNAVAILABLE");
+
+const factsLine = ({ width, height, seconds, bytes }) => [
+  width && height ? `${width}×${height}` : "", seconds !== null ? `${Math.round(seconds * 10) / 10} s` : "", bytes !== null ? `${Math.round(bytes / 1024 / 102.4) / 10} MB` : "",
+].filter(Boolean).join(" · ");
+
+// Platform fit. This is BizGenie's own check from stored facts; the platform still decides at publishing time, and that is said every time.
+function PlatformFit({ media, platformLabel }) {
+  const { fit } = media;
+  if (fit.state === "suitable") return <p className="creative-fit creative-fit-ok" role="status"><strong>Suits {platformLabel}.</strong> Passed BizGenie’s checks for this placement; {platformLabel} makes the final decision when it is published.</p>;
+  if (fit.state === "not_suitable") return (
+    <div className="creative-fit creative-fit-bad" role="alert">
+      <p><strong>Doesn’t suit {platformLabel} yet.</strong> It can’t be previewed or approved until this is fixed:</p>
+      <ul>{fit.reasons.map((r) => <li key={r.code}>{fitReasonText(r.code)}{r.detail ? <small> ({r.detail})</small> : null}</li>)}</ul>
+    </div>
+  );
+  return <p className="creative-fit creative-fit-unknown">Not checked against {platformLabel}’s requirements yet.</p>;
+}
 
 const mediaLabel = (media) => {
   const what = media.kind || "visual";
@@ -112,12 +162,16 @@ export default function CreativePreviewCard({ variant, preview = null, status = 
         <div className="creative-assets">
           {server.media.length === 0 && <p className="notice creative-noasset">No visual is attached to this version.</p>}
           {server.media.map((media) => {
-            if (renderMedia && canAttemptMedia(media)) return <React.Fragment key={media.id}>{renderMedia(media, creative.altText)}</React.Fragment>;
+            const fitLine = media.kind ? <PlatformFit media={media} platformLabel={platform.label} /> : null;
+            const facts = factsLine(media.facts);
+            if (renderMedia && canAttemptMedia(media)) return <React.Fragment key={media.id}>{renderMedia(media, creative.altText)}{facts && <p className="creative-facts">{facts}</p>}{fitLine}</React.Fragment>;
             const text = mediaLabel(media);
             return (
               <div className="creative-asset" key={media.id}>
                 <strong>{text.head}</strong>
                 <small>{text.note}</small>
+                {facts && <small className="creative-facts">{facts}</small>}
+                {fitLine}
               </div>
             );
           })}

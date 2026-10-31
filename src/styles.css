@@ -95,6 +95,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .creative-asset { border: 1px dashed #8a948d; border-radius: 12px; padding: 14px; background: #f7f8f5; display: grid; gap: 2px; }
 .creative-asset small { color: #4b564f; text-transform: none; letter-spacing: 0; font-size: .82rem; }
 .creative-alt { margin: 0; padding: 0 16px 16px; }
+.creative-facts { color: #4b564f; font-size: .82rem; margin: 0; padding: 0 16px; }
+.creative-fit { margin: 8px 16px 0; padding: 10px 12px; border-radius: 10px; font-size: .88rem; border: 1px solid #c9d1ca; background: #f7f8f5; color: #26302a; }
+.creative-fit p { margin: 0 0 4px; }
+.creative-fit ul { margin: 4px 0 0; padding-left: 18px; }
+.creative-fit-ok { border-color: #3f7a55; background: #eef6f0; }
+.creative-fit-bad { border-color: #9a3b32; background: #fbefed; color: #5e1f19; }
 .creative-noasset, .creative-card > .notice { padding: 0 16px 14px; margin: 0; }
 .creative-foot { padding: 0; margin: 4px 0 0; font-size: .8rem; }
 .media-preview { margin: 0; display: grid; gap: 8px; }

@@ -64,7 +64,9 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
   // On a failed (non-stale) step the specific hint replaces the generic "couldn't be displayed" note.
   const mediaHint = failed && !creativeFailed && !active.stale && mediaNotShown;
   // The server has no trusted preview profile for this destination and format: retrying cannot help.
-  const profileBlocked = failed && Boolean(active.unavailable);
+  // The saved media was already judged unsuitable for this placement (platform_suitability): say so before anyone tries, and keep the review actions off.
+  const fitBlocked = (serverPreview?.media || []).some((m) => m?.platform_suitability?.status === "not_suitable" && m.platform_suitability.suitable === false);
+  const profileBlocked = (failed && Boolean(active.unavailable)) || fitBlocked;
   const stale = failed && Boolean(active.stale) && typeof onReload === "function";
   const facts = receiptFacts(active.receipt);
 
@@ -103,6 +105,7 @@ export default function CreativeReviewPanel({ variant, state, onRender, onAcknow
         failed ? null : <p className="notice" role="status">{MESSAGES[active.status] || MESSAGES.idle}</p>
       )}
       {failed && !creativeFailed && <p className="error" role="alert">{active.error}</p>}
+      {fitBlocked && !failed && <p className="error" role="alert">The attached media doesn’t meet this platform’s requirements, so it can’t be previewed or approved. See the reasons above, then replace or regenerate it.</p>}
       {mediaHint && <p className="notice">An attached visual is not available here. If it was removed or its rights were withdrawn, approval may not be possible until it is replaced.</p>}
       {mediaNotShown && !mediaHint && <p className="notice">An image or video is attached but couldn’t be displayed here. Acknowledging covers the text and the preview receipt only.</p>}
       {mediaViewed && !profileBlocked && <p className="notice">You have seen the attached media as saved. It is the original file, not a platform rendering. Acknowledging covers the text, the media shown and the preview receipt.</p>}

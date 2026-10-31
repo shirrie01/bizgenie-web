@@ -178,13 +178,19 @@ test('VIDEO rehearsal (stand-in transport): TikTok video -> price -> confirm -> 
   await expect(vp.getByText(/6 credits used\./)).toBeVisible({ timeout: 60000 });
   await expect(vp.getByLabel('Video result').first()).toBeVisible(); await checks(page, 'video-finished');
   await vp.getByRole('button', { name: 'Attach to this post' }).click(); await expect(vp.getByText(/Attached to the post/)).toBeVisible();
-  const vid = vp.locator('video'); await expect(vid.first()).toBeVisible({ timeout: 30000 });
-  await expect.poll(() => vid.first().evaluate((v) => v.readyState >= 1 && v.videoWidth === 720 && v.videoHeight === 1280 && v.duration > 3), { timeout: 30000 }).toBe(true); // 9:16, 4 s, decoded by the browser
+  const h264 = await page.evaluate(() => !!document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E"'));
+  const vid = vp.locator('video');
+  if (h264) await expect(vid.first()).toBeVisible({ timeout: 30000 }); else await expect(vp.getByText(/couldn.t be displayed in your browser/).first()).toBeVisible({ timeout: 30000 });
+  // The backend validated these bytes with ffprobe (H.264, 720x1280, 4 s, no audio) before the asset existed. Decoding needs an H.264-capable browser; open-source Chromium has none.
+  if (h264) await expect.poll(() => vid.first().evaluate((v) => v.readyState >= 1 && v.videoWidth === 720 && v.videoHeight === 1280 && v.duration > 3), { timeout: 30000 }).toBe(true); // 9:16, 4 s, decoded by the browser
+  else test.info().annotations.push({ type: 'playback', description: 'not decoded: this Chromium has no H.264; bytes verified by the backend inspector and delivery check below' });
   await vp.getByRole('button', { name: 'Send for review' }).click(); await expect(page.getByText('Ready for review')).toBeVisible();
   await page.getByRole('button', { name: 'Render preview' }).click(); await expect(page.getByText(/Preview rendered\. Step 2 of 3/)).toBeVisible();
   await page.getByRole('button', { name: 'Acknowledge preview' }).click(); await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
   await page.getByRole('button', { name: /^Approve/ }).click(); await expect(page.getByText(/Approved/).first()).toBeVisible({ timeout: 15000 });
-  const approvedVid = page.locator('.creative-assets video'); await expect(approvedVid.first()).toBeVisible({ timeout: 30000 });
-  await expect.poll(async () => { await approvedVid.first().evaluate((v) => { v.muted = true; return v.play().catch(() => {}); }); await page.waitForTimeout(900); return approvedVid.first().evaluate((v) => v.currentTime); }, { timeout: 25000 }).toBeGreaterThan(0.3); // it really plays (the element may be re-rendered once after approval, so playback is retried)
+  const approvedVid = page.locator('.creative-assets video'); if (h264) await expect(approvedVid.first()).toBeVisible({ timeout: 30000 }); else await expect(page.locator('.creative-assets').getByText(/couldn.t be displayed in your browser/).first()).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('.creative-fit-ok').filter({ hasText: /Suits TikTok/ }).first()).toBeVisible(); await expect(page.locator('.creative-facts').filter({ hasText: '720×1280 · 4 s' }).first()).toBeVisible(); // platform fit + measured facts shown to the customer
+  if (h264) await expect.poll(async () => { await approvedVid.first().evaluate((v) => { v.muted = true; return v.play().catch(() => {}); }); await page.waitForTimeout(900); return approvedVid.first().evaluate((v) => v.currentTime); }, { timeout: 25000 }).toBeGreaterThan(0.3);
+  // (with H.264 support the element may be re-rendered once after approval, so playback is retried)
   expect(seen.bad).toEqual([]); await checks(page, 'video-approved'); expect(seen.errors).toEqual([]);
 });
