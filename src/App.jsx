@@ -236,7 +236,8 @@ const STALE_CODES = ["VERSION_CONFLICT", "IDEMPOTENCY_KEY_CONFLICT"];
 const STALE_MESSAGE = "This campaign changed since you opened it. Reload the latest version to continue; your content is not lost.";
 // The backend has no trusted preview profile for this destination and format. That is not a stale version:
 // reloading or retrying cannot help, and acknowledgement and approval stay blocked.
-const PROFILE_CODES = ["PREVIEW_VERSION_UNAVAILABLE"];
+const PROFILE_CODES = ["PREVIEW_VERSION_UNAVAILABLE", "MEDIA_NOT_SUITABLE"];
+const MEDIA_FIT_MESSAGE = "The attached media doesn't meet this platform's requirements, so it can't be reviewed or approved. Replace or regenerate it; your content is unchanged.";
 const PROFILE_MESSAGE = "A preview isn't available for this destination and format yet, so this content can't be reviewed or approved here. Your content is unchanged.";
 
 // A conflict means our copy of the campaign is out of date; a plain retry would send the same stale version again.
@@ -244,7 +245,7 @@ async function reviewRequestError(response, fallback) {
   let code = "";
   try { code = (await response.json())?.error?.code || ""; } catch { /* non-JSON error body */ }
   const unavailable = PROFILE_CODES.includes(code);
-  const error = new Error(unavailable ? PROFILE_MESSAGE : STALE_CODES.includes(code) ? STALE_MESSAGE : fallback);
+  const error = new Error(code === "MEDIA_NOT_SUITABLE" ? MEDIA_FIT_MESSAGE : unavailable ? PROFILE_MESSAGE : STALE_CODES.includes(code) ? STALE_MESSAGE : fallback);
   error.stale = STALE_CODES.includes(code);
   error.unavailable = unavailable;
   return error;

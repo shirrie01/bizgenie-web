@@ -234,3 +234,20 @@ describe("CreativeReviewPanel", () => {
     });
   });
 });
+
+describe("media that does not suit the placement (BG-LAUNCH-002)", () => {
+  const preview = (fit) => ({ status: "ready", preview: { copy_status: "available", media: [{ asset_id: "a1", platform_suitability: fit }] } });
+  it("blocks the review action before anyone tries, and says why", () => {
+    const props = setup(idle, { creative: preview({ status: "not_suitable", suitable: false, reasons: [{ code: "ASPECT_RATIO_UNSUPPORTED" }] }) });
+    expect(screen.getByRole("button", { name: /render preview/i })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/doesn’t meet this platform’s requirements/i);
+    expect(props.onRender).not.toHaveBeenCalled();
+  });
+  it("leaves review available when the media suits, or the verdict is unknown (the server still gates)", () => {
+    setup(idle, { creative: preview({ status: "suitable", suitable: true, reasons: [] }) });
+    expect(screen.getByRole("button", { name: /render preview/i })).toBeEnabled();
+    cleanup();
+    setup(idle, { creative: preview(undefined) });
+    expect(screen.getByRole("button", { name: /render preview/i })).toBeEnabled();
+  });
+});
