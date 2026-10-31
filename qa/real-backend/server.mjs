@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 const DIR = process.env.BIZGENIE_API_DIR, URL_ = process.env.TEST_DATABASE_URL, PORT = Number(process.env.RB_PORT || 4300), ORIGIN = process.env.RB_ORIGIN || "http://127.0.0.1:4182";
 if (!DIR || !URL_) { console.error("BIZGENIE_API_DIR and TEST_DATABASE_URL are required"); process.exit(2); }
 const req = createRequire(path.join(DIR, "index.js"));
@@ -38,7 +39,15 @@ const billing = new PostgresBillingRepository({ pool, now: realNow }); const bil
 await billingService.adjustCredits({ tenantId: "tenant_a", amount: 100, direction: "credit", transactionCorrelationId: "seed", idempotencyKey: "seed" });
 const campaigns = new PostgresCampaignRepository({ pool, now: realNow, resolvePreviewReceipt: previewReceipt, validatePreview: async () => true });
 const registry = new PostgresPreviewRegistry({ pool, now: realNow }); campaigns.resolvePreviewReceipt = registry.resolvePreviewReceipt.bind(registry); campaigns.validatePreview = registry.validatePreview.bind(registry);
-const profiles = { "image.normal": { id: "synthetic.image", version: 1, provider_model: "mock-only", aspect_ratio: "1:1" }, "text.standard": { id: "synthetic.text", version: 1, provider_model: "mock-only" } };
+// REAL PROVIDER MODE (RB_PROVIDERS=real): the backend's own production media composition (src/activation/productionComposition.js) gives the real OpenAI image provider, the real
+// Google Vertex Veo provider and Google Cloud Storage from the environment (BIZGENIE_ENVIRONMENT=staging, MEDIA_STORAGE_ENABLED, IMAGE_GENERATION_ENABLED, VIDEO_GENERATION_ENABLED, GOOGLE_CLOUD_PROJECT,
+// MEDIA_STORAGE_BUCKET, VIDEO_PROVIDER_OUTPUT_STORAGE_URI, OPENAI_API_KEY, Application Default Credentials). Run qa/real-backend/preflight.mjs first. EVERY generation is a PAID provider call:
+// it needs the founder's explicit approval and the spend limits set on the provider accounts. Customer-upload inspection and the social connectors remain the backend's synthetic ones (no real adapters exist).
+const REAL = process.env.RB_PROVIDERS === "real";
+const real = REAL ? await (await import("node:module")).createRequire(path.join(DIR, "index.js"))("./src/activation/productionComposition.js").createMediaProductionComposition({ pool, env: process.env }) : null;
+if (REAL && !(real.mediaEnabled && real.imageEnabled && real.videoEnabled)) { console.error("RB_PROVIDERS=real needs MEDIA_STORAGE_ENABLED, IMAGE_GENERATION_ENABLED and VIDEO_GENERATION_ENABLED = true"); process.exit(6); }
+console.log(REAL ? "PROVIDERS: REAL (OpenAI image, Google Veo video, Google Cloud Storage) - generation is PAID" : "PROVIDERS: synthetic image provider; video through the stand-in Vertex transport");
+const profiles = { "image.normal": { id: REAL ? "openai.image" : "synthetic.image", version: 1, provider_model: REAL ? real.imageProvider.model : "mock-only", aspect_ratio: "1:1" }, "text.standard": { id: "synthetic.text", version: 1, provider_model: "mock-only" }, "video.normal": { id: "veo.normal", version: 1, provider_model: "veo-3.1-fast-generate-001", aspect_ratio: "9:16", duration_seconds: 4 }, "video.premium": { id: "veo.premium", version: 1, provider_model: "veo-3.1-generate-001", aspect_ratio: "9:16", duration_seconds: 4 } };
 const quotes = new PostgresGenerationQuoteService({ billingRepository: billing, profiles, now: realNow });
 const kit = localMediaKit({ pool, billing, now: realNow });
 const social = await socialFixture({ billing, pool, campaigns, now: skewed });
@@ -46,7 +55,7 @@ const social = await socialFixture({ billing, pool, campaigns, now: skewed });
 social.platforms.instagram.oauth = { authorization_endpoint: "https://www.facebook.com/vTEST/dialog/oauth", redirect_uri: "https://app.example.test/connections", approved_redirect_uris: ["https://app.example.test/connections"], client_id: "synthetic_app", scopes: ["synthetic.publish", "synthetic.read"], pkce_method: "S256", pkce_support_verified: true, app_review_status: "approved", review_ref: "synthetic_review_only", documentation_ref: "https://example.test/docs" };
 const learning = new DurableLearningService({ billingRepository: billing, socialService: social.service, enabled: true, maxAgeMs: 3 * 86400000, now: skewed, connectors: { instagram: { requiredScopes: ["synthetic.read"], verifyObservation: async ({ connection, observation }) => connection.account_id === observation.source.account_id && observation.source.source_id === "synthetic.connector" } } });
 const tokens = { verifyAccessToken: async (t) => { if (t === "ok") return actor; if (t === "other") return { kind: "customer", auth_user_id: "99999999-9999-4999-8999-999999999999" }; throw new AuthenticationRequiredError(); } };
-const app = createApp({ campaignRepository: campaigns, previewRegistry: registry, socialPublishingService: social.service, learningService: learning, generationQuoteService: quotes, mediaIntakeService: kit.intake, mediaPreviewStorage: kit.storage, customerTokenVerifier: tokens, authorizationService: { authorizeProject: async () => context }, corsConfig: { enabled: true, allowedOrigins: [ORIGIN] }, logger: { warn() {}, error() {}, info() {} } });
+const app = createApp({ campaignRepository: campaigns, previewRegistry: registry, socialPublishingService: social.service, learningService: learning, generationQuoteService: quotes, mediaIntakeService: kit.intake, mediaPreviewStorage: REAL ? real.mediaPreviewStorage : kit.storage, customerTokenVerifier: tokens, authorizationService: { authorizeProject: async () => context }, corsConfig: { enabled: true, allowedOrigins: [ORIGIN] }, logger: { warn() {}, error() {}, info() {} } });
 
 // ---- seed: a draft image post to create creative for (most recent campaign), a scheduled+queued post, and a published post with two learning observations ----
 const published = await social.service.enqueue(actor, social.scope, social.input); // scheduled post queued for delivery; stays queued (not run)
@@ -57,10 +66,31 @@ await learning.ingest(s2.connection.connection_id, OB(1, 10)); await learning.in
 const draft = await scenario(campaigns); const t = await draft.add("image");
 
 // dev loop standing in for the product worker that does not exist yet: processes queued image jobs with the backend's mock provider
-const media = new PostgresMediaAssetRepository({ pool }), store = new DurableMediaAssetStore({ mediaKind: "image", repository: media, storage: kit.storage, now: realNow });
-const imageService = new ImageGenerationService({ repository: new InMemoryImageGenerationRepository(), brandBrainRepository: new PostgresBrandBrainRepository({ pool }), now: realNow, provider: { model: "mock-only", generate: async ({ metadata }) => { const saved = await store.save({ data: png, mime_type: "image/png", width: 1, height: 1, lineage: metadata }); const { byte_size, ...asset } = saved; return { provider: "synthetic", provider_job_id: "mock_image_operation", asset }; } } });
-const worker = new FencedGenerationWorker({ quoteService: quotes, provider: new ExistingCreativeServicesAdapter({ jobs: new PostgresGenerationJobRepository({ pool }), mediaAssets: media, imageService }) });
-let busy = false; setInterval(async () => { if (busy) return; busy = true; try { for (const r of (await pool.query("select job_id from generation_execution_claims where state='queued' order by updated_at limit 3")).rows) { try { await worker.run(await worker.claim(r.job_id)); } catch (e) { console.error("dev worker:", e.code || e.message); } } } catch (e) { console.error('dev worker loop:', e.message); } finally { busy = false; } }, 400);
+const media = REAL ? real.mediaAssetRepository : new PostgresMediaAssetRepository({ pool }), store = new DurableMediaAssetStore({ mediaKind: "image", repository: media, storage: kit.storage, now: realNow });
+const imageService = new ImageGenerationService({ repository: new InMemoryImageGenerationRepository(), brandBrainRepository: new PostgresBrandBrainRepository({ pool }), now: realNow, provider: REAL ? real.imageProvider : { model: "mock-only", generate: async ({ metadata }) => { const saved = await store.save({ data: png, mime_type: "image/png", width: 1, height: 1, lineage: metadata }); const { byte_size, ...asset } = saved; return { provider: "synthetic", provider_job_id: "mock_image_operation", asset }; } } });
+
+// ---- VIDEO REHEARSAL (stand-in transport, NOT a provider and NOT acceptance) -------------------------------------------------------------------------------------------
+// The REAL GoogleVertexVeoProvider, VideoGenerationService, DurableMediaAssetStore and worker reconciliation run; only the HTTPS transport to Vertex AI and the GCS copy are
+// replaced by a local stand-in that "finishes" an operation after a few seconds with a genuine H.264 9:16 MP4 made by ffmpeg. It proves the product wiring and the player,
+// and finds code blockers before any paid provider call. It proves nothing about Veo itself.
+const { GoogleVertexVeoProvider, VideoGenerationService, PostgresVideoGenerationRepository, UnconfiguredVideoReferenceAssetLoader } = req("./src/video-generation");
+// Codec: real Veo returns H.264 MP4. The browser used for automated checks (Playwright's open-source Chromium) CANNOT decode H.264, so the stand-in defaults to VP9-in-MP4, which it can play;
+// RB_STANDIN_CODEC=h264 serves H.264 (use it with a real Chrome/Safari, or check the delivered bytes with ffprobe). This only changes what the stand-in serves, never the product path.
+const codec = process.env.RB_STANDIN_CODEC === "h264" ? "h264" : "vp9";
+const mp4File = path.join(process.env.TMPDIR || "/tmp", `rb-standin-9x16-${codec}.mp4`);
+if (!fs.existsSync(mp4File)) { const r = spawnSync("ffmpeg", ["-y", "-f", "lavfi", "-i", "testsrc2=size=720x1280:rate=30", "-t", "4", "-pix_fmt", "yuv420p", ...(codec === "h264" ? ["-c:v", "libx264", "-movflags", "+faststart"] : ["-c:v", "libvpx-vp9", "-b:v", "1M"]), "-an", mp4File]); if (r.status !== 0) { console.error("ffmpeg needed for the video rehearsal"); process.exit(5); } }
+const mp4Bytes = fs.readFileSync(mp4File); const OUT = "gs://standin-bucket/veo-out/"; const providerOut = new Map(); const operations = new Map();
+const transport = { post: async (url, body) => {
+  const m = /\/(projects\/[^/]+\/locations\/[^/]+\/publishers\/google\/models\/[^:]+):(predictLongRunning|fetchPredictOperation)$/.exec(url); if (!m) throw new Error("stand-in transport: unexpected URL " + url);
+  if (m[2] === "predictLongRunning") { const id = randomUUID(); const name = `${m[1]}/operations/${id}`; operations.set(name, { readyAt: Date.now() + 3000, uri: `${OUT}${id}/sample_0.mp4`, body }); return { name }; }
+  const op = operations.get(body.operationName); if (!op) throw new Error("unknown operation");
+  if (Date.now() < op.readyAt) return { name: body.operationName, done: false };
+  providerOut.set(op.uri, mp4Bytes); return { name: body.operationName, done: true, response: { videos: [{ gcsUri: op.uri, mimeType: "video/mp4" }] } };
+} };
+if (!REAL) kit.storage.copyObject = async ({ source, destinationKey, allowedSourcePrefix }) => { if (!source.startsWith(allowedSourcePrefix) || !providerOut.has(source)) throw new Error("stand-in copy refused"); return kit.storage.putObject({ key: destinationKey, data: providerOut.get(source), mimeType: "video/mp4" }); };
+const videoService = new VideoGenerationService({ repository: new PostgresVideoGenerationRepository({ pool }), provider: REAL ? real.videoProvider : new GoogleVertexVeoProvider({ projectId: "standin-project", outputStorageUri: OUT, transport }), assetStore: REAL ? real.videoAssetStore : new DurableMediaAssetStore({ mediaKind: "video", repository: media, storage: kit.storage, videoSourcePrefix: OUT, now: realNow }), referenceAssetLoader: REAL ? real.videoReferenceAssetLoader : new UnconfiguredVideoReferenceAssetLoader(), brandBrainRepository: new PostgresBrandBrainRepository({ pool }), now: realNow });
+const worker = new FencedGenerationWorker({ quoteService: quotes, provider: new ExistingCreativeServicesAdapter({ jobs: new PostgresGenerationJobRepository({ pool }), mediaAssets: media, imageService, videoService }) });
+let busy = false; setInterval(async () => { if (busy) return; busy = true; try { for (const r of (await pool.query("select job_id from generation_execution_claims where state='queued' order by updated_at limit 3")).rows) { try { await worker.run(await worker.claim(r.job_id)); } catch (e) { console.error("dev worker:", e.code || e.message); } } for (const r of (await pool.query("select job_id from generation_execution_claims where state='recovery_required' order by updated_at limit 3")).rows) { try { const c = await worker.reconciliationClaim(r.job_id); await worker.reconcile(c); } catch (e) { if (!/RECONCILIATION|NOT_READY|pending/i.test(String(e.code || e.message))) console.error('dev reconcile:', e.code || e.message); } } } catch (e) { console.error('dev worker loop:', e.message); } finally { busy = false; } }, 700);
 
 const server = await new Promise((resolve) => { const s = app.listen(PORT, "127.0.0.1", () => resolve(s)); });
 const ids = { base: `http://127.0.0.1:${PORT}`, db, scope: { tenant_id: "tenant_a", project_id: "project_a", brand_id: "brand_a" }, draftCampaign: draft.id, draftVariant: t.variant_id, scheduledCampaign: social.s.id, scheduledVariant: social.target.variant_id, scheduledDispatch: published.dispatch_id, publishedCampaign: s2.s.id, publishedVariant: s2.target.variant_id, pngSha: createHash("sha256").update(png).digest("hex") };

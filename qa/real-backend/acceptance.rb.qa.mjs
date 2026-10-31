@@ -160,3 +160,31 @@ test('F1 accounts: a connection is shown only as the server reports it; disconne
   await checks(page, 'accounts-connected');
   expect(seen.errors).toEqual([]);
 });
+
+
+// REHEARSAL, not acceptance: the Veo provider adapter, video service, asset store and worker reconciliation are the real code; only the HTTPS transport to Vertex AI and the GCS copy are a
+// local stand-in that finishes an operation with a genuine H.264 9:16 MP4 (see qa/real-backend/server.mjs). It exists to find product-wiring blockers before any paid provider call.
+test('VIDEO rehearsal (stand-in transport): TikTok video -> price -> confirm -> pending operation polled to completion -> attach -> review -> approve -> a playable video', async ({ page }) => {
+  const seen = await open(page); await page.goto('/'); await welcome(page);
+  await nav(page).getByRole('button', { name: 'Campaign Studio', exact: true }).click();
+  await page.getByText('Add an image or video to this campaign').click();
+  await page.getByLabel('Name', { exact: true }).fill('Spring reel'); await page.getByRole('radio', { name: 'Video' }).check(); await page.getByLabel('Platform', { exact: true }).selectOption('tiktok'); await page.getByLabel('Where on the platform').fill('feed'); await page.getByLabel('Account or page').fill('Northgate TikTok');
+  await page.getByRole('button', { name: 'Add to the campaign' }).click();
+  const vp = page.locator('details.ps-creative').filter({ hasText: 'Create the video for this post' }); await vp.getByText('Create the video for this post').click();
+  await vp.getByLabel('Brief', { exact: true }).fill('A short vertical reveal of a new van on the forecourt');
+  await vp.getByRole('button', { name: /Get the price for the video/ }).click();
+  await expect(vp.getByRole('group', { name: 'Price' })).toContainText('6 credits'); await checks(page, 'video-price');
+  await vp.getByRole('button', { name: /Confirm and set aside 6 credits/ }).click();
+  await expect(vp.getByText(/6 credits used\./)).toBeVisible({ timeout: 60000 });
+  await expect(vp.getByLabel('Video result').first()).toBeVisible(); await checks(page, 'video-finished');
+  await vp.getByRole('button', { name: 'Attach to this post' }).click(); await expect(vp.getByText(/Attached to the post/)).toBeVisible();
+  const vid = vp.locator('video'); await expect(vid.first()).toBeVisible({ timeout: 30000 });
+  await expect.poll(() => vid.first().evaluate((v) => v.readyState >= 1 && v.videoWidth === 720 && v.videoHeight === 1280 && v.duration > 3), { timeout: 30000 }).toBe(true); // 9:16, 4 s, decoded by the browser
+  await vp.getByRole('button', { name: 'Send for review' }).click(); await expect(page.getByText('Ready for review')).toBeVisible();
+  await page.getByRole('button', { name: 'Render preview' }).click(); await expect(page.getByText(/Preview rendered\. Step 2 of 3/)).toBeVisible();
+  await page.getByRole('button', { name: 'Acknowledge preview' }).click(); await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
+  await page.getByRole('button', { name: /^Approve/ }).click(); await expect(page.getByText(/Approved/).first()).toBeVisible({ timeout: 15000 });
+  const approvedVid = page.locator('.creative-assets video'); await expect(approvedVid.first()).toBeVisible({ timeout: 30000 });
+  await expect.poll(async () => { await approvedVid.first().evaluate((v) => { v.muted = true; return v.play().catch(() => {}); }); await page.waitForTimeout(900); return approvedVid.first().evaluate((v) => v.currentTime); }, { timeout: 25000 }).toBeGreaterThan(0.3); // it really plays (the element may be re-rendered once after approval, so playback is retried)
+  expect(seen.bad).toEqual([]); await checks(page, 'video-approved'); expect(seen.errors).toEqual([]);
+});
