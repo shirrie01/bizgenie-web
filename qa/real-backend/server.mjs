@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { createSpendGuard, DEFAULT_WORST_CASE } from "./spendGuard.mjs";
 const DIR = process.env.BIZGENIE_API_DIR, URL_ = process.env.TEST_DATABASE_URL, PORT = Number(process.env.RB_PORT || 4300), ORIGIN = process.env.RB_ORIGIN || "http://127.0.0.1:4182";
 if (!DIR || !URL_) { console.error("BIZGENIE_API_DIR and TEST_DATABASE_URL are required"); process.exit(2); }
 const req = createRequire(path.join(DIR, "index.js"));
@@ -63,8 +64,25 @@ const social = await socialFixture({ billing, pool, campaigns, now: skewed });
 // SYNTHETIC reviewed OAuth configuration (the backend's own test shape; vTEST path and example.test redirect; NOT Meta settings and no approval is implied)
 social.platforms.instagram.oauth = { authorization_endpoint: "https://www.facebook.com/vTEST/dialog/oauth", redirect_uri: "https://app.example.test/connections", approved_redirect_uris: ["https://app.example.test/connections"], client_id: "synthetic_app", scopes: ["synthetic.publish", "synthetic.read"], pkce_method: "S256", pkce_support_verified: true, app_review_status: "approved", review_ref: "synthetic_review_only", documentation_ref: "https://example.test/docs" };
 const learning = new DurableLearningService({ billingRepository: billing, socialService: social.service, enabled: true, maxAgeMs: 3 * 86400000, now: skewed, connectors: { instagram: { requiredScopes: ["synthetic.read"], verifyObservation: async ({ connection, observation }) => connection.account_id === observation.source.account_id && observation.source.source_id === "synthetic.connector" } } });
+// ---- TikTok mode (BG-LAUNCH-006): the real composition's social service (real connector, encrypted vault, journal, approved-video media source) replaces the synthetic social stack ----
+// RB_SOCIAL=tiktok. With RB_TIKTOK_STANDIN=1 TikTok's HTTP is the labelled stand-in in fakeTikTok.mjs (a rehearsal); without it the connector talks to the real TikTok sandbox with the
+// credentials in the environment (the founder-approved acceptance run).
+const TIKTOK = process.env.RB_SOCIAL === "tiktok";
+let tiktok = null, tiktokStandIn = null; const TT_LOG = process.env.RB_STANDIN_LOG || "/tmp/rb-tiktok-calls.jsonl";
+if (TIKTOK) {
+  const { createFakeTikTok, STANDIN_ENV } = await import("./fakeTikTok.mjs");
+  const { createPremiumComposition } = req("./src/activation"); const { createVideoInspector } = req("./src/media/videoInspection");
+  if (process.env.RB_TIKTOK_STANDIN === "1") { fs.writeFileSync(TT_LOG, ""); tiktokStandIn = createFakeTikTok({ logFile: TT_LOG }); }
+  const env = { ...process.env, BIZGENIE_ENVIRONMENT: "staging", SOCIAL_PUBLISHING_ENABLED: "true", SOCIAL_PLATFORMS: "tiktok", VIDEO_INSPECTION_ISOLATION: process.env.VIDEO_INSPECTION_ISOLATION || "local",
+    ...(tiktokStandIn ? { ...STANDIN_ENV, SOCIAL_TOKEN_ENCRYPTION_KEY_BASE64: (await import("node:crypto")).randomBytes(32).toString("base64") } : {}) };
+  for (const k of ["QUOTED_GENERATION_ENABLED", "MEDIA_INTAKE_ENABLED", "LEARNING_ENABLED", "STRATEGY_WORKFLOWS_ENABLED"]) delete env[k]; // only the social service is wanted here
+  const mediaForSocial = REAL ? real : { videoEnabled: true, mediaPreviewStorage: kit.storage, videoAssetStore: { videoInspector: createVideoInspector({ isolation: "local" }) } };
+  tiktok = await createPremiumComposition({ pool, billing: { billingRepository: billing }, media: mediaForSocial, brandBrainRepository: new PostgresBrandBrainRepository({ pool }), branding: req("./src/config/branding").brandingConfig,
+    env, logger: { log() {}, warn: console.error, error: console.error }, now: realNow, socialFetch: tiktokStandIn?.fetch });
+  console.log(tiktokStandIn ? "TIKTOK MODE: connector is REAL, TikTok HTTP is the STAND-IN (rehearsal, not acceptance)" : "TIKTOK MODE: connector is REAL and talks to the REAL TikTok sandbox");
+}
 const tokens = { verifyAccessToken: async (t) => { if (t === "ok") return actor; if (t === "other") return { kind: "customer", auth_user_id: "99999999-9999-4999-8999-999999999999" }; throw new AuthenticationRequiredError(); } };
-const app = createApp({ campaignRepository: campaigns, previewRegistry: registry, socialPublishingService: social.service, learningService: learning, generationQuoteService: quotes, mediaIntakeService: kit.intake, mediaPreviewStorage: REAL ? real.mediaPreviewStorage : kit.storage, customerTokenVerifier: tokens, authorizationService: { authorizeProject: async () => context }, corsConfig: { enabled: true, allowedOrigins: [ORIGIN] }, logger: { warn() {}, error() {}, info() {} } });
+const app = createApp({ campaignRepository: campaigns, previewRegistry: registry, socialPublishingService: TIKTOK ? tiktok.socialPublishingService : social.service, learningService: learning, generationQuoteService: quotes, mediaIntakeService: kit.intake, mediaPreviewStorage: REAL ? real.mediaPreviewStorage : kit.storage, customerTokenVerifier: tokens, authorizationService: { authorizeProject: async () => context }, corsConfig: { enabled: true, allowedOrigins: [ORIGIN] }, logger: { warn() {}, error() {}, info() {} } });
 
 // ---- seed: a draft image post to create creative for (most recent campaign), a scheduled+queued post, and a published post with two learning observations ----
 const published = await social.service.enqueue(actor, social.scope, social.input); // scheduled post queued for delivery; stays queued (not run)
@@ -108,12 +126,22 @@ const worker = new FencedGenerationWorker({ quoteService: quotes, provider: new 
 // provider operations with backoff. In real-provider mode every claim is a PAID call, so this harness refuses to start one beyond the approved count.
 const { GenerationLoop } = req("./src/worker/loops");
 const PAID_CAP = Number(process.env.RB_MAX_PAID_JOBS || 2); let paidStarted = 0;
-class HarnessLoop extends GenerationLoop { async execute(jobId, result, o) { if (REAL) { if (paidStarted >= PAID_CAP) { result.skipped += 1; console.error(`paid-job cap ${PAID_CAP} reached: job ${jobId} NOT started`); return; } paidStarted += 1; } return super.execute(jobId, result, o); } }
+const spend = REAL ? createSpendGuard({ approvedUsd: process.env.RB_APPROVED_SPEND_USD, videoSeconds: Number(process.env.VIDEO_DURATION_SECONDS || 4), worstCase: { videoPerSecondUsd: Number(process.env.RB_WORST_CASE_VIDEO_USD_PER_SECOND || DEFAULT_WORST_CASE.videoPerSecondUsd), imageUsd: Number(process.env.RB_WORST_CASE_IMAGE_USD || DEFAULT_WORST_CASE.imageUsd) } }) : null;
+if (spend) console.log(`USD guard armed: approved ${spend.approved}; worst case per video ${spend.price("video.normal")}, per image ${spend.price("image.normal")}`);
+class HarnessLoop extends GenerationLoop { async execute(jobId, result, o) { if (REAL) {
+  if (paidStarted >= PAID_CAP) { result.skipped += 1; console.error(`paid-job cap ${PAID_CAP} reached: job ${jobId} NOT started`); return; }
+  // Monetary stop (qa/real-backend/spendGuard.mjs): the job's WORST-CASE dollars must fit under the founder-approved USD figure, otherwise it is not started.
+  const kind = (await pool.query("select request->>'execution_class' c from generation_quotes where job_id=$1", [jobId])).rows[0]?.c;
+  const verdict = spend.admit(kind);
+  if (!verdict.allow) { result.skipped += 1; console.error(`USD guard: job ${jobId} (${kind}) NOT started: ${verdict.reason} (committed ${verdict.committed}, would be ${verdict.projected}, approved ${spend.approved})`); return; }
+  console.log(`USD guard: job ${jobId} (${kind}) admitted; worst-case committed ${verdict.committed} of approved ${spend.approved}`);
+  paidStarted += 1; } return super.execute(jobId, result, o); } }
 const loop = new HarnessLoop({ quoteService: quotes, worker, limit: 3, now: realNow, minBackoffMs: REAL ? 5000 : 700, maxBackoffMs: REAL ? 30000 : 2000, logger: { warn: (...a) => console.error("worker:", ...a), error: console.error, log() {} } });
 let busy = false; setInterval(async () => { if (busy) return; busy = true; try { const r = await loop.tick(); if (r.errors.length) console.error("worker errors:", r.errors.join(",")); } catch (e) { console.error("worker loop:", e.message); } finally { busy = false; } }, 700);
 
+if (TIKTOK) { const { SocialLoop } = req("./src/worker/loops"); const socialLoop = new SocialLoop({ socialService: tiktok.socialPublishingService, now: realNow, logger: { warn: (...a) => console.error("social:", ...a), error: console.error, log() {} } }); let sbusy = false; setInterval(async () => { if (sbusy) return; sbusy = true; try { const r = await socialLoop.tick(); if (r.errors?.length) console.error("social errors:", r.errors.join(",")); } catch (e) { console.error("social loop:", e.message); } finally { sbusy = false; } }, 2000); }
 const server = await new Promise((resolve) => { const s = app.listen(PORT, "127.0.0.1", () => resolve(s)); });
 const ids = { base: `http://127.0.0.1:${PORT}`, db, scope: { tenant_id: "tenant_a", project_id: "project_a", brand_id: "brand_a" }, draftCampaign: draft.id, draftVariant: t.variant_id, scheduledCampaign: social.s.id, scheduledVariant: social.target.variant_id, scheduledDispatch: published.dispatch_id, publishedCampaign: s2.s.id, publishedVariant: s2.target.variant_id, pngSha: createHash("sha256").update(png).digest("hex") };
 fs.writeFileSync(process.env.RB_IDS || "/tmp/rb-ids.json", JSON.stringify(ids)); console.log("READY", JSON.stringify(ids));
-const stop = async () => { clearInterval; server.close(); await pool.end(); await admin.query(`drop database ${db}`).catch(() => {}); await admin.end(); process.exit(0); };
+const stop = async () => { clearInterval; server.close(); await pool.end(); if (process.env.RB_KEEP_DB === '1') console.log(`RB_KEEP_DB=1: database ${db} was KEPT so the ledger and media rows can be inspected; drop it yourself when done (drop database ${db};)`); else await admin.query(`drop database ${db}`).catch(() => {}); await admin.end(); process.exit(0); };
 process.on("SIGTERM", stop); process.on("SIGINT", stop);

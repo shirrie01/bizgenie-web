@@ -85,14 +85,16 @@ export async function setCampaignArchived({ apiBaseUrl, accessToken, scope, camp
 // Add a content item to a campaign: POST /customer/campaigns/:id/content-items (strict body; format text|image|video; platform from the backend's list). Image
 // and video items are the ones the quote/confirm flow can make creative for; the quote refuses an item whose destination has no approved preview profile.
 export const CONTENT_PLATFORMS = ["linkedin", "instagram", "facebook", "tiktok", "youtube", "email", "other"];
-export async function addContentItem({ apiBaseUrl, accessToken, scope, campaign, name, format, platform, placement, destinationLabel, fetchImpl = (...a) => fetch(...a) }) {
+export async function addContentItem({ apiBaseUrl, accessToken, scope, campaign, name, format, platform, placement, destinationLabel, destinationKey = null, fetchImpl = (...a) => fetch(...a) }) {
   const n = String(name == null ? "" : name).trim(); const d = String(destinationLabel == null ? "" : destinationLabel).trim(); const pl = String(placement == null ? "" : placement).trim();
   if (!n || n.length > 200) throw new CampaignApiError("Give it a name of up to 200 characters.", { kind: "invalid", code: "VALIDATION_ERROR" });
   if (!["text", "image", "video"].includes(format)) throw new CampaignApiError("Choose text, image or video.", { kind: "invalid", code: "VALIDATION_ERROR" });
   if (!CONTENT_PLATFORMS.includes(platform)) throw new CampaignApiError("Choose a platform from the list.", { kind: "invalid", code: "VALIDATION_ERROR" });
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(pl)) throw new CampaignApiError("Choose where on the platform it will appear, for example feed.", { kind: "invalid", code: "VALIDATION_ERROR" });
   if (!d || d.length > 200) throw new CampaignApiError("Name the account or page it is for, in up to 200 characters.", { kind: "invalid", code: "VALIDATION_ERROR" });
-  return send(fetchImpl, `${apiBaseUrl}/customer/campaigns/${campaign.campaign_id}/content-items`, { method: "POST", headers: headers(accessToken), body: JSON.stringify({ ...scopeOf(scope), idempotency_key: await campaignKey(campaign, "add-item", `${format}:${platform}:${pl}:${n}:${d}`), expected_campaign_version: campaign.version, name: n, format, platform, placement: pl, destination_label: d }) }, "Adding it");
+  // destinationKey is a connected account's connection id (BG-LAUNCH-006): the backend only lets an item be sent to a platform account it was created for.
+  if (destinationKey !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(destinationKey))) throw new CampaignApiError("That connected account could not be used. Choose it again.", { kind: "invalid", code: "VALIDATION_ERROR" });
+  return send(fetchImpl, `${apiBaseUrl}/customer/campaigns/${campaign.campaign_id}/content-items`, { method: "POST", headers: headers(accessToken), body: JSON.stringify({ ...scopeOf(scope), idempotency_key: await campaignKey(campaign, "add-item", `${format}:${platform}:${pl}:${n}:${d}:${destinationKey || ""}`), expected_campaign_version: campaign.version, name: n, format, platform, placement: pl, destination_label: d, ...(destinationKey ? { destination_key: destinationKey } : {}) }) }, "Adding it");
 }
 
 // Send the variant's CURRENT revision for review: POST /customer/campaigns/:id/variants/:variantId/review (strict body: scope, idempotency_key, expected_campaign_version,

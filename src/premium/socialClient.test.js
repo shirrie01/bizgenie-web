@@ -110,3 +110,22 @@ describe("TikTok draft uploads (BG-SOCIAL-001): an uploaded draft is never a pub
     expect(normaliseDispatches({ dispatches: [dsp({ state: "queued" })] }).items[0]).toMatchObject({ operationKind: "publish", creatorActionRequired: false, uploadedAt: null });
   });
 });
+
+describe("TikTok authorize URL is checked against TikTok's own contract (BG-LAUNCH-006)", () => {
+  const REDIRECT = "https://getbizgenie.com/customer/social/oauth/callback/tiktok";
+  const intent = (url) => ({ contract_version: "social-oauth-intent.v1", intent_id: "i1", state: "s".repeat(43), expires_at: "2026-11-01T12:00:00Z", authorization_status: "ready", authorize_url: url, redirect_uri: REDIRECT });
+  const auth = (params) => `https://www.tiktok.com/v2/auth/authorize/?${new URLSearchParams({ client_key: "ck", response_type: "code", scope: "user.info.basic,video.upload", redirect_uri: REDIRECT, state: "s".repeat(43), ...params })}`;
+  const start = (url, provider = "tiktok") => startConnect({ apiBaseUrl: "https://api.test", accessToken: "t", scope: { tenantId: "t", projectId: "p", brandId: "b" }, provider, pkce: { verifier: "v".repeat(43), challenge: "c".repeat(43) }, fetchImpl: async () => ({ ok: true, status: 200, json: async () => intent(url), headers: { get: () => null } }) });
+  it("opens the exact TikTok authorize page with no PKCE parameters, keeping the verifier in the browser for BizGenie's own completion", async () => {
+    const r = await start(auth({})); expect(r.url).toContain("https://www.tiktok.com/v2/auth/authorize/"); expect(r.pending).toMatchObject({ provider: "tiktok", verifier: "v".repeat(43), redirectUri: REDIRECT });
+  });
+  it("refuses another host or path, a missing client key, a mismatched state or redirect, and any PKCE or client_id parameter", async () => {
+    for (const url of [auth({}).replace("www.tiktok.com", "evil.example"), auth({}).replace("/v2/auth/authorize/", "/other/"), auth({ client_key: "" }), auth({ state: "x".repeat(43) }), auth({ redirect_uri: "https://evil.example/cb" }), auth({ code_challenge: "c".repeat(43), code_challenge_method: "S256" }), auth({ client_id: "x" }), auth({ response_type: "token" })])
+      await expect(start(url)).rejects.toMatchObject({ code: "BAD_URL" });
+  });
+  it("every other platform still requires the S256 challenge of THIS attempt", async () => {
+    const fb = (extra) => `https://www.facebook.com/dialog/oauth?${new URLSearchParams({ client_id: "x", response_type: "code", redirect_uri: REDIRECT, state: "s".repeat(43), ...extra })}`;
+    await expect(start(fb({}), "facebook")).rejects.toMatchObject({ code: "BAD_URL" });
+    expect((await start(fb({ code_challenge: "c".repeat(43), code_challenge_method: "S256" }), "facebook")).url).toContain("code_challenge=");
+  });
+});

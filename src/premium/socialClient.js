@@ -123,7 +123,11 @@ export async function startConnect({ apiBaseUrl, accessToken, scope, provider, p
   if (j.authorization_status !== "ready" || !j.authorize_url || !j.redirect_uri) throw new SocialError("This platform connection is not set up yet, so nothing was opened and nothing was connected.", { kind: "unavailable", code: "PROVIDER_CONFIGURATION_REQUIRED" });
   let target, redirect; try { target = new URL(j.authorize_url); redirect = new URL(j.redirect_uri); } catch { throw new SocialError("The platform's sign-in page could not be opened safely, so nothing was connected.", { kind: "invalid", code: "BAD_URL" }); }
   const sp = target.searchParams;
-  if (target.protocol !== "https:" || redirect.protocol !== "https:" || target.username || target.password || sp.get("state") !== j.state || sp.get("code_challenge") !== p.challenge || sp.get("code_challenge_method") !== "S256" || sp.get("redirect_uri") !== j.redirect_uri || sp.get("response_type") !== "code")
+  // TikTok's Web Login Kit (BG-SOCIAL-001) has no PKCE parameters in the authorize URL: it carries client_key, scope, redirect_uri and state, and BizGenie's own S256 verifier stays in
+  // this browser for the later completion call. So TikTok is checked against ITS contract (exact host and path, no unexpected PKCE parameters); every other platform keeps the S256 check.
+  const tiktokOk = provider === "tiktok" && target.origin === "https://www.tiktok.com" && target.pathname === "/v2/auth/authorize/" && str(sp.get("client_key")) && !sp.has("client_id") && !sp.has("code_challenge") && !sp.has("code_challenge_method") && !sp.has("code_verifier");
+  const pkceOk = provider === "tiktok" ? tiktokOk : sp.get("code_challenge") === p.challenge && sp.get("code_challenge_method") === "S256";
+  if (target.protocol !== "https:" || redirect.protocol !== "https:" || target.username || target.password || sp.get("state") !== j.state || !pkceOk || sp.get("redirect_uri") !== j.redirect_uri || sp.get("response_type") !== "code")
     throw new SocialError("The platform's sign-in page did not match this attempt, so it was not opened and nothing was connected.", { kind: "invalid", code: "BAD_URL" });
   return { url: target.toString(), pending: { intentId: j.intent_id, state: j.state, verifier: p.verifier, provider, redirectUri: j.redirect_uri, expiresAt: j.expires_at } };
 }
