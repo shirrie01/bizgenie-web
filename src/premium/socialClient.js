@@ -31,7 +31,8 @@ export class SocialError extends Error {
 export const PROVIDERS = ["instagram", "facebook", "linkedin", "tiktok", "youtube"];
 export const PROVIDER_LABEL = { instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube" };
 const CONNECTION_STATUS = { active: "connected", revoked: "revoked", expired: "needs_reauth" };
-const DISPATCH_STATE = ["queued", "claimed", "sending", "reconciliation_required", "published", "failed", "cancelled"];
+// "uploaded" (BG-SOCIAL-001) means a DRAFT reached the creator's platform inbox and awaits their own action. It is never a publication: it can never be platform-verified or carry a post link.
+const DISPATCH_STATE = ["queued", "claimed", "sending", "reconciliation_required", "published", "uploaded", "failed", "cancelled"];
 const str = (v) => typeof v === "string" && v.trim().length > 0; const https = (v) => { try { return new URL(v).protocol === "https:"; } catch { return false; } };
 const bad = () => new SocialError("The server's answer was not in the expected form, so nothing is shown from it.", { kind: "invalid", code: "BAD_RESPONSE" });
 const q = (scope, extra = {}) => new URLSearchParams({ tenant_id: scope.tenantId, project_id: scope.projectId, brand_id: scope.brandId, ...extra });
@@ -51,7 +52,11 @@ export function normaliseConnections(b) {
 export function normaliseDispatch(d) {
   if (!d || !str(d.dispatch_id) || !str(d.campaign_id) || !str(d.variant_id) || !DISPATCH_STATE.includes(d.state)) return null;
   const verified = d.state === "published" && d.evidence_kind === "platform_api" && https(d.publication_url);
-  return { id: d.dispatch_id, campaignId: d.campaign_id, variantId: d.variant_id, state: d.state, scheduledFor: Number.isFinite(Date.parse(d.scheduled_for)) ? d.scheduled_for : null, platformVerified: verified, postUrl: verified ? new URL(d.publication_url).toString() : "", publishedAt: verified && Number.isFinite(Date.parse(d.published_at)) ? d.published_at : null };
+  return { id: d.dispatch_id, campaignId: d.campaign_id, variantId: d.variant_id, state: d.state, scheduledFor: Number.isFinite(Date.parse(d.scheduled_for)) ? d.scheduled_for : null, platformVerified: verified, postUrl: verified ? new URL(d.publication_url).toString() : "", publishedAt: verified && Number.isFinite(Date.parse(d.published_at)) ? d.published_at : null,
+    operationKind: d.operation_kind === "draft_upload" ? "draft_upload" : "publish",
+    // true only for an uploaded draft the backend says still awaits the creator; anything else is false, never guessed
+    creatorActionRequired: d.state === "uploaded" && d.operation_kind === "draft_upload" && d.creator_action_required !== false,
+    uploadedAt: d.state === "uploaded" && Number.isFinite(Date.parse(d.uploaded_at)) ? d.uploaded_at : null };
 }
 export function normaliseDispatches(b) {
   if (!b || !Array.isArray(b.dispatches)) throw bad();
@@ -118,7 +123,11 @@ export async function startConnect({ apiBaseUrl, accessToken, scope, provider, p
   if (j.authorization_status !== "ready" || !j.authorize_url || !j.redirect_uri) throw new SocialError("This platform connection is not set up yet, so nothing was opened and nothing was connected.", { kind: "unavailable", code: "PROVIDER_CONFIGURATION_REQUIRED" });
   let target, redirect; try { target = new URL(j.authorize_url); redirect = new URL(j.redirect_uri); } catch { throw new SocialError("The platform's sign-in page could not be opened safely, so nothing was connected.", { kind: "invalid", code: "BAD_URL" }); }
   const sp = target.searchParams;
-  if (target.protocol !== "https:" || redirect.protocol !== "https:" || target.username || target.password || sp.get("state") !== j.state || sp.get("code_challenge") !== p.challenge || sp.get("code_challenge_method") !== "S256" || sp.get("redirect_uri") !== j.redirect_uri || sp.get("response_type") !== "code")
+  // TikTok's Web Login Kit (BG-SOCIAL-001) has no PKCE parameters in the authorize URL: it carries client_key, scope, redirect_uri and state, and BizGenie's own S256 verifier stays in
+  // this browser for the later completion call. So TikTok is checked against ITS contract (exact host and path, no unexpected PKCE parameters); every other platform keeps the S256 check.
+  const tiktokOk = provider === "tiktok" && target.origin === "https://www.tiktok.com" && target.pathname === "/v2/auth/authorize/" && str(sp.get("client_key")) && !sp.has("client_id") && !sp.has("code_challenge") && !sp.has("code_challenge_method") && !sp.has("code_verifier");
+  const pkceOk = provider === "tiktok" ? tiktokOk : sp.get("code_challenge") === p.challenge && sp.get("code_challenge_method") === "S256";
+  if (target.protocol !== "https:" || redirect.protocol !== "https:" || target.username || target.password || sp.get("state") !== j.state || !pkceOk || sp.get("redirect_uri") !== j.redirect_uri || sp.get("response_type") !== "code")
     throw new SocialError("The platform's sign-in page did not match this attempt, so it was not opened and nothing was connected.", { kind: "invalid", code: "BAD_URL" });
   return { url: target.toString(), pending: { intentId: j.intent_id, state: j.state, verifier: p.verifier, provider, redirectUri: j.redirect_uri, expiresAt: j.expires_at } };
 }
@@ -135,7 +144,7 @@ export async function disconnect({ apiBaseUrl, accessToken, scope, connectionId,
   return { connectionId };
 }
 export async function enqueueDispatch({ apiBaseUrl, accessToken, scope, connectionId, campaignId, variantId, scheduleId, expectedCampaignVersion, fetchImpl = (...a) => fetch(...a) }) {
-  const d = normaliseDispatch(await post(fetchImpl, u(apiBaseUrl, "/dispatches"), accessToken, body(scope, { connection_id: connectionId, campaign_id: campaignId, variant_id: variantId, schedule_id: scheduleId, expected_campaign_version: expectedCampaignVersion, publishing_confirmed: true }), "Queueing the post"));
+  const d = normaliseDispatch(await post(fetchImpl, u(apiBaseUrl, "/dispatches"), accessToken, body(scope, { ...(connectionId ? { connection_id: connectionId } : {}), campaign_id: campaignId, variant_id: variantId, schedule_id: scheduleId, expected_campaign_version: expectedCampaignVersion, publishing_confirmed: true }), "Queueing the post"));
   if (!d) throw bad();
   return d;
 }

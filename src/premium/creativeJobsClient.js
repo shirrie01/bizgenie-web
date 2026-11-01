@@ -93,3 +93,10 @@ export const attachCreativeJob = async ({ apiBaseUrl, accessToken, scope, jobId,
   return job;
 };
 export const cancelCreativeJob = async ({ apiBaseUrl, accessToken, scope, jobId, fetchImpl = f0 }) => { await call(fetchImpl, `${apiBaseUrl}/customer/creative-jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST", headers: HJ(accessToken), body: JSON.stringify(body(scope)) }, "Cancelling"); return { jobId }; };
+
+// Why a job ended as "Not made", in the customer's words. Only codes the backend actually settles with are listed; anything else gets the plain generic sentence.
+export const FAILURE_REASONS = {
+  VIDEO_OUTPUT_INVALID: "The video came back, but it did not pass BizGenie's format and quality checks, so it was not kept.",
+  VIDEO_PROVIDER_FAILED: "The video provider could not complete this video.",
+};
+export const failureReason = (code) => (typeof code === "string" && Object.hasOwn(FAILURE_REASONS, code) ? FAILURE_REASONS[code] : "");

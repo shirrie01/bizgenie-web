@@ -186,4 +186,12 @@ describe("PremiumInsights (canonical performance-evidence models)", () => {
       render(<PremiumInsights enabled session={session} scope={scope} isOwner onSessionEnded={ended} api={{ fetchRecommendations: async () => { throw Object.assign(new Error("Your session has ended."), { kind: "auth" }); } }} />); await screen.findByRole("alert"); expect(ended).toHaveBeenCalled();
     });
   });
+  it("a TikTok draft is shown as a draft in the creator's inbox, never as Published or platform-confirmed (BG-SOCIAL-001)", async () => {
+    const draft = D({ dispatch_id: "dd", state: "uploaded", operation_kind: "draft_upload", creator_action_required: true, uploaded_at: "2026-11-01T10:05:00Z", publication_id: null, publication_url: null, published_at: null, evidence_kind: null });
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([]), fetchDispatches: async () => disp([draft]) }} />);
+    expect(await screen.findByText("Draft sent to TikTok")).toBeInTheDocument();
+    expect(screen.getByText(/in your TikTok inbox as a draft/i)).toBeInTheDocument(); expect(screen.getByText(/BizGenie has not published it/i)).toBeInTheDocument();
+    expect(screen.queryByText("Published")).toBeNull(); expect(screen.queryByText(/Confirmed by the platform/i)).toBeNull(); expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull(); // an uploaded draft cannot be cancelled by BizGenie
+  });
 });

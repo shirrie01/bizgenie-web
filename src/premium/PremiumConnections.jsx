@@ -8,7 +8,7 @@ import { PROVIDERS, PROVIDER_LABEL, cancelDispatch as realCancel, completeConnec
 const API = () => import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 const when = (iso) => (iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 const STATUS_TEXT = { connected: "Connected", needs_reauth: "Needs reconnecting", revoked: "Disconnected" };
-const STATE_TEXT = { queued: "Waiting its turn", claimed: "Waiting its turn", sending: "Being sent", reconciliation_required: "Outcome being checked", published: "Published", failed: "Failed", cancelled: "Cancelled" };
+const STATE_TEXT = { queued: "Waiting its turn", claimed: "Waiting its turn", sending: "Being sent", reconciliation_required: "Outcome being checked", published: "Published", uploaded: "Draft sent to TikTok", failed: "Failed", cancelled: "Cancelled" };
 const PENDING_KEY = "bizgenie.social.pending";
 const redirectDefault = (url) => window.location.assign(url);
 const store = () => { try { return window.sessionStorage; } catch { return null; } };
@@ -99,6 +99,7 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, a
           {list.items.map((d) => (
             <li key={d.id}>
               <strong>{STATE_TEXT[d.state]}</strong>{d.scheduledFor ? ` · planned ${when(d.scheduledFor)}` : ""}
+              {d.state === "uploaded" && <span> · {d.creatorActionRequired ? "It is in your TikTok inbox as a draft. Open TikTok to review and post it yourself. BizGenie has not published it." : "You finished this in TikTok. BizGenie cannot see whether or when it went live."}</span>}
               {d.state === "failed" && <span className="error"> · The platform refused it. Nothing was published.</span>}
               {d.state === "reconciliation_required" && <span> · BizGenie cannot yet tell whether this reached the platform, so it will not send it again until that is checked.</span>}
               {d.state === "published" && (d.platformVerified ? <span> · <em className="ps-src backend">Confirmed by the platform</em> <a href={d.postUrl} target="_blank" rel="noopener noreferrer">View post</a></span> : <span> · <em className="ps-src">Not confirmed by the platform</em></span>)}
