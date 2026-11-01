@@ -42,6 +42,8 @@ describe("dispatches and calendar", () => {
     const f = reply(200, dsp({ state: "queued", publication_url: null, evidence_kind: null }));
     const d = await enqueueDispatch({ apiBaseUrl: "http://a", accessToken: "t", scope, connectionId: "c1", campaignId: "k1", variantId: "v1", scheduleId: "s1", expectedCampaignVersion: 3, fetchImpl: f });
     expect(d.state).toBe("queued"); expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ tenant_id: "t1", project_id: "p1", brand_id: "b1", connection_id: "c1", campaign_id: "k1", variant_id: "v1", schedule_id: "s1", expected_campaign_version: 3, publishing_confirmed: true });
+    const f2 = reply(200, dsp({ state: "queued", publication_url: null, evidence_kind: null })); await enqueueDispatch({ apiBaseUrl: "http://a", accessToken: "t", scope, campaignId: "k1", variantId: "v1", scheduleId: "s1", expectedCampaignVersion: 3, fetchImpl: f2 });
+    const sent = JSON.parse(f2.mock.calls[0][1].body); expect(sent).not.toHaveProperty("connection_id"); expect(sent).not.toHaveProperty("destination_key");
     await expect(cancelDispatch({ apiBaseUrl: "h", accessToken: "t", scope, dispatchId: "d1", fetchImpl: reply(200, dsp({ state: "queued", publication_url: null })) })).rejects.toMatchObject({ kind: "unconfirmed" });
     await expect(cancelDispatch({ apiBaseUrl: "h", accessToken: "t", scope, dispatchId: "d1", fetchImpl: reply(409, { error: { code: "PUBLICATION_ALREADY_STARTED" } }) })).rejects.toMatchObject({ kind: "conflict", code: "PUBLICATION_ALREADY_STARTED" });
   });

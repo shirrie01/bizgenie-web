@@ -8,12 +8,12 @@ import AddCreativeItem from "./AddCreativeItem";
 afterEach(cleanup);
 const CONN = "0b0e5b8e-6f3a-4c1f-8f0a-1d2c3b4a5f60", SCHED = "5d1e8a7c-3b2a-4f9e-9c1d-7a6b5c4d3e2f";
 const campaign = { campaign_id: "k1", version: 7, display_timezone: "UTC", schedules: [{ schedule_id: SCHED, variant_id: "v1", status: "active", scheduled_for: "2026-11-03T10:00:00Z", timezone: "UTC", local_datetime: "2026-11-03T10:00:00", utc_offset_minutes: 0 }] };
-const variant = (o = {}) => ({ variant_id: "v1", platform: "tiktok", workflow: "scheduled", destination_key: CONN, active_schedule_id: SCHED, ...o });
+const variant = (o = {}) => ({ variant_id: "v1", platform: "tiktok", workflow: "scheduled", active_schedule_id: SCHED, ...o });
 const props = (o = {}) => ({ campaign, variant: variant(), session: { accessToken: "tok" }, scope: { tenantId: "t", projectId: "p", brandId: "b" }, isOwner: true, apiBaseUrl: "https://api.test", ...o });
 
 describe("SendDraftToTikTok (BG-LAUNCH-006)", () => {
-  it("is shown only to the owner, for a scheduled TikTok item created for a connected account", () => {
-    const hidden = [{ isOwner: false }, { variant: variant({ platform: "instagram" }) }, { variant: variant({ workflow: "approved" }) }, { variant: variant({ destination_key: undefined }) }];
+  it("is shown only to the owner, for a scheduled TikTok item", () => {
+    const hidden = [{ isOwner: false }, { variant: variant({ platform: "instagram" }) }, { variant: variant({ workflow: "approved" }) }];
     for (const o of hidden) { const { container, unmount } = render(<SendDraftToTikTok {...props(o)} />); expect(container).toBeEmptyDOMElement(); unmount(); }
     render(<SendDraftToTikTok {...props()} />); expect(screen.getByRole("group", { name: /send to tiktok as a draft/i })).toBeInTheDocument();
   });
@@ -27,7 +27,7 @@ describe("SendDraftToTikTok (BG-LAUNCH-006)", () => {
     const enqueue = vi.fn().mockResolvedValue({ state: "queued" }); render(<SendDraftToTikTok {...props({ api: { enqueueDispatch: enqueue } })} />);
     fireEvent.click(screen.getByRole("checkbox")); fireEvent.click(screen.getByRole("button", { name: /send as a draft/i }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Queued/));
-    expect(enqueue).toHaveBeenCalledTimes(1); expect(enqueue.mock.calls[0][0]).toMatchObject({ connectionId: CONN, scheduleId: SCHED, campaignId: "k1", variantId: "v1", expectedCampaignVersion: 7, accessToken: "tok" });
+    expect(enqueue).toHaveBeenCalledTimes(1); expect(enqueue.mock.calls[0][0]).toMatchObject({ scheduleId: SCHED, campaignId: "k1", variantId: "v1", expectedCampaignVersion: 7, accessToken: "tok" }); expect(enqueue.mock.calls[0][0]).not.toHaveProperty("connectionId"); expect(JSON.stringify(enqueue.mock.calls[0][0])).not.toMatch(/destination_key/);
     expect(screen.getByRole("status")).toHaveTextContent(/Draft sent to TikTok/); expect(screen.getByRole("status")).not.toHaveTextContent(/is published/i);
     expect(screen.queryByRole("button", { name: /send as a draft/i })).toBeNull(); // cannot be queued twice from here
   });

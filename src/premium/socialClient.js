@@ -144,7 +144,7 @@ export async function disconnect({ apiBaseUrl, accessToken, scope, connectionId,
   return { connectionId };
 }
 export async function enqueueDispatch({ apiBaseUrl, accessToken, scope, connectionId, campaignId, variantId, scheduleId, expectedCampaignVersion, fetchImpl = (...a) => fetch(...a) }) {
-  const d = normaliseDispatch(await post(fetchImpl, u(apiBaseUrl, "/dispatches"), accessToken, body(scope, { connection_id: connectionId, campaign_id: campaignId, variant_id: variantId, schedule_id: scheduleId, expected_campaign_version: expectedCampaignVersion, publishing_confirmed: true }), "Queueing the post"));
+  const d = normaliseDispatch(await post(fetchImpl, u(apiBaseUrl, "/dispatches"), accessToken, body(scope, { ...(connectionId ? { connection_id: connectionId } : {}), campaign_id: campaignId, variant_id: variantId, schedule_id: scheduleId, expected_campaign_version: expectedCampaignVersion, publishing_confirmed: true }), "Queueing the post"));
   if (!d) throw bad();
   return d;
 }

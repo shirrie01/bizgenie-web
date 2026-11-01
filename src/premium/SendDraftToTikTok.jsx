@@ -3,8 +3,8 @@ import { enqueueDispatch as realEnqueue } from "./socialClient";
 import { activeSchedule } from "./scheduleModel";
 
 // Send an approved, scheduled TikTok video to the creator's TikTok inbox as a DRAFT (BG-LAUNCH-006). BizGenie uploads the video at the planned time; the creator opens TikTok,
-// reviews it and posts it themselves. Nothing here publishes anything, and the screen says so before and after. Owner only, TikTok only, and only for an item that was created
-// for a connected account (its destination key is that connection's id; the server refuses anything else).
+// reviews it and posts it themselves. Nothing here publishes anything, and the screen says so before and after. Owner only, TikTok only, and for an item that was created
+// for a connected account. The Studio never sees the item's destination key: the server resolves the bound connection and refuses anything else.
 const MESSAGES = {
   DESTINATION_NOT_APPROVED: "This item was not created for a connected TikTok account, so it cannot be sent. Add it again and choose the connected account.",
   CONNECTION_UNAVAILABLE: "The TikTok connection needs attention. Reconnect it, then try again.",
@@ -15,7 +15,7 @@ const MESSAGES = {
 export default function SendDraftToTikTok({ campaign, variant, session, scope, isOwner, apiBaseUrl, api = {} }) {
   const [confirmed, setConfirmed] = useState(false);
   const [state, setState] = useState({ status: "idle", error: "", dispatch: null });
-  if (!isOwner || variant.platform !== "tiktok" || variant.workflow !== "scheduled" || !variant.destination_key) return null;
+  if (!isOwner || variant.platform !== "tiktok" || variant.workflow !== "scheduled") return null;
   const schedule = activeSchedule(campaign, variant);
   if (!schedule || !schedule.schedule_id) return null;
   const done = state.status === "done";
@@ -23,7 +23,7 @@ export default function SendDraftToTikTok({ campaign, variant, session, scope, i
     if (!confirmed || state.status === "sending") return;
     setState({ status: "sending", error: "", dispatch: null });
     try {
-      const d = await (api.enqueueDispatch || realEnqueue)({ apiBaseUrl, accessToken: session.accessToken, scope, connectionId: variant.destination_key, campaignId: campaign.campaign_id, variantId: variant.variant_id, scheduleId: schedule.schedule_id, expectedCampaignVersion: campaign.version });
+      const d = await (api.enqueueDispatch || realEnqueue)({ apiBaseUrl, accessToken: session.accessToken, scope, campaignId: campaign.campaign_id, variantId: variant.variant_id, scheduleId: schedule.schedule_id, expectedCampaignVersion: campaign.version });
       setState({ status: "done", error: "", dispatch: d });
     } catch (error) {
       const unconfirmed = error && error.kind === "unconfirmed";
