@@ -20,4 +20,13 @@ describe("staging release workflow guards (BG-LAUNCH-013)", () => {
     expect(wf).toMatch(/sb_secret_/); expect(wf).not.toMatch(/(?<!staging-)api\.getbizgenie\.com|uvgblmejpbswkvlqvqmz/);
     expect(wf).toMatch(/PREVIOUS_DEPLOYMENT_ID/);
   });
+  it("agrees with qa/hosted/staging-settings.json, deploys to the configured production branch, and only smoke-tests the approved host (BG-LAUNCH-017)", () => {
+    const S = JSON.parse(readFileSync("qa/hosted/staging-settings.json", "utf8"));
+    expect(wf).toContain(`STAGING_API_ORIGIN: ${S.api_origin}`); expect(wf).toContain(`STAGING_SUPABASE_URL: ${S.supabase_origin}`);
+    expect(wf).toContain(`STAGING_SUPABASE_REF: ${S.supabase_ref}`); expect(wf).toContain(`PAGES_PROJECT: ${S.pages_project}`); expect(wf).toContain(`PAGES_PRODUCTION_BRANCH: ${S.pages_production_branch}`);
+    expect(wf).toContain(`default: 'https://${S.studio_hostname}'`);
+    expect(wf).toContain('--branch "$PAGES_PRODUCTION_BRANCH"'); expect(wf).not.toMatch(/default_branch/);
+    expect(wf).toMatch(/smoke_url must be the approved staging Studio host/);
+    for (const ref of S.never_ref) expect(wf).not.toContain(ref);
+  });
 });
