@@ -351,3 +351,15 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 button.link { all: unset; display: inline; color: var(--ps-accent, #0b4943); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font: inherit; padding: 4px 0; }
 button.link:hover { text-decoration-thickness: 2px; }
 button.link:focus-visible { outline: 3px solid #0b4943; outline-offset: 2px; border-radius: 3px; }
+
+/* BG-LAUNCH-010: customer-journey polish found in browser review */
+.item-grid-fit { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.ps-connections h3 { margin: 28px 0 10px; }
+.ps-connections .ps-camp-actions { margin: 14px 0 6px; }
+.ps-conn-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.ps-conn-list > li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 12px 14px; border: 1px solid #d9dbd3; border-radius: 12px; background: #fff; }
+.ps-conn-list > li > button, .ps-conn-list > li > [role="group"] { margin-left: auto; }
+.ps-conn-list a { color: #1857c4; font-weight: 600; }
+.ps-caps { flex-basis: 100%; font-size: .9rem; color: #4b564f; }
+.ps-caps summary { cursor: pointer; font-weight: 600; }
+.ps-caps ul { margin: 6px 0 0; padding-left: 20px; }

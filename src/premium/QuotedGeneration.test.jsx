@@ -65,7 +65,7 @@ describe("QuotedGeneration", () => {
     expect(await screen.findByText(/3 credits used\./)).toBeInTheDocument(); expect(screen.getByText(/not approved and not published/)).toBeInTheDocument();
     await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(1)); expect(onSettled.mock.calls[0][0]).toMatchObject({ state: "succeeded", credits: 3 });
   });
-  it.each([["recovery_required", /checking the result with the provider.*nothing is sent again/i], ["failed", /could not be made\. You were not charged/], ["cancelled", /Cancelled\. You were not charged/]])("shows %s honestly", async (state, text) => {
+  it.each([["recovery_required", /checking the result with the provider.*nothing is sent again/i], ["failed", /^You were not charged\.$/], ["cancelled", /Cancelled\. You were not charged/]])("shows %s honestly", async (state, text) => {
     window.localStorage.setItem(KEY, JSON.stringify({ nonce: "n", fingerprint: "f", quote: quote(), confirmKey: "c:k", jobId: "quoted:j1" }));
     mount({ fetchQuoteStatus: async () => status(state) }); expect(await screen.findByText(text)).toBeInTheDocument();
   });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { PROVIDERS, PROVIDER_LABEL, cancelDispatch as realCancel, completeConnect as realComplete, disconnect as realDisconnect, fetchConnections as realFetchConnections, fetchDispatches as realFetchDispatches, startConnect as realConnect } from "./socialClient";
+import { CAPABILITY_LABEL, PROVIDER_LABEL, connectableProviders, cancelDispatch as realCancel, completeConnect as realComplete, disconnect as realDisconnect, fetchConnections as realFetchConnections, fetchDispatches as realFetchDispatches, startConnect as realConnect } from "./socialClient";
 
 // Connected social accounts and publishing status (BG-STUDIO-024-FE, real contract of bizgenie-api #218 /customer/social/*). With the build gate off this page
 // says exactly what BizGenie does today (publish by hand, then record it). With the gate on it shows only what the server reports; "Connected" and
@@ -76,6 +76,12 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, a
               {a.status === "connected" && <small> · permission renews by {when(a.expiresAt)}</small>}
               {a.status === "needs_reauth" && <small> · permission ended {when(a.expiresAt)}</small>}
               {a.status === "needs_reauth" && isOwner && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => connect(a.provider)}>Reconnect</button>}
+              {a.status === "connected" && a.capabilities && Object.entries(a.capabilities).some(([, v]) => !v.available) && (
+                <details className="ps-caps">
+                  <summary>What BizGenie cannot do with this account yet</summary>
+                  <ul>{Object.entries(a.capabilities).filter(([, v]) => !v.available).map(([key, v]) => <li key={key}><strong>{CAPABILITY_LABEL[key]}:</strong> not available{v.reason ? ` — ${v.reason}` : ""}</li>)}</ul>
+                </details>
+              )}
               {isOwner && a.status !== "revoked" && (confirming === a.id
                 ? <span role="group" aria-label={`Disconnect ${a.name}`}> Disconnect {a.name}? <button type="button" className="ps-primary" disabled={Boolean(busy)} onClick={() => remove(a)}>Yes, disconnect</button> <button type="button" className="secondary" onClick={() => setConfirming("")}>Keep it</button></span>
                 : <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => setConfirming(a.id)} aria-label={`Disconnect ${a.name}`}>Disconnect</button>)}
@@ -85,7 +91,7 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, a
       )}
       {isOwner ? (
         <div className="ps-camp-actions" role="group" aria-label="Connect an account">
-          {PROVIDERS.filter((p) => !connectedProviders.has(p)).map((p) => <button key={p} type="button" className="secondary" disabled={Boolean(busy)} onClick={() => connect(p)}>{busy === `c:${p}` ? "Opening…" : `Connect ${PROVIDER_LABEL[p]}`}</button>)}
+          {connectableProviders().filter((p) => !connectedProviders.has(p)).map((p) => <button key={p} type="button" className="secondary" disabled={Boolean(busy)} onClick={() => connect(p)}>{busy === `c:${p}` ? "Opening…" : `Connect ${PROVIDER_LABEL[p]}`}</button>)}
         </div>
       ) : <p className="ps-hint">Only the workspace owner can connect or disconnect accounts.</p>}
 
@@ -100,7 +106,7 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, a
             <li key={d.id}>
               <strong>{STATE_TEXT[d.state]}</strong>{d.scheduledFor ? ` · planned ${when(d.scheduledFor)}` : ""}
               {d.state === "uploaded" && <span> · {d.creatorActionRequired ? "It is in your TikTok inbox as a draft. Open TikTok to review and post it yourself. BizGenie has not published it." : "You finished this in TikTok. BizGenie cannot see whether or when it went live."}</span>}
-              {d.state === "failed" && <span className="error"> · The platform refused it. Nothing was published.</span>}
+              {d.state === "failed" && <span className="error"> · It could not be delivered. Nothing was published.</span>}
               {d.state === "reconciliation_required" && <span> · BizGenie cannot yet tell whether this reached the platform, so it will not send it again until that is checked.</span>}
               {d.state === "published" && (d.platformVerified ? <span> · <em className="ps-src backend">Confirmed by the platform</em> <a href={d.postUrl} target="_blank" rel="noopener noreferrer">View post</a></span> : <span> · <em className="ps-src">Not confirmed by the platform</em></span>)}
               {isOwner && (d.state === "queued" || d.state === "claimed") && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => cancel(d)}>Cancel</button>}

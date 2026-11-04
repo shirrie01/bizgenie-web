@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
-      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - run: npm install --no-save @playwright/test@1.56.1
       - run: npx playwright install --with-deps chromium
       - name: Build with placeholder public values (API is mocked in the browser)
         env:

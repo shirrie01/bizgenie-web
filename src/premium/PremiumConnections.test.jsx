@@ -16,6 +16,51 @@ const D = (o = {}) => ({ dispatch_id: "d1", campaign_id: "c1", variant_id: "v1",
 const disp = (list) => normaliseDispatches({ dispatches: list, next_cursor: null });
 const none = async () => disp([]);
 
+describe("PremiumConnections: what an account cannot do yet (BG-LAUNCH-010)", () => {
+  it("lists only the capabilities the server says are unavailable, with its reason as plain text; an account without capabilities shows nothing extra", async () => {
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C({ connection_id: "c9", platform: "linkedin", account_id: "member", capabilities: { member_login: { available: true }, member_text_post: { available: false, reason: "Not verified with LinkedIn yet." }, publication_confirmation: { available: false } } }), C({ connection_id: "c8", platform: "tiktok", account_id: "tt" })]), fetchDispatches: none }} />);
+    expect(await screen.findByText("What BizGenie cannot do with this account yet")).toBeInTheDocument();
+    expect(screen.getAllByText("What BizGenie cannot do with this account yet")).toHaveLength(1);
+    expect(screen.getByText(/Text posts:/)).toBeInTheDocument(); expect(screen.getByText(/Not verified with LinkedIn yet\./)).toBeInTheDocument(); expect(screen.getByText(/Confirmation that a post is live:/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sign-in:/)).toBeNull();
+  });
+  it("a LinkedIn or TikTok state that is not 'published' is never described as published: an unconfirmed outcome says BizGenie cannot yet tell", async () => {
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([]), fetchDispatches: async () => disp([D({ state: "reconciliation_required", publication_id: null, publication_url: null, published_at: null, evidence_kind: null })]) }} />);
+    expect(await screen.findByText("Outcome being checked")).toBeInTheDocument();
+    expect(screen.queryByText("Published")).toBeNull(); expect(screen.getByText(/cannot yet tell whether this reached the platform/)).toBeInTheDocument();
+  });
+});
+
+describe("PremiumConnections: contract states for TikTok and LinkedIn (BG-LAUNCH-011)", () => {
+  const renderWith = (list, extra = {}) => render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns(list), fetchDispatches: none, ...extra }} />);
+  it("a build offering only TikTok shows one Connect button and does not imply anything is connected", async () => {
+    vi.stubEnv("VITE_SOCIAL_PROVIDERS", "tiktok");
+    try {
+      renderWith([]);
+      expect(await screen.findByText("No accounts are connected yet.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Connect TikTok" })).toBeInTheDocument();
+      for (const other of ["Facebook", "Instagram", "LinkedIn", "YouTube"]) expect(screen.queryByRole("button", { name: `Connect ${other}` })).toBeNull();
+      expect(screen.queryByText(/TikTok is connected/i)).toBeNull();
+    } finally { vi.unstubAllEnvs(); }
+  });
+  it("disconnected, connected and needs-reconnecting are three different, plain states; only the owner is offered Reconnect", async () => {
+    renderWith([C({ connection_id: "a", platform: "tiktok", account_id: "tt_ok" }), C({ connection_id: "b", platform: "linkedin", account_id: "li_old", status: "expired" }), C({ connection_id: "c", platform: "tiktok", account_id: "tt_gone", status: "revoked" })]);
+    expect(await screen.findByText("Connected")).toBeInTheDocument(); expect(screen.getByText("Needs reconnecting")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
+  });
+  it("a connected LinkedIn account never offers publishing: no publish, post or send control exists, and the unavailable text capability is stated with its reason", async () => {
+    renderWith([C({ connection_id: "li", platform: "linkedin", account_id: "member", capabilities: { member_login: { available: true }, member_text_post: { available: false, reason: "Not verified with LinkedIn yet." }, member_image_post: { available: false }, member_video_post: { available: false }, company_page_post: { available: false } } })]);
+    expect(await screen.findByText(/Text posts:/)).toBeInTheDocument();
+    for (const name of [/publish/i, /post to linkedin/i, /send to linkedin/i, /share/i]) expect(screen.queryByRole("button", { name })).toBeNull();
+  });
+  it("a refused or unavailable connection start says nothing was connected and opens nothing", async () => {
+    const onRedirect = vi.fn(); const err = new SocialError("This platform connection is not set up yet, so nothing was opened and nothing was connected.", { kind: "unavailable", code: "PROVIDER_CONFIGURATION_REQUIRED" });
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner onRedirect={onRedirect} search="" api={{ fetchConnections: async () => conns([]), fetchDispatches: none, startConnect: vi.fn().mockRejectedValue(err) }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Connect TikTok" }));
+    expect(await screen.findByText(/nothing was opened and nothing was connected/)).toBeInTheDocument(); expect(onRedirect).not.toHaveBeenCalled();
+  });
+});
+
 describe("PremiumConnections", () => {
   it("gate off: says nothing is connected and BizGenie does not publish, explains the manual route, calls nothing, has no buttons", () => {
     const f = vi.fn(); render(<PremiumConnections enabled={false} session={session} scope={scope} isOwner api={{ fetchConnections: f, fetchDispatches: f }} />);
@@ -78,7 +123,7 @@ describe("PremiumConnections", () => {
     const cancel = vi.fn(async () => ({ state: "cancelled" }));
     render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C()]), cancelDispatch: cancel, fetchDispatches: async () => disp([D(), D({ dispatch_id: "d2", evidence_kind: null }), D({ dispatch_id: "d3", state: "failed", publication_url: null, evidence_kind: null }), D({ dispatch_id: "d4", state: "reconciliation_required", publication_url: null, evidence_kind: null }), D({ dispatch_id: "d5", state: "queued", publication_url: null, evidence_kind: null })]) }} />);
     expect(await screen.findByText("Confirmed by the platform")).toBeInTheDocument(); expect(screen.getByRole("link", { name: "View post" })).toHaveAttribute("href", "https://example.test/post/1");
-    expect(screen.getByText("Not confirmed by the platform")).toBeInTheDocument(); expect(screen.getByText(/The platform refused it/)).toBeInTheDocument(); expect(screen.getByText(/will not send it again until that is checked/)).toBeInTheDocument();
+    expect(screen.getByText("Not confirmed by the platform")).toBeInTheDocument(); expect(screen.getByText(/It could not be delivered\. Nothing was published\./)).toBeInTheDocument(); expect(screen.getByText(/will not send it again until that is checked/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" })); expect(await screen.findByText(/will not be sent/)).toBeInTheDocument(); expect(cancel.mock.calls[0][0].dispatchId).toBe("d5");
   });
   it("errors are explained and retryable; a session that ended is reported", async () => {

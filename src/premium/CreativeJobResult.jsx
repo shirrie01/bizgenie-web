@@ -43,7 +43,7 @@ export default function CreativeJobResult({ jobId, session, scope, campaign, var
       <p><strong>{STATE_TEXT[j.state]}.</strong> {j.state === "succeeded" ? "Finished is not approved and not published." : null}</p>
       {s.error && <p className="ps-warn" role="status">{s.error} Showing the last known state.</p>}
       {msg.text && <p className={msg.kind === "error" ? "error" : msg.kind === "warn" ? "ps-warn" : ""} role={msg.kind === "ok" ? "status" : "alert"}>{msg.text}</p>}
-      {j.state === "failed" && <p className="error" role="alert">It could not be made. {failureReason(j.errorCode)} You were not charged. {j.retry === "new_quote" ? "Get a new price to try again." : ""}</p>}
+      {j.state === "failed" && <p className="error" role="alert">{failureReason(j.errorCode)} You were not charged. {j.retry === "new_quote" ? "Get a new price to try again." : ""}</p>}
       {j.state === "recovery_required" && <p className="ps-hint">BizGenie is checking the result with the provider. Do not start it again; nothing is sent twice.</p>}
       {j.outputs.map((o, i) => {
         if (o.type === "strategy_plan") return (
