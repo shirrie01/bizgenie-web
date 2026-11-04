@@ -1,0 +1,12 @@
+{
+  "_note": "Single source of truth for the staging Studio (BG-LAUNCH-017). Consumed by the hosted acceptance harness, the release workflow guard test and the activation request. Nothing here is a secret.",
+  "environment": "staging",
+  "studio_hostname": "staging-app.getbizgenie.com",
+  "pages_project": "bizgenie-studio-staging",
+  "pages_hostname_suffix": "bizgenie-studio-staging.pages.dev",
+  "pages_production_branch": "main",
+  "api_origin": "https://staging-api.getbizgenie.com",
+  "supabase_ref": "zrczojyxebwjgpymbmgu",
+  "supabase_origin": "https://zrczojyxebwjgpymbmgu.supabase.co",
+  "never_ref": ["uvgblmejpbswkvlqvqmz"]
+}

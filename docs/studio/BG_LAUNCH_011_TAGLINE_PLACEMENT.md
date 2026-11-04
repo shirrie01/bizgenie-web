@@ -12,3 +12,6 @@ No colour is proposed: the approved coral hex is not recorded in either reposito
 | 4 | **Not recommended** | Campaign Studio, billing, accounts, calendar, error and failure messages | These carry truth-critical wording (charged / not charged, draft / published); marketing copy must not sit beside it |
 
 Implementation when approved: one shared constant, rendered by one small component, with a unit test that asserts the exact string, so the wording cannot drift. Accessibility: plain text (not an image), normal contrast, no animation.
+
+## Final recommendation (BG-LAUNCH-017)
+Approve placements **1 (sign-in screen)** and **3 (empty first workspace)** only; defer 2 (top bar). Both are text, charcoal on the existing surface, no new colour, and neither sits beside a charge, credit, draft/published or error statement. The exact string is already a tested constant (`src/brand/tagline.js`, asserted in `smokePages.test.js`); implementation is one small component plus a test and needs only the founder's yes. The coral hex remains unapproved and unused.
