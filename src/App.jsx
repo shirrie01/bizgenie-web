@@ -37,6 +37,7 @@ const PremiumStudio = lazy(() => import("./premium/PremiumStudio"));
 import PremiumErrorBoundary from "./premium/PremiumErrorBoundary";
 import { isPremiumStudioEnabled } from "./premium/flag";
 import { SAVE_NOT_CONFIRMED_RETRY, createSaveKeeper, fetchOnboarding, putOnboarding } from "./premium/onboardingClient";
+import SiteLinks from "./premium/SiteLinks";
 import { fetchMembershipRole, isReadOnlyRole } from "./premium/membershipClient";
 import { fetchWorkspaces, normaliseWorkspace, sameWorkspace, selectWorkspace } from "./premium/workspaceClient";
 import { BRAIN_SAVE_UNCONFIRMED, fetchBrandBrain, hasUntrimmedIdentity, identityChanged, mergeBrainFields, putBrandBrain } from "./premium/brainClient";
@@ -73,10 +74,14 @@ async function requestRecommendation({ accessToken, tenantId, projectId, brandId
   return response.json();
 }
 
+// A 401 means the sign-in is no longer valid, not that the workspace is missing (BG-LAUNCH-015). Typed so the screen can offer "Sign in again".
+const sessionEndedError = () => Object.assign(new Error("Your session has ended. Sign in again to continue."), { kind: "auth", code: "AUTHENTICATION_REQUIRED" });
+
 async function getCustomerWorkspace(accessToken) {
   const response = await fetch(`${API_BASE_URL}/customer/workspace`, {
     headers: authorizationHeader(accessToken),
   });
+  if (response.status === 401) throw sessionEndedError();
   if (!response.ok) throw new Error("Workspace could not be checked yet.");
   return response.json();
 }
@@ -139,6 +144,7 @@ async function bootstrapWorkspaceWithProfile({ accessToken, businessName, websit
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify(body),
   });
+  if (response.status === 401) throw sessionEndedError();
   if (!response.ok) throw new Error("Your workspace could not be created yet. Nothing was saved.");
   return response.json();
 }
@@ -1355,6 +1361,7 @@ export default function App() {
       if (refreshed.status !== "ready") return { ok: false, message: "Your workspace was created. Please sign out and sign back in to continue." };
       return { ok: true };
     } catch (error) {
+      if (isAuthRefusal(error)) setSessionEnded(true);
       return { ok: false, message: error.message };
     }
   }
@@ -1427,6 +1434,7 @@ export default function App() {
       />
       </Lazy></PremiumErrorBoundary>
       )}
+      <SiteLinks />
     </main>
   ) : null;
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { MAX_BYTES, addFile, checkFile, deleteAsset as realDelete, fetchAssetPreview as realPreview, fetchAssets as realFetch, newUploadKey, revokeAsset as realRevoke } from "./mediaIntakeClient";
+import { MAX_BYTES, addFile, checkFile, deleteAsset as realDelete, fetchAssetPreview as realPreview, fetchAssets as realFetch, isMediaDeleteApiEnabled, newUploadKey, revokeAsset as realRevoke } from "./mediaIntakeClient";
 
 // Your own photos and short videos (BG-STUDIO-025-FE), on the real /customer/assets routes. A file is usable only when the server says "ready" after its own
 // safety check; rights are the customer's own confirmation and are labelled that way. Add, withdraw and delete are owner-only (the server answers 404 to a member).
@@ -21,7 +21,7 @@ function Thumb({ asset, base, api }) {
   return url ? <img src={url} alt={`Your file ${asset.filename}`} width="96" height="96" style={{ objectFit: "cover" }} /> : <span className="ps-hint">{asset.usable ? "Loading preview…" : ""}</span>;
 }
 
-export default function PremiumMedia({ enabled, session, scope, isOwner, api = {}, onSessionEnded }) {
+export default function PremiumMedia({ enabled, session, scope, isOwner, api = {}, onSessionEnded, allowDelete = isMediaDeleteApiEnabled() }) {
   const [list, setList] = useState({ status: "idle", assets: [], skipped: 0, error: "" });
   const [msg, setMsg] = useState({ kind: "", text: "" }); const [step, setStep] = useState(""); const [rights, setRights] = useState(false); const [file, setFile] = useState(null);
   const [confirming, setConfirming] = useState(""); const [busy, setBusy] = useState("");
@@ -76,7 +76,7 @@ export default function PremiumMedia({ enabled, session, scope, isOwner, api = {
             <li key={a.id}>
               <Thumb asset={a} base={base} api={api} /> <strong>{a.filename}</strong> · {mb(a.bytes)} · <span>{STATE_TEXT[a.state]}</span>
               {isOwner && a.state === "ready" && (confirming === a.id
-                ? <span role="group" aria-label={`Remove ${a.filename}`}> Remove {a.filename}? <button type="button" className="secondary" disabled={Boolean(busy)} onClick={act(`r:${a.id}`, () => (api.revokeAsset || realRevoke)({ ...base, assetId: a.id }), `${a.filename} was withdrawn. Posts that already use it are unchanged.`)}>Withdraw it</button> <button type="button" className="secondary" disabled={Boolean(busy)} onClick={act(`d:${a.id}`, () => (api.deleteAsset || realDelete)({ ...base, assetId: a.id }), `${a.filename} was deleted. Its stored copy is removed under the retention policy.`)}>Delete it</button> <button type="button" className="secondary" onClick={() => setConfirming("")}>Keep it</button></span>
+                ? <span role="group" aria-label={`Remove ${a.filename}`}> Remove {a.filename}? <button type="button" className="secondary" disabled={Boolean(busy)} onClick={act(`r:${a.id}`, () => (api.revokeAsset || realRevoke)({ ...base, assetId: a.id }), `${a.filename} was withdrawn. Posts that already use it are unchanged.`)}>Withdraw it</button> {allowDelete && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={act(`d:${a.id}`, () => (api.deleteAsset || realDelete)({ ...base, assetId: a.id }), `${a.filename} was deleted. Its stored copy is removed under the retention policy.`)}>Delete it</button>} <button type="button" className="secondary" onClick={() => setConfirming("")}>Keep it</button></span>
                 : <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => setConfirming(a.id)} aria-label={`Remove ${a.filename}`}>Remove</button>)}
             </li>
           ))}

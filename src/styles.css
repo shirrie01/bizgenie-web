@@ -363,3 +363,8 @@ button.link:focus-visible { outline: 3px solid #0b4943; outline-offset: 2px; bor
 .ps-caps { flex-basis: 100%; font-size: .9rem; color: #4b564f; }
 .ps-caps summary { cursor: pointer; font-weight: 600; }
 .ps-caps ul { margin: 6px 0 0; padding-left: 20px; }
+
+/* BG-LAUNCH-015: help and legal links (unresolved ones are plain text) */
+.ps-sitelinks { padding: 16px clamp(24px, 6vw, 96px) 32px; color: #4b564f; font-size: .88rem; }
+.ps-sitelinks ul { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; }
+.ps-sitelinks a { color: inherit; text-decoration: underline; }

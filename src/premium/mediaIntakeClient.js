@@ -17,6 +17,11 @@ export const isMediaIntakeApiEnabled = (env = import.meta.env) => {
   const raw = env && env.VITE_CUSTOMER_MEDIA_INTAKE_API;
   return typeof raw === "string" && raw.trim().toLowerCase() === "true";
 };
+// BG-LAUNCH-015: permanent removal uses HTTP DELETE, which the API's CORS policy does not allow from a browser (it answers 403 to the preflight; allowed methods are GET, POST, PUT, PATCH, OPTIONS). "Withdraw" (POST) is unaffected. The Delete button is therefore hidden unless this separate gate is on, to be turned on only after the API allows DELETE for this route and a hosted preflight check passes.
+export const isMediaDeleteApiEnabled = (env = import.meta.env) => {
+  const raw = env && env.VITE_CUSTOMER_MEDIA_DELETE_API;
+  return typeof raw === "string" && raw.trim().toLowerCase() === "true";
+};
 export const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "video/mp4"];
 export const MAX_BYTES = 32 * 1024 * 1024;
 export const STATES = ["initiated", "quarantined", "ready", "rejected", "revoked", "deleted"];

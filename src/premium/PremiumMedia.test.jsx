@@ -55,4 +55,19 @@ describe("PremiumMedia", () => {
     expect(screen.queryByLabelText("Choose a file")).toBeNull(); expect(screen.queryByRole("button", { name: /remove/i })).toBeNull(); expect(screen.getByText(/Only the workspace owner can add or remove/)).toBeInTheDocument();
   });
   it("an ended session is reported", async () => { const ended = vi.fn(); mount({ fetchAssets: async () => { throw new MediaError("Your session has ended.", { kind: "auth" }); } }, { onSessionEnded: ended }); await screen.findByRole("alert"); expect(ended).toHaveBeenCalled(); });
+  // BG-LAUNCH-015: the API's CORS policy refuses DELETE from a browser, so permanent deletion is hidden until its own gate is on; Withdraw (POST) stays.
+  it("offers Withdraw but not Delete by default", async () => {
+    mount({ fetchAssets: async () => L([A()]) });
+    fireEvent.click(await screen.findByRole("button", { name: "Remove shop.png" }));
+    expect(screen.getByRole("button", { name: "Withdraw it" })).toBeInTheDocument(); expect(screen.queryByRole("button", { name: "Delete it" })).toBeNull();
+  });
+  it("with the delete gate on, a browser-blocked DELETE is reported as unconfirmed and never as deleted", async () => {
+    const { deleteAsset } = await import("./mediaIntakeClient");
+    const blocked = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    const del = (a) => deleteAsset({ ...a, fetchImpl: blocked });
+    mount({ fetchAssets: async () => L([A()]), deleteAsset: del }, { allowDelete: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Remove shop.png" })); fireEvent.click(screen.getByRole("button", { name: "Delete it" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/connection failed\. Check your media/); expect(screen.queryByText(/was deleted/)).toBeNull();
+    expect(blocked.mock.calls[0][1].method).toBe("DELETE");
+  });
 });
