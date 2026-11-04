@@ -16,6 +16,21 @@ const D = (o = {}) => ({ dispatch_id: "d1", campaign_id: "c1", variant_id: "v1",
 const disp = (list) => normaliseDispatches({ dispatches: list, next_cursor: null });
 const none = async () => disp([]);
 
+describe("PremiumConnections: what an account cannot do yet (BG-LAUNCH-010)", () => {
+  it("lists only the capabilities the server says are unavailable, with its reason as plain text; an account without capabilities shows nothing extra", async () => {
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C({ connection_id: "c9", platform: "linkedin", account_id: "member", capabilities: { member_login: { available: true }, member_text_post: { available: false, reason: "Not verified with LinkedIn yet." }, publication_confirmation: { available: false } } }), C({ connection_id: "c8", platform: "tiktok", account_id: "tt" })]), fetchDispatches: none }} />);
+    expect(await screen.findByText("What BizGenie cannot do with this account yet")).toBeInTheDocument();
+    expect(screen.getAllByText("What BizGenie cannot do with this account yet")).toHaveLength(1);
+    expect(screen.getByText(/Text posts:/)).toBeInTheDocument(); expect(screen.getByText(/Not verified with LinkedIn yet\./)).toBeInTheDocument(); expect(screen.getByText(/Confirmation that a post is live:/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sign-in:/)).toBeNull();
+  });
+  it("a LinkedIn or TikTok state that is not 'published' is never described as published: an unconfirmed outcome says BizGenie cannot yet tell", async () => {
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([]), fetchDispatches: async () => disp([D({ state: "reconciliation_required", publication_id: null, publication_url: null, published_at: null, evidence_kind: null })]) }} />);
+    expect(await screen.findByText("Outcome being checked")).toBeInTheDocument();
+    expect(screen.queryByText("Published")).toBeNull(); expect(screen.getByText(/cannot yet tell whether this reached the platform/)).toBeInTheDocument();
+  });
+});
+
 describe("PremiumConnections", () => {
   it("gate off: says nothing is connected and BizGenie does not publish, explains the manual route, calls nothing, has no buttons", () => {
     const f = vi.fn(); render(<PremiumConnections enabled={false} session={session} scope={scope} isOwner api={{ fetchConnections: f, fetchDispatches: f }} />);
@@ -78,7 +93,7 @@ describe("PremiumConnections", () => {
     const cancel = vi.fn(async () => ({ state: "cancelled" }));
     render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C()]), cancelDispatch: cancel, fetchDispatches: async () => disp([D(), D({ dispatch_id: "d2", evidence_kind: null }), D({ dispatch_id: "d3", state: "failed", publication_url: null, evidence_kind: null }), D({ dispatch_id: "d4", state: "reconciliation_required", publication_url: null, evidence_kind: null }), D({ dispatch_id: "d5", state: "queued", publication_url: null, evidence_kind: null })]) }} />);
     expect(await screen.findByText("Confirmed by the platform")).toBeInTheDocument(); expect(screen.getByRole("link", { name: "View post" })).toHaveAttribute("href", "https://example.test/post/1");
-    expect(screen.getByText("Not confirmed by the platform")).toBeInTheDocument(); expect(screen.getByText(/The platform refused it/)).toBeInTheDocument(); expect(screen.getByText(/will not send it again until that is checked/)).toBeInTheDocument();
+    expect(screen.getByText("Not confirmed by the platform")).toBeInTheDocument(); expect(screen.getByText(/It could not be delivered\. Nothing was published\./)).toBeInTheDocument(); expect(screen.getByText(/will not send it again until that is checked/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" })); expect(await screen.findByText(/will not be sent/)).toBeInTheDocument(); expect(cancel.mock.calls[0][0].dispatchId).toBe("d5");
   });
   it("errors are explained and retryable; a session that ended is reported", async () => {

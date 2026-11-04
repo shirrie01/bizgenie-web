@@ -994,7 +994,7 @@ export default function App() {
             <small>This brief applies only to this generation. It does not change your approved Brand Brain.</small>
           </div>
           {premiumEnabled && !isReadOnlyRole(roleState.role) && <Lazy><AddCreativeItem busy={addItemState.status === "working"} error={addItemState.error} notice={addItemState.notice} onAdd={premiumAddItem} loadConnections={loadSocialConnections} /></Lazy>}
-          <div className="item-grid">
+          <div className="item-grid item-grid-fit">
             {campaignState.campaign.items.map((item) => (
               <article className={item.variants.some((v) => v.workflow === "review") ? "item item-review" : "item"} key={item.content_item_id}>
                 <span>{item.format}</span>
