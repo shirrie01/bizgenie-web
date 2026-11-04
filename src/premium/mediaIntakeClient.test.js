@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { MediaError, addFile, checkFile, completeUpload, deleteAsset, fetchAssetPreview, fetchAssets, initiateUpload, isMediaIntakeApiEnabled, normaliseAsset, normaliseAssetList, revokeAsset, uploadBytes } from "./mediaIntakeClient";
+import { MediaError, addFile, checkFile, completeUpload, deleteAsset, fetchAssetPreview, fetchAssets, initiateUpload, isMediaIntakeApiEnabled, isMediaDeleteApiEnabled, normaliseAsset, normaliseAssetList, revokeAsset, uploadBytes } from "./mediaIntakeClient";
 
 // FIXTURE tests against the #218 /customer/assets shapes; qa/integration/creativeJobs runs the same client over real HTTP against the backend.
 const scope = { tenantId: "t1", projectId: "p1", brandId: "b1" };
@@ -10,6 +10,7 @@ const file = (o = {}) => ({ name: "shop.png", type: "image/png", size: 1234, ...
 
 describe("gate and file checks", () => {
   it.each([[undefined, false], ["1", false], ["true", true]])("%s -> %s", (v, e) => expect(isMediaIntakeApiEnabled({ VITE_CUSTOMER_MEDIA_INTAKE_API: v })).toBe(e));
+  it.each([[undefined, false], ["1", false], ["true", true]])("delete gate %s -> %s", (v, e) => expect(isMediaDeleteApiEnabled({ VITE_CUSTOMER_MEDIA_DELETE_API: v })).toBe(e));
   it.each([[file(), ""], [file({ type: "image/gif" }), /Only PNG/], [file({ size: 0 }), /empty/], [file({ size: 33 * 1024 * 1024 }), /32 MB/], [file({ name: "a/b.png" }), /Rename/], [null, /Choose/]])("%j", (f, want) => { const r = checkFile(f); want === "" ? expect(r).toBe("") : expect(r).toMatch(want); });
 });
 describe("assets", () => {

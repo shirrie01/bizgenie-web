@@ -18,7 +18,8 @@ export default function AuthPanel({ onAuthenticated }) {
       if (mode === "sign-up") {
         const data = await signUpWithPassword(email, password);
         if (!data.session) {
-          setSignUpNotice("Check your inbox to confirm your email, then sign in.");
+          // The same words whether or not the address already has an account, so the form never reveals which addresses are registered.
+          setSignUpNotice("Check your inbox to confirm your email, then sign in. If you already have an account with this email, sign in instead.");
           setStatus("idle");
           setMode("sign-in");
           return;

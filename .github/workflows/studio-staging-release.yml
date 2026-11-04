@@ -57,6 +57,9 @@ jobs:
           VITE_CUSTOMER_MEDIA_API: 'true'
           VITE_SOCIAL_ACCOUNTS_API: 'true'
           VITE_SOCIAL_PROVIDERS: tiktok
+          VITE_SUPPORT_URL: ${{ vars.STAGING_SUPPORT_URL }}
+          VITE_TERMS_URL: ${{ vars.STAGING_TERMS_URL }}
+          VITE_PRIVACY_URL: ${{ vars.STAGING_PRIVACY_URL }}
           PAGES_EXPECT_API_ORIGIN: ${{ env.STAGING_API_ORIGIN }}
           PAGES_EXPECT_SUPABASE_REF: ${{ env.STAGING_SUPABASE_REF }}
           PAGES_NOINDEX: '1'
