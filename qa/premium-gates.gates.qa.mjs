@@ -257,7 +257,7 @@ test('accounts and publishing: only what the server reports; a failed publicatio
   await page.goto('/'); await welcome(page);
   await nav(page).getByRole('button', { name: 'Accounts and publishing', exact: true }).click();
   await expect(page.getByRole('list', { name: 'Connected accounts' })).toContainText('Connected');
-  await expect(page.getByRole('list', { name: 'Publishing list' })).toContainText('The platform refused it. Nothing was published.');
+  await expect(page.getByRole('list', { name: 'Publishing list' })).toContainText('It could not be delivered. Nothing was published.');
   await expect(page.getByRole('button', { name: 'Connect LinkedIn' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Connect Instagram' })).toHaveCount(0);
   await expect(page.locator('main')).not.toContainText('Confirmed by the platform');
