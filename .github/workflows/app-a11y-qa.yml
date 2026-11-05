@@ -1,0 +1,39 @@
+name: App accessibility QA
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'qa/**'
+      - '.github/workflows/app-a11y-qa.yml'
+  workflow_dispatch:
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ['1440x900', '768x1024', '390x844', '320x568']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - name: Build with placeholder public values (API is mocked in the browser)
+        env:
+          VITE_SUPABASE_URL: http://supabase.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
+          VITE_BIZGENIE_API_URL: http://api.test
+        run: npm run build
+      - name: Serve the built app
+        run: npx vite preview --port 4179 --strictPort --host 127.0.0.1 &
+      - name: Run browser checks
+        env:
+          BG_VIEWPORT: ${{ matrix.viewport }}
+        run: npx playwright test --config qa/playwright.config.mjs
