@@ -7,7 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "site:build": "node site/build.mjs",
+    "site:build:strict": "node site/build.mjs --strict",
+    "site:serve": "node site/dev/serve.mjs",
+    "site:test": "vitest run site",
+    "site:browser": "playwright test --config site/browser/playwright.config.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
