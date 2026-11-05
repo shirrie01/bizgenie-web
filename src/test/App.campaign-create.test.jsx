@@ -379,4 +379,143 @@ describe("recommendation-to-campaign creation", () => {
     const approvalBody = JSON.parse(global.fetch.mock.calls[8][1].body);
     expect(approvalBody).toMatchObject({ expected_campaign_version: 5, revision_id: "revision-1", preview_id: "preview-1", approved: true });
   });
+  it("retries a failed acknowledgement without re-rendering and recovers from a failed preview", async () => {
+    const saved = campaign(4, 3);
+    const generated = JSON.parse(JSON.stringify(saved));
+    const variant = generated.campaign.items[0].variants[0];
+    variant.workflow = "review";
+    variant.current_revision_id = "revision-1";
+    variant.current_content = "Server persisted review copy";
+    const acknowledged = JSON.parse(JSON.stringify(generated));
+    acknowledged.campaign.version = 5;
+
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: generated.campaign }) })
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: { render_receipt_id: "receipt-1", revision_id: "revision-1" } }) })
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await screen.findByText("Server persisted review copy");
+
+    fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/preview could not be rendered/i);
+    fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be acknowledged/i);
+    fireEvent.click(screen.getByRole("button", { name: /^acknowledge preview$/i }));
+    await screen.findByRole("button", { name: /^approve$/i });
+    expect(global.fetch.mock.calls.filter(([url]) => url.includes("/preview-renders")).length).toBe(2);
+    expect(global.fetch.mock.calls.filter(([url]) => url.includes("/preview-acknowledgements")).length).toBe(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("recovers from a stale campaign version by reloading, then acknowledges against the new version", async () => {
+    const saved = campaign(4, 3);
+    const generated = JSON.parse(JSON.stringify(saved));
+    const variant = generated.campaign.items[0].variants[0];
+    variant.workflow = "review";
+    variant.current_revision_id = "revision-1";
+    variant.current_content = "Server persisted review copy";
+    const latest = JSON.parse(JSON.stringify(generated));
+    latest.campaign.version = 7;
+    const acknowledged = JSON.parse(JSON.stringify(latest));
+    acknowledged.campaign.version = 8;
+    const receipt = { render_receipt_id: "receipt-1", revision_id: "revision-1", platform: "instagram", placement: "feed", format: "text", preview_digest: "abcdef0123456789" };
+
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: generated.campaign }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: receipt }) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ error: { code: "VERSION_CONFLICT" } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: latest.campaign }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: receipt }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await screen.findByText("Server persisted review copy");
+
+    fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+    expect(await screen.findByLabelText("Preview receipt")).toHaveTextContent("Instagram · Feed · Text");
+    fireEvent.click(screen.getByRole("button", { name: /^acknowledge preview$/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/campaign changed/i);
+    expect(screen.queryByRole("button", { name: /^acknowledge preview$/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /reload latest campaign/i }));
+    const reloadUrl = await waitFor(() => {
+      const hit = global.fetch.mock.calls.find(([url, options]) => !options?.method && url.includes("/customer/campaigns/22222222-2222-4222-8222-222222222222?"));
+      expect(hit).toBeTruthy();
+      return hit[0];
+    });
+    expect(reloadUrl).toContain("tenant_id=tenant-1");
+    expect(reloadUrl).toContain("project_id=project-1");
+    expect(await screen.findByRole("button", { name: /^render preview$/i })).toBeEnabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+    await screen.findByRole("button", { name: /^approve$/i });
+    const ackCalls = global.fetch.mock.calls.filter(([url]) => url.includes("/preview-acknowledgements"));
+    expect(ackCalls.map(([, o]) => JSON.parse(o.body).expected_campaign_version)).toEqual([4, 7]);
+  });
+
+  it("asks for a reload when approval cannot be confirmed instead of retrying with a changed version", async () => {
+    const saved = campaign(4, 3);
+    const generated = JSON.parse(JSON.stringify(saved));
+    const variant = generated.campaign.items[0].variants[0];
+    variant.workflow = "review";
+    variant.current_revision_id = "revision-1";
+    variant.current_content = "Server persisted review copy";
+    const acknowledged = JSON.parse(JSON.stringify(generated));
+    acknowledged.campaign.version = 5;
+    const unconfirmed = JSON.parse(JSON.stringify(acknowledged));
+    unconfirmed.campaign.version = 6;
+
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendation }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(1, 0) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(2, 1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => campaign(3, 2) })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: generated.campaign }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ preview: { render_receipt_id: "receipt-1", revision_id: "revision-1" } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: acknowledged.campaign, result: { created_ids: { preview_ids: ["preview-1"] } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ campaign: unconfirmed.campaign }) });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/your goal/i), { target: { value: "Promote the Audi A3 offer" } });
+    fireEvent.click(screen.getByRole("button", { name: /get my recommendation/i }));
+    await screen.findByText("Audi A3 Offer Campaign");
+    fireEvent.click(screen.getByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(screen.getAllByRole("button", { name: /generate draft/i })[0]);
+    await screen.findByText("Server persisted review copy");
+    fireEvent.click(screen.getByRole("button", { name: /^render preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^acknowledge preview$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^approve$/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/reload the latest campaign/i);
+    expect(screen.queryByRole("button", { name: /^approve$/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /reload latest campaign/i })).toBeInTheDocument();
+  });
 });
