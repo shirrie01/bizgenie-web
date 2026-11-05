@@ -1,0 +1,119 @@
+# BG-LAUNCH-013: controlled staging release of the Studio to Cloudflare Pages project `bizgenie-studio-staging`.
+# MANUAL ONLY (workflow_dispatch): no push, pull_request or schedule trigger. It deploys nothing unless `deploy` is true AND the
+# `staging-studio` GitHub Environment (required reviewers, set up by the founder) approves. Cloudflare secrets live only in that environment.
+# Job 1 needs no secrets: it pins the exact SHA, builds from the lockfile, validates settings and the bundle, and keeps the evidence.
+name: Studio staging release (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Exact 40-character commit SHA to build (must be the approved commit)'
+        required: true
+      deploy:
+        description: 'Deploy after verification (still needs Environment approval). Default false = build and verify only'
+        type: boolean
+        default: false
+      smoke_url:
+        description: 'Hostname to smoke-test after deploy'
+        required: false
+        default: 'https://staging-app.getbizgenie.com'
+permissions: { contents: read }
+concurrency: { group: studio-staging-release, cancel-in-progress: false }
+env:
+  STAGING_API_ORIGIN: https://staging-api.getbizgenie.com
+  STAGING_SUPABASE_URL: https://zrczojyxebwjgpymbmgu.supabase.co
+  STAGING_SUPABASE_REF: zrczojyxebwjgpymbmgu
+  PAGES_PROJECT: bizgenie-studio-staging
+  PAGES_PRODUCTION_BRANCH: main
+jobs:
+  build-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs: { dist_sha256: '${{ steps.hash.outputs.dist_sha256 }}' }
+    steps:
+      - name: Refuse a smoke-test host that is not the approved staging Studio
+        env: { SMOKE_URL: '${{ inputs.smoke_url }}' }
+        run: |
+          echo "$SMOKE_URL" | grep -Eq '^https://(staging-app\.getbizgenie\.com|([a-z0-9-]+\.)?bizgenie-studio-staging\.pages\.dev)/?$' || { echo "smoke_url must be the approved staging Studio host or the project's pages.dev host"; exit 1; }
+      - name: Refuse anything but a full SHA
+        env: { SHA: '${{ inputs.sha }}' }
+        run: |
+          echo "$SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "sha must be 40 lowercase hex characters"; exit 1; }
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.sha }}' }
+      - name: Checked-out commit must equal the requested SHA
+        env: { SHA: '${{ inputs.sha }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          echo "requested: $SHA / checked out: $HEAD_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$HEAD_SHA" = "$SHA" ]
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - run: npm test
+      - name: Build for staging (fails closed on missing or mismatched settings)
+        env:
+          VITE_BIZGENIE_API_URL: ${{ env.STAGING_API_ORIGIN }}
+          VITE_SUPABASE_URL: ${{ env.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_PREMIUM_STUDIO_ENABLED: 'true'
+          VITE_GENERATION_QUOTE_API: 'true'
+          VITE_WORKSPACE_CALENDAR_API: 'true'
+          VITE_CUSTOMER_MEDIA_API: 'true'
+          VITE_SOCIAL_ACCOUNTS_API: 'true'
+          VITE_SOCIAL_PROVIDERS: tiktok
+          VITE_SUPPORT_URL: ${{ vars.STAGING_SUPPORT_URL }}
+          VITE_TERMS_URL: ${{ vars.STAGING_TERMS_URL }}
+          VITE_PRIVACY_URL: ${{ vars.STAGING_PRIVACY_URL }}
+          PAGES_EXPECT_API_ORIGIN: ${{ env.STAGING_API_ORIGIN }}
+          PAGES_EXPECT_SUPABASE_REF: ${{ env.STAGING_SUPABASE_REF }}
+          PAGES_NOINDEX: '1'
+        run: |
+          test -n "$VITE_SUPABASE_PUBLISHABLE_KEY" || { echo "repository variable STAGING_SUPABASE_PUBLISHABLE_KEY (the publishable key, never a secret key) is not set"; exit 1; }
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_secret_*|eyJ*) echo "that is not a publishable key"; exit 1;; esac
+          npm run build:pages
+      - name: Verify headers, CSP, noindex and that no secret or other-environment value is in the bundle
+        run: node scripts/smoke-pages.mjs --dir dist --api "$STAGING_API_ORIGIN" --supabase-ref "$STAGING_SUPABASE_REF" --noindex
+      - id: hash
+        name: Fingerprint the exact files that would be deployed
+        run: |
+          H="$(find dist -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
+          echo "dist_sha256=$H" >> "$GITHUB_OUTPUT"
+          { echo "### Studio staging build"; echo "- commit: \`${{ inputs.sha }}\`"; echo "- dist sha256: \`$H\`"; echo "- node: $(node -v)"; echo "- deploy requested: ${{ inputs.deploy }}"; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: { name: 'studio-staging-dist-${{ inputs.sha }}', path: dist, retention-days: 30 }
+  deploy:
+    needs: build-verify
+    if: ${{ inputs.deploy }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging-studio
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.sha }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - uses: actions/download-artifact@v4
+        with: { name: 'studio-staging-dist-${{ inputs.sha }}', path: dist }
+      - name: Artefact must be the one that was verified
+        env: { EXPECTED: '${{ needs.build-verify.outputs.dist_sha256 }}' }
+        run: |
+          H="$(find dist -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
+          [ "$H" = "$EXPECTED" ] || { echo "dist differs from the verified build"; exit 1; }
+      - name: Record the deployment being replaced (rollback target)
+        env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}', CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}' }
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Cloudflare secrets are missing from the staging-studio environment"; exit 1; }
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT" > project.json
+          PREV="$(node -e 'const r=require("./project.json").result||{};console.log((r.canonical_deployment||{}).id||"none")')"
+          echo "PREVIOUS_DEPLOYMENT_ID=$PREV" >> "$GITHUB_ENV"
+          echo "- rollback target (previous deployment id): \`$PREV\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy the verified files
+        env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}', CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}' }
+        run: npx --yes wrangler@3 pages deploy dist --project-name "$PAGES_PROJECT" --branch "$PAGES_PRODUCTION_BRANCH" --commit-hash "${{ inputs.sha }}" --commit-dirty=false | tee deploy.log
+      - name: Smoke test the live host
+        run: node scripts/smoke-pages.mjs --url "${{ inputs.smoke_url }}" --api "$STAGING_API_ORIGIN" --supabase-ref "$STAGING_SUPABASE_REF" --noindex
+      - if: ${{ failure() }}
+        name: Say how to roll back
+        run: |
+          echo "Deploy or smoke test failed. Roll back to deployment $PREVIOUS_DEPLOYMENT_ID: Cloudflare dashboard > Workers & Pages > $PAGES_PROJECT > Deployments > that deployment > Rollback. Nothing else was changed." | tee -a "$GITHUB_STEP_SUMMARY"
