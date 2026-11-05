@@ -5,6 +5,7 @@ import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
+import { operationKey } from "./operationKey";
 
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
@@ -157,10 +158,6 @@ function currentRevisionFor(variant) {
   return variant?.current_revision_id || variant?.current_revision?.revision_id;
 }
 
-function operationKey(campaign, variant, operation) {
-  return `campaign:${campaign.campaign_id}:variant:${variant.variant_id}:revision:${currentRevisionFor(variant)}:${operation}`;
-}
-
 function campaignVariant(campaign, variantId) {
   return campaign?.items?.flatMap((item) => item.variants || []).find((item) => item.variant_id === variantId);
 }
@@ -173,7 +170,7 @@ async function renderCampaignPreview({ accessToken, session, campaign, variant }
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/preview-renders`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
-    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, revision_id: revisionId, idempotency_key: operationKey(campaign, variant, "preview-render") }),
+    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, revision_id: revisionId, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "preview-render") }),
   });
   if (!response.ok) throw new Error("Preview could not be rendered yet. Your content is still safe.");
   const result = await response.json();
@@ -187,7 +184,7 @@ async function acknowledgeCampaignPreview({ accessToken, session, campaign, vari
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/preview-acknowledgements`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
-    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, render_receipt_id: receipt.render_receipt_id, acknowledged: true, idempotency_key: operationKey(campaign, variant, "preview-acknowledgement") }),
+    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, render_receipt_id: receipt.render_receipt_id, acknowledged: true, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "preview-acknowledgement") }),
   });
   if (!response.ok) throw new Error("Preview could not be acknowledged yet. Please retry from the current campaign.");
   const result = await response.json();
@@ -201,7 +198,7 @@ async function approveCampaignVariant({ accessToken, session, campaign, variant,
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/approval`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
-    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, preview_id: previewId, approved: true, idempotency_key: operationKey(campaign, variant, "approval") }),
+    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, preview_id: previewId, approved: true, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "approval") }),
   });
   if (!response.ok) throw new Error("Approval could not be completed yet. Your content is still safe.");
   const result = await response.json();
@@ -214,7 +211,7 @@ async function beginManualPublication({ accessToken, session, campaign, variant 
   if (!revisionId || variant.workflow !== "approved") throw new Error("Only approved content can be prepared for manual publication.");
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/manual-publication`, {
     method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
-    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, idempotency_key: operationKey(campaign, variant, "manual-publication") }),
+    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "manual-publication") }),
   });
   if (!response.ok) throw new Error("Manual publication could not be prepared yet. Your approval is still safe.");
   const result = await response.json();
@@ -266,7 +263,7 @@ async function confirmManualPublication({ accessToken, session, campaign, varian
   if (!attemptId || !publicationUrl) throw new Error("Enter the public URL after you publish the approved content.");
   const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/manual-publication/confirm`, {
     method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
-    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, attempt_id: attemptId, published_at: new Date().toISOString(), publication_url: publicationUrl, idempotency_key: operationKey(campaign, variant, "manual-publication-confirm") }),
+    body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, attempt_id: attemptId, published_at: new Date().toISOString(), publication_url: publicationUrl, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "manual-publication-confirm") }),
   });
   if (!response.ok) throw new Error("Publication evidence could not be recorded yet. Nothing was marked published.");
   return response.json();
