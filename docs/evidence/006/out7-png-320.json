@@ -1,0 +1,73 @@
+{
+ "320": [
+  [
+   "media-element",
+   {
+    "natural": "640x640",
+    "src": "blob:",
+    "alt": "A white circle on a teal background with the words BizGenie demo asset"
+   }
+  ],
+  [
+   "status-note",
+   [
+    "Step 1 of 3: render a preview of this content.",
+    "You have seen the attached media as saved. It is the original file, not a platform rendering. Acknowledging covers the text, the media shown and the preview receipt."
+   ]
+  ],
+  [
+   "render-enabled",
+   true
+  ],
+  [
+   "tab-render",
+   true
+  ],
+  [
+   "tab-ack",
+   true
+  ],
+  [
+   "approve-enabled-after-version-bump",
+   true
+  ],
+  [
+   "tab-approve",
+   true
+  ],
+  [
+   "approved-wording",
+   "Manual publication required. BizGenie will not claim this was published until you confirm it."
+  ],
+  [
+   "real-writes",
+   [
+    "preview-renders 201",
+    "preview-acknowledgements 200",
+    "approval 200"
+   ]
+  ],
+  [
+   "blobs",
+   {
+    "created": 1,
+    "revoked": 1
+   }
+  ],
+  [
+   "aborted-media-requests",
+   [
+    "HEAD net::ERR_ABORTED",
+    "HEAD net::ERR_ABORTED"
+   ]
+  ],
+  [
+   "media-calls",
+   "HEAD auth=Bearer a tokenInUrl=false | GET auth=Bearer a tokenInUrl=false | HEAD auth=Bearer a tokenInUrl=false"
+  ],
+  [
+   "overflow",
+   false
+  ]
+ ]
+}

@@ -1,0 +1,131 @@
+{
+ "768": [
+  [
+   "media-element",
+   {
+    "natural": "640x640",
+    "src": "blob:",
+    "alt": "A white circle on a teal background with the words BizGenie demo asset"
+   }
+  ],
+  [
+   "status-note",
+   [
+    "Step 1 of 3: render a preview of this content.",
+    "You have seen the attached media as saved. It is the original file, not a platform rendering. Acknowledging covers the text, the media shown and the preview receipt."
+   ]
+  ],
+  [
+   "render-enabled",
+   true
+  ],
+  [
+   "revoked-server-side-after-display",
+   true
+  ],
+  [
+   "tab-render",
+   true
+  ],
+  [
+   "after-render-media-elements",
+   1
+  ],
+  [
+   "after-render-asset-text",
+   []
+  ],
+  [
+   "after-render-notes",
+   [
+    "Preview rendered. Step 2 of 3: confirm you have reviewed it.",
+    "You have seen the attached media as saved. It is the original file, not a platform rendering. Acknowledging covers the text, the media shown and the preview receipt.",
+    "BizGenie confirmed a preview was rendered for this exact version of the content. The content shown is the version you are approving."
+   ]
+  ],
+  [
+   "blobs-after-render",
+   {
+    "created": 1,
+    "revoked": 0
+   }
+  ],
+  [
+   "tab-ack",
+   true
+  ],
+  [
+   "approve-enabled-after-version-bump",
+   true
+  ],
+  [
+   "tab-approve",
+   true
+  ],
+  [
+   "pre-approved-panel",
+   "IMAGE | Post | A | INSTAGRAM | FEED | A | Spring consultation week | Book a free consultation this week and let us show you what a clear marketing plan looks like. Limited places. | CAPTION | Limited places this week. #SmallBusiness | A referenced visual is not available | It may have been removed or you may not have access. It has not been reviewed in this view. | IMAGE DESCRIPTION (ALT TEXT) | A white circle on a teal background with the words BizGenie demo asset | Saved content, revision 1. Shown in a generic layout; this is not an exact platform rendering. | Ready for review | 1. RENDER PREVIEW | (COMPLETE) | See what you are about to approve. | 2. ACKNOWLEDGE PREVIEW | (COMPLETE) | Conf"
+  ],
+  [
+   "approve-btn-enabled",
+   true
+  ],
+  [
+   "real-writes-so-far",
+   [
+    "preview-renders 201",
+    "preview-acknowledgements 200",
+    "approval 404 {\"error\":{\"code\":\"RESOURCE_NOT_AVAILABLE\",\"message\":\"The requested resource is not available\"}}"
+   ]
+  ],
+  [
+   "approved-visible",
+   false
+  ],
+  [
+   "approved-wording",
+   "NOT APPROVED"
+  ],
+  [
+   "final-panel",
+   "IMAGE | Post | A | INSTAGRAM | FEED | A | Spring consultation week | Book a free consultation this week and let us show you what a clear marketing plan looks like. Limited places. | CAPTION | Limited places this week. #SmallBusiness | A referenced visual is not available | It may have been removed or you may not have access. It has not been reviewed in this view. | IMAGE DESCRIPTION (ALT TEXT) | A white circle on a teal background with the words BizGenie demo asset | Saved content, revision 1. Shown in a generic layout; this is not an exact platform rendering. | Ready for review | 1. RENDER PREVIEW | (COMPLETE) | See what you are about to approve. | 2. ACKNOWLEDGE PREVIEW | (COMPLETE) | Confirm you have reviewed it. | 3. APPROVE | Record approval. Nothing is published. | This step did not complete. Your content is unchanged. | Approval could not be completed yet. Your content is still safe. | An attached visual is not available here. If it was removed or its rights were withdrawn, approval may not be possible until it is replaced. | An image or video is attached but couldn’t be displayed here. Acknowledging covers the text and the preview receipt only. | Rendered for | Instagram · Feed · Image | Rendered at | 9/3/2026, 10:00:00 AM | Preview profile | Version 1 | Preview reference | 77f8093ce998 | BizGenie confirmed a preview was rendered for this exact version of the content. The content shown is the version you are approving. | Approve | Start again with a new preview"
+  ],
+  [
+   "alerts",
+   [
+    "Billing access could not be verified. Please do not start another checkout. Checkout is unavailable until your account can be checked.",
+    "Approval could not be completed yet. Your content is still safe."
+   ]
+  ],
+  [
+   "real-writes",
+   [
+    "preview-renders 201",
+    "preview-acknowledgements 200",
+    "approval 404 {\"error\":{\"code\":\"RESOURCE_NOT_AVAILABLE\",\"message\":\"The requested resource is not available\"}}"
+   ]
+  ],
+  [
+   "blobs",
+   {
+    "created": 1,
+    "revoked": 1
+   }
+  ],
+  [
+   "aborted-media-requests",
+   [
+    "HEAD net::ERR_ABORTED",
+    "HEAD net::ERR_ABORTED"
+   ]
+  ],
+  [
+   "media-calls",
+   "HEAD auth=Bearer a tokenInUrl=false | GET auth=Bearer a tokenInUrl=false | HEAD auth=Bearer a tokenInUrl=false"
+  ],
+  [
+   "overflow",
+   false
+  ]
+ ]
+}

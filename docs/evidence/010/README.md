@@ -1,0 +1,10 @@
+# BG-STUDIO-010-FE evidence index
+
+**Every image and result here comes from a local build with the login session and the API MOCKED in the browser or in Vitest.** None is a deployed customer journey, none ran against the real API (bizgenie-api draft PR #213), a database or a real token, and the onboarding migration has not been applied anywhere.
+
+| Path | What it shows |
+|---|---|
+| `after/<width>-<name>.png` | The flag-ON production build at 1440, 768, 390 and 320 for the screens new in this work: `resume-channels` (unfinished setup reopened at its saved step), `unsaved-changes`, `saved-and-exited`, `save-unavailable` (503: NOT saved, answers kept), `load-unavailable`, `version-conflict`, `seeded-brain-not-complete` (bootstrap-seeded Brand Brain is not a finished profile), `onboarding-6-brain` (Confirm setup), `workspace-after-onboarding`. 36 images. The other screens are unchanged from `docs/evidence/008/after/`. |
+| `flag-off-dom-equivalence/` | Script and SHA-256 hashes: with the flag OFF the rendered DOM of this branch is byte-identical to the BG-STUDIO-008-FE base (`412ede3`) across 7 states. |
+| `alignment/<width>-save-not-confirmed.png`, `confirm-incomplete.png`, `read-only-member.png`, `write-refused.png` | Contract alignment with the hardened API (PR #213 at `120a874`): lost-acknowledgement wording, field-specific 422 guidance, read-only member, refused write. Mocked API. |
+| `identity/<width>-member-brain-step.png`, `member-brain-saved.png`, `brain-write-refused.png`, `brain-write-conflict.png`, `brain-save-not-confirmed.png` | Brand Brain identity ownership (DEC-021 / DEC-022; API #214 at `2319e5e8`): owner-only name and description for a member, a member saving only the other fields, refused (403), conflicting (409) and unconfirmed (503) saves. Mocked API. |

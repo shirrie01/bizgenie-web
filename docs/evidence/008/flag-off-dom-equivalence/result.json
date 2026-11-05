@@ -1,0 +1,55 @@
+{
+ "base": "bg-studio-007-integration-rehearsal@fb80c97af2f47f2a0e89a1950bbeefdcffc9fe79",
+ "method": "Render the flag-off App in jsdom with identical mocks on the base tree and on this branch and compare container.innerHTML. Script: dom-equiv.test.jsx.txt (copy into src/test/ to run, with DOM_OUT set).",
+ "states": [
+  {
+   "state": "ready:brain",
+   "base_sha256": "18e04aaee89ace86c5a4c4cf4612bb39571d52e7b94337df21b4786cf3deab26",
+   "branch_sha256": "18e04aaee89ace86c5a4c4cf4612bb39571d52e7b94337df21b4786cf3deab26",
+   "identical": true,
+   "bytes": 3970
+  },
+  {
+   "state": "ready:campaign",
+   "base_sha256": "ab96f17e3e7c2557c54f8eb6f6c951b3163e7587837e57ade29593bc8f5eedd0",
+   "branch_sha256": "ab96f17e3e7c2557c54f8eb6f6c951b3163e7587837e57ade29593bc8f5eedd0",
+   "identical": true,
+   "bytes": 5895
+  },
+  {
+   "state": "ready:initial",
+   "base_sha256": "8ee6b21405b44a8393242be70b126469018ba4fd955322dff0af5ff158c48aa0",
+   "branch_sha256": "8ee6b21405b44a8393242be70b126469018ba4fd955322dff0af5ff158c48aa0",
+   "identical": true,
+   "bytes": 3129
+  },
+  {
+   "state": "ready:recommendation",
+   "base_sha256": "f2c30b208ad223663361cdf593a6e1a849e07ab35da78d3a425ad1d81e724ed0",
+   "branch_sha256": "f2c30b208ad223663361cdf593a6e1a849e07ab35da78d3a425ad1d81e724ed0",
+   "identical": true,
+   "bytes": 4442
+  },
+  {
+   "state": "scope-missing:initial",
+   "base_sha256": "2f7d89b06047de5d3bf687e95583bee89379ac29e516aa97a19c35bdbb7c832f",
+   "branch_sha256": "2f7d89b06047de5d3bf687e95583bee89379ac29e516aa97a19c35bdbb7c832f",
+   "identical": true,
+   "bytes": 2037
+  },
+  {
+   "state": "signed-out:initial",
+   "base_sha256": "80c591d1f9d2be01e502850e9ec65c37353d9622fd2a8e3d8f81dfaab4450834",
+   "branch_sha256": "80c591d1f9d2be01e502850e9ec65c37353d9622fd2a8e3d8f81dfaab4450834",
+   "identical": true,
+   "bytes": 2894
+  },
+  {
+   "state": "unconfigured:initial",
+   "base_sha256": "80c591d1f9d2be01e502850e9ec65c37353d9622fd2a8e3d8f81dfaab4450834",
+   "branch_sha256": "80c591d1f9d2be01e502850e9ec65c37353d9622fd2a8e3d8f81dfaab4450834",
+   "identical": true,
+   "bytes": 2894
+  }
+ ]
+}

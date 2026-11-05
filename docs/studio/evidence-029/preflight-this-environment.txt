@@ -1,0 +1,25 @@
+FAIL  environment: env BIZGENIE_ENVIRONMENT                      must be staging (production needs PRODUCTION_ACTIVATION_ENABLED, not for this demo)
+FAIL  environment: BIZGENIE_ENVIRONMENT is staging               value: unset
+FAIL  flags: MEDIA_STORAGE_ENABLED=true                          value: unset
+FAIL  flags: IMAGE_GENERATION_ENABLED=true                       value: unset
+FAIL  flags: VIDEO_GENERATION_ENABLED=true                       value: unset
+FAIL  google: env GOOGLE_CLOUD_PROJECT                           an ISOLATED project with Vertex AI enabled and Veo 3.1 access
+FAIL  google: env MEDIA_STORAGE_BUCKET                           private bucket for media, no public access
+FAIL  google: env VIDEO_PROVIDER_OUTPUT_STORAGE_URI              gs://<bucket>/<prefix>/ where Veo writes; the service account needs write on it and read for BizGenie
+FAIL  google: Application Default Credentials / service account  GOOGLE_APPLICATION_CREDENTIALS (file) or workload identity; the account's roles: Vertex AI User, Storage Object Admin on the bucket
+FAIL  openai: env OPENAI_API_KEY                                 image generation provider (src/image-generation/openaiProvider.js); a project key with a spend limit
+FAIL  database: env TEST_DATABASE_URL                            a DISPOSABLE PostgreSQL superuser URL (never a shared or production database)
+FAIL  auth: env SUPABASE_URL                                     an ISOLATED Supabase project for customer sign-in (or the demo runs with the local test identity, which is NOT real sign-in)
+FAIL  billing: env STRIPE_SECRET_KEY                             TEST-mode key only (sk_test_...); live keys are not allowed in this demonstration
+FAIL  social: env META_APP_ID                                    Meta app in development mode for Instagram/Facebook; no App Review yet
+FAIL  social: env TIKTOK_CLIENT_KEY                              TikTok for Developers app (sandbox)
+FAIL  social: env LINKEDIN_CLIENT_ID                             LinkedIn developer app
+PASS  google: network us-central1-aiplatform.googleapis.com      HTTP 404
+PASS  google: network storage.googleapis.com                     HTTP 400
+FAIL  openai: network api.openai.com                             unreachable (ENOTFOUND) - network policy: add this host to the environment's allowed domains
+FAIL  social: network graph.facebook.com                         unreachable (ENOTFOUND) - network policy: add this host to the environment's allowed domains
+FAIL  social: network open.tiktokapis.com                        unreachable (ENOTFOUND) - network policy: add this host to the environment's allowed domains
+FAIL  social: network api.linkedin.com                           unreachable (ENOTFOUND) - network policy: add this host to the environment's allowed domains
+FAIL  billing: network api.stripe.com                            unreachable (ENOTFOUND) - network policy: add this host to the environment's allowed domains
+
+2/23 ready. NOT READY: nothing was generated, published or charged.
