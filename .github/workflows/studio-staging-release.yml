@@ -18,6 +18,8 @@ on:
         required: false
         default: 'https://staging-app.getbizgenie.com'
 permissions: { contents: read }
+# bash with pipefail for every step: `cmd | tee log` must fail when cmd fails (run #7 reported a failed upload as a successful step).
+defaults: { run: { shell: bash } }
 concurrency: { group: studio-staging-release, cancel-in-progress: false }
 env:
   STAGING_API_ORIGIN: https://staging-api.getbizgenie.com
@@ -106,12 +108,25 @@ jobs:
       - name: Record the deployment being replaced (rollback target; read-only)
         env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}', CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}' }
         run: |
+          # Secrets are stored as typed: strip any whitespace/line break and a pasted "Bearer " prefix (neither can be part of a token or account id). Values stay masked.
+          CLOUDFLARE_API_TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]' | sed -E 's/^[Bb]earer//')"; CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')"; echo "::add-mask::$CLOUDFLARE_API_TOKEN"; echo "::add-mask::$CLOUDFLARE_ACCOUNT_ID"; export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
           node tooling/scripts/staging/cloudflare-previous-deployment.mjs | tee previous.txt
           cat previous.txt >> "$GITHUB_ENV"
-          echo "- rollback target (previous deployment id): \`$(cut -d= -f2 previous.txt)\` (\`none\` = first deployment, nothing to roll back to)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- rollback target (previous deployment id): \`$(grep '^PREVIOUS_DEPLOYMENT_ID=' previous.txt | cut -d= -f2)\` (\`none\` = first deployment, nothing to roll back to)" >> "$GITHUB_STEP_SUMMARY"
       - name: Deploy the verified files
         env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}', CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}' }
-        run: npx --yes wrangler@3 pages deploy dist --project-name "$PAGES_PROJECT" --branch "$PAGES_PRODUCTION_BRANCH" --commit-hash "${{ inputs.sha }}" --commit-dirty=false | tee deploy.log
+        run: |
+          # Secrets are stored as typed: strip any whitespace/line break and a pasted "Bearer " prefix (neither can be part of a token or account id). Values stay masked.
+          CLOUDFLARE_API_TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]' | sed -E 's/^[Bb]earer//')"; CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')"; echo "::add-mask::$CLOUDFLARE_API_TOKEN"; echo "::add-mask::$CLOUDFLARE_ACCOUNT_ID"; export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+          npx --yes wrangler@3 pages deploy dist --project-name "$PAGES_PROJECT" --branch "${PROJECT_PRODUCTION_BRANCH:-$PAGES_PRODUCTION_BRANCH}" --commit-hash "${{ inputs.sha }}" --commit-dirty=false 2>&1 | tee deploy.log
+      - name: Verify Cloudflare lists this deployment (read-only; a zero exit code from the upload is not proof)
+        env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}', CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}' }
+        run: |
+          # Secrets are stored as typed: strip any whitespace/line break and a pasted "Bearer " prefix (neither can be part of a token or account id). Values stay masked.
+          CLOUDFLARE_API_TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]' | sed -E 's/^[Bb]earer//')"; CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')"; echo "::add-mask::$CLOUDFLARE_API_TOKEN"; echo "::add-mask::$CLOUDFLARE_ACCOUNT_ID"; export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+          node tooling/scripts/staging/cloudflare-previous-deployment.mjs --verify "${{ inputs.sha }}" | tee deployment.txt
+          cat deployment.txt >> "$GITHUB_ENV"
+          { echo "### Cloudflare deployment"; sed 's/^/- /' deployment.txt; } >> "$GITHUB_STEP_SUMMARY"
       - name: Smoke test the live host
         run: node scripts/smoke-pages.mjs --url "${{ inputs.smoke_url }}" --api "$STAGING_API_ORIGIN" --supabase-ref "$STAGING_SUPABASE_REF" --noindex
       - if: ${{ failure() }}
