@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { validateInputs, interpret, run, clean } from "../../scripts/staging/cloudflare-previous-deployment.mjs";
+import { validateInputs, interpret, run, clean, tokenShape } from "../../scripts/staging/cloudflare-previous-deployment.mjs";
 
 const ACC = "0123456789abcdef0123456789abcdef", TOK = "tok_abcdefghijklmnopqrstuvwxyz0123456789", PROJ = "bizgenie-studio-staging";
 const reply = (status, body) => async () => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -115,5 +115,19 @@ describe("release workflow cannot report a failed upload as success (BG-LAUNCH-0
   });
   it("keeps the approvals: Environment, exact SHA, artefact hash and staging-only smoke host", () => {
     expect(wf).toMatch(/environment: staging-studio/); expect(wf).toContain("dist differs from the verified build"); expect(wf).toContain("smoke_url must be the approved staging Studio host"); expect(wf).toMatch(/\^\[0-9a-f\]\{40\}\$/);
+  });
+});
+
+describe("token shape diagnostic (BG-LAUNCH-018)", () => {
+  it("describes the secret by length and character class only and recognises a Global API Key", () => {
+    expect(tokenShape("a".repeat(40))).toMatch(/40 characters.*format of a Cloudflare API token/);
+    expect(tokenShape("0123456789abcdef".repeat(2) + "01234")).toMatch(/37 characters \(hex digits only\).*Global API Key/);
+    expect(tokenShape("short!")).toMatch(/6 characters.*other characters.*not the 40-character/);
+    expect(tokenShape("a".repeat(40))).not.toContain("aaaa");
+  });
+  it("a 400 code 9106 explains that the secret is not a valid API token, with the shape and without the value", async () => {
+    const keyLike = "0123456789abcdef0123456789abcdef01234";
+    const r = await run({ CLOUDFLARE_API_TOKEN: keyLike, CLOUDFLARE_ACCOUNT_ID: ACC, PAGES_PROJECT: PROJ }, reply(400, { success: false, errors: [{ code: 9106, message: "Authentication failed (status: 400)" }] }));
+    expect(r.message).toContain("code 9106"); expect(r.message).toMatch(/not a valid Cloudflare API token/); expect(r.message).toMatch(/37 characters.*Global API Key/); expect(r.message).not.toContain(keyLike);
   });
 });

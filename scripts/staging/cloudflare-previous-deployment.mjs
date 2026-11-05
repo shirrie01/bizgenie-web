@@ -5,10 +5,17 @@
 const ACCOUNT_ID = /^[0-9a-f]{32}$/;
 const PROJECT = /^[a-z0-9][a-z0-9-]{0,57}$/;
 
+// Describes a secret by SHAPE only (length and character class), never its value, so a wrong kind of credential can be recognised without printing it.
+export function tokenShape(token) {
+  const t = String(token || ""); const hex = /^[0-9a-f]+$/i.test(t); const b64 = /^[A-Za-z0-9_-]+$/.test(t);
+  const kind = t.length === 40 && b64 ? "the format of a Cloudflare API token" : t.length === 37 && hex ? "the format of a Global API Key, which Cloudflare does not accept as a Bearer API token" : "not the 40-character format of a Cloudflare API token";
+  return `the token secret is ${t.length} characters (${hex ? "hex digits only" : b64 ? "letters, digits, - and _" : "other characters"}), ${kind}`;
+}
+
 export const clean = (s, secrets = []) => {
   let t = String(s == null ? "" : s);
   for (const v of secrets) if (v && v.length >= 6) t = t.split(v).join("[redacted]");
-  return t.replace(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g, "[jwt]").replace(/(bearer\s+)\S+/gi, "$1[redacted]").replace(/[\r\n\t]+/g, " ").slice(0, 300);
+  return t.replace(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g, "[jwt]").replace(/(bearer\s+)\S+/gi, "$1[redacted]").replace(/[\r\n\t]+/g, " ").slice(0, 650);
 };
 
 // Checks the inputs before any request. A secret pasted with a trailing newline or space, a "Bearer " prefix, or the wrong value for the account id all make Cloudflare answer 400.
@@ -36,7 +43,7 @@ export function interpret(status, body) {
     return id ? { ok: true, previous: String(id), productionBranch: pb, note: "a previous production deployment exists" } : { ok: true, previous: "none", productionBranch: pb, note: "the project has no previous production deployment (first deployment): there is no rollback target, so rolling back means pausing the project or removing the CNAME" };
   }
   const hint = {
-    400: "Cloudflare rejected the request itself. Usual causes: the account id or token secret is malformed (whitespace, wrong value), not the project.",
+    400: "Cloudflare rejected the request itself. With code 9106 the Authorization header was not accepted: the secret is not a valid Cloudflare API token (for example a Global API Key, an account id or another credential was saved instead). Otherwise the account id or token is malformed; it is not the project.",
     401: "Cloudflare did not accept the token (invalid, expired or revoked).",
     403: "The token is valid but not allowed: it needs Account > Cloudflare Pages > Edit for this account.",
     404: "The Pages project or account was not found. The project must be created first (a separate approval); this workflow never creates it.",
@@ -56,7 +63,8 @@ export async function run(env, fetchImpl = fetch) {
     try { body = await res.json(); } catch { body = null; }
   } catch (e) { return { ok: false, message: `Cloudflare could not be reached: ${clean(e && e.message, secrets)}` }; }
   const out = interpret(res.status, body);
-  return out.ok ? out : { ...out, message: clean(out.message, secrets) };
+  const shape = !out.ok && [400, 401, 403].includes(res.status) ? ` Diagnostic: ${tokenShape(token)}.` : "";
+  return out.ok ? out : { ...out, message: clean(out.message + shape, secrets) };
 }
 
 // BG-LAUNCH-018: after `wrangler pages deploy`, ask Cloudflare (read-only) whether it really lists a deployment for this exact commit. A command that exits 0 is not proof:
@@ -87,7 +95,7 @@ export async function verifyDeployment(env, sha, { fetchImpl = fetch, attempts =
       res = await fetchImpl(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${project}/deployments?per_page=10`, { method: "GET", headers: { authorization: `Bearer ${token}` }, redirect: "error" });
       try { body = await res.json(); } catch { body = null; }
     } catch (e) { return { ok: false, message: `Cloudflare could not be reached: ${clean(e && e.message, secrets)}` }; }
-    if (res.status !== 200 || !body || body.success === false) { const out = interpret(res.status, body); return { ok: false, message: clean(out.message || `Cloudflare answered HTTP ${res.status}.`, secrets) }; }
+    if (res.status !== 200 || !body || body.success === false) { const out = interpret(res.status, body); const shape = [400, 401, 403].includes(res.status) ? ` Diagnostic: ${tokenShape(token)}.` : ""; return { ok: false, message: clean((out.message || `Cloudflare answered HTTP ${res.status}.`) + shape, secrets) }; }
     last = judgeDeployment(body.result, sha);
     if (last.state === "ok") return { ok: true, ...last };
     if (last.state === "failed" || last.state === "not_production") return { ok: false, ...last, message: clean(last.message.replace("<project>", project), secrets) };
