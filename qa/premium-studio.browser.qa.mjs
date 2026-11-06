@@ -22,7 +22,7 @@ const onboardingDoc = (over = {}) => ({ contract_version: 'workspace-onboarding.
 const NOT_STARTED = onboardingDoc({ version: 0, status: 'not_started', sector: { key: null, source: null }, industry_text: null, channels: { values: [], source: null }, current_step: null, completed_at: null, updated_at: null });
 const camp = (version, items, workflow = 'draft') => ({ campaign_id: CID, tenant_id: 't', project_id: 'p', brand_id: 'b', name: 'Lease Enquiry Campaign', version, items: items ? [{ content_item_id: 'c1', name: 'Offer announcement', format: 'text', variants: [{ variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow, ...(workflow !== 'draft' ? { current_revision_id: 'rev-1', current_content: 'Server persisted review copy' } : {}) }] }] : [] });
 
-async function setup(page, { bootstrapStatus = 201, scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false, role = null, brainPut = 'ok', lostAck = false, putIncomplete = null, putForbidden = false } = {}) {
+async function setup(page, { workspaceAbort = false, bootstrapStatus = 201, scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false, role = null, brainPut = 'ok', lostAck = false, putIncomplete = null, putForbidden = false } = {}) {
   const log = { calls: [], errors: [], puts: [], brainPuts: [], doc: onboarding };
   page.on('pageerror', (e) => log.errors.push(e.message));
   if (!signedOut) await page.addInitScript(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(scoped)]);
@@ -33,6 +33,7 @@ async function setup(page, { bootstrapStatus = 201, scoped = true, signedOut = f
     log.calls.push(`${m} ${u.pathname}`);
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }, body: JSON.stringify(body) });
     if (m === 'OPTIONS') return json({});
+    if (workspaceAbort && u.pathname === '/customer/workspace') return route.abort('failed'); // what a blocked cross-origin request looks like to the page (MOCKED)
     if (u.pathname.endsWith('/workspace/onboarding')) {
       if (m === 'GET') return onboardingGetStatus === 200 ? json({ status: 'ready', onboarding: log.doc, brand_name_placeholder: placeholder }) : json({ status: 'failed', error: { code: 'ONBOARDING_UNAVAILABLE', message: 'x' } }, onboardingGetStatus);
       if (m === 'PUT') {
@@ -504,4 +505,38 @@ test('a failed workspace creation says nothing was saved and can be retried', as
   await expect(page.getByText(/nothing was saved/i).first()).toBeVisible();
   await expect(page.getByRole('button', { name: /create my workspace/i })).toBeEnabled();
   expect(log.errors).toEqual([]);
+});
+
+// BG-LAUNCH-019 (MOCKED): the hosted failure was a blocked cross-origin request. The customer must not see "Failed to fetch" and must not lose what they typed.
+test('a blocked API request while creating the workspace shows a plain sentence, keeps the form, and offers a retry', async ({ page }) => {
+  const log = await setup(page, { scoped: false, onboarding: NOT_STARTED, workspaceAbort: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByLabel('Business name').fill('SM Properties');
+  await page.getByLabel(/website/i).fill('https://smproperties.example');
+  await page.getByRole('button', { name: /create my workspace/i }).click();
+  await expect(page.getByText(/couldn.t reach bizgenie just now/i).first()).toBeVisible();
+  expect(await page.locator('body').innerText()).not.toMatch(/failed to fetch/i);
+  await expect(page.getByLabel('Business name')).toHaveValue('SM Properties');
+  await expect(page.getByLabel(/website/i)).toHaveValue('https://smproperties.example');
+  await expect(page.getByRole('button', { name: /create my workspace/i })).toBeEnabled();
+  expect(log.calls.filter((c) => c.endsWith('/workspace/bootstrap'))).toHaveLength(0);
+  expect(log.errors).toEqual([]);
+});
+
+test('an expired confirmation link is explained on the sign-in screen, offers a new email, and leaves nothing in the address bar', async ({ page }) => {
+  await setup(page, { signedOut: true });
+  await page.goto('/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired');
+  await expect(page.getByText(/confirmation link has expired/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /send me a new confirmation email/i })).toBeVisible();
+  expect(page.url()).not.toMatch(/otp_expired|error_code|error=/);
+  await scan(page, 'expired-link');
+});
+
+test('a customer who is already signed in is not troubled by a stale expired-link error in the address', async ({ page }) => {
+  const log = await setup(page, { scoped: true });
+  await page.goto('/#error=access_denied&error_code=otp_expired');
+  await expect(page.getByText(/confirmation link has expired/i)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /sign out/i }).first()).toBeVisible();
+  expect(page.url()).not.toMatch(/otp_expired|error_code/); expect(log.errors).toEqual([]);
 });

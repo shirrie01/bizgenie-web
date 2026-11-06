@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 
-vi.mock("../authClient", () => ({ signUpWithPassword: vi.fn(), signInWithPassword: vi.fn() }));
+vi.mock("../authClient", () => ({ signUpWithPassword: vi.fn(), signInWithPassword: vi.fn(), resendConfirmation: vi.fn() }));
 import { signUpWithPassword, signInWithPassword } from "../authClient";
 import AuthPanel from "../AuthPanel";
 
@@ -49,5 +49,24 @@ describe("AuthPanel sign-up states", () => {
     signInWithPassword.mockRejectedValue(new Error("Check your inbox to confirm your email before signing in."));
     render(<AuthPanel onAuthenticated={vi.fn()} />); fill(); submit();
     expect(await screen.findByRole("alert")).toHaveTextContent(/confirm your email before signing in/);
+  });
+});
+
+describe("AuthPanel email-link notices (BG-LAUNCH-019)", () => {
+  it("an expired link shows the notice and lets the customer ask for a new confirmation email", async () => {
+    const { resendConfirmation } = await import("../authClient"); resendConfirmation.mockResolvedValue(undefined);
+    render(<AuthPanel callbackNotice={{ kind: "expired", message: "That confirmation link has expired." }} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/expired/);
+    fireEvent.click(screen.getByRole("button", { name: /send me a new confirmation email/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/enter your email address first/i); expect(resendConfirmation).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "owner@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: /send me a new confirmation email/i }));
+    await waitFor(() => expect(resendConfirmation).toHaveBeenCalledWith("owner@example.test"));
+    expect(await screen.findByRole("status")).toHaveTextContent(/if that address has an account waiting to be confirmed/i);
+  });
+  it("a confirmed link says to sign in and offers no resend; no notice means no extra controls", () => {
+    render(<AuthPanel callbackNotice={{ kind: "confirmed", message: "Your email is confirmed. Sign in to continue." }} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/confirmed/); expect(screen.queryByRole("button", { name: /new confirmation email/i })).toBeNull();
+    cleanup(); render(<AuthPanel />); expect(screen.queryByRole("status")).toBeNull();
   });
 });

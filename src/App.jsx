@@ -3,6 +3,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { getCustomerSession, refreshCustomerSession } from "./session";
 import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
+import { consumeAuthCallback } from "./authCallback";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
 const PremiumBilling = lazy(() => import("./premium/PremiumBilling"));
@@ -59,7 +60,7 @@ function businessNameFromGoal(goalText) {
 }
 
 async function requestRecommendation({ accessToken, tenantId, projectId, brandId, goal, idempotencyKey }) {
-  const response = await fetch(`${API_BASE_URL}/customer/campaign-recommendations`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaign-recommendations`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({
@@ -74,20 +75,42 @@ async function requestRecommendation({ accessToken, tenantId, projectId, brandId
   return response.json();
 }
 
+// Every call to the API goes through here. A failed connection (no network, a blocked cross-origin request, the service down) reaches fetch() as a bare
+// TypeError whose text is "Failed to fetch"; the customer gets a sentence they can act on instead, and never an infrastructure detail (BG-LAUNCH-019).
+// A write that did not get an answer may still have been stored, so it is never described as saved or as not saved.
+async function apiFetch(url, init) {
+  try { return await fetch(url, init); }
+  catch {
+    const write = Boolean(init && init.method && init.method !== "GET");
+    throw Object.assign(new Error(write
+      ? "We couldn't reach BizGenie, so we can't confirm that went through. Your details are still here. Check your connection and try again; nothing is shown as saved until BizGenie confirms it."
+      : "We couldn't reach BizGenie just now. Check your connection and try again. Nothing was changed."), { kind: "network", code: "NETWORK" });
+  }
+}
+
+// Customer wording for a refused workspace request (status only; the server's text is never shown).
+function workspaceRefusal(status, what) {
+  if (status === 401) return sessionEndedError();
+  if (status === 400 || status === 422) return Object.assign(new Error("Some details need another look. Check your business name and website, then try again. Your details are still here."), { kind: "validation" });
+  if (status === 403) return Object.assign(new Error("This account can't create a workspace yet. Please contact support."), { kind: "forbidden" });
+  if (status === 429) return Object.assign(new Error("Too many attempts. Wait a moment, then try again. Your details are still here."), { kind: "busy" });
+  if (status >= 500) return Object.assign(new Error(what === "create" ? "Workspace creation is temporarily unavailable. Nothing was saved, and your details are still here. Try again in a moment." : "Your workspace couldn't be checked just now because the service is temporarily unavailable. Nothing was created."), { kind: "unavailable" });
+  return new Error(what === "create" ? "Your workspace could not be created yet. Nothing was saved." : "Your workspace could not be checked yet. Nothing was created.");
+}
+
 // A 401 means the sign-in is no longer valid, not that the workspace is missing (BG-LAUNCH-015). Typed so the screen can offer "Sign in again".
 const sessionEndedError = () => Object.assign(new Error("Your session has ended. Sign in again to continue."), { kind: "auth", code: "AUTHENTICATION_REQUIRED" });
 
 async function getCustomerWorkspace(accessToken) {
-  const response = await fetch(`${API_BASE_URL}/customer/workspace`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/workspace`, {
     headers: authorizationHeader(accessToken),
   });
-  if (response.status === 401) throw sessionEndedError();
-  if (!response.ok) throw new Error("Workspace could not be checked yet.");
+  if (!response.ok) throw workspaceRefusal(response.status, "check");
   return response.json();
 }
 
 async function getSelectedBrandBrain(accessToken) {
-  const response = await fetch(`${API_BASE_URL}/customer/workspace/brand-brain`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/workspace/brand-brain`, {
     headers: authorizationHeader(accessToken),
   });
   if (!response.ok) throw new Error("Brand Brain could not be loaded yet.");
@@ -96,7 +119,7 @@ async function getSelectedBrandBrain(accessToken) {
 
 async function correctSelectedBrandBrain({ accessToken, brandBrain }) {
   const { brand_id: _brandId, project_id: _projectId, metadata: _metadata, ...editable } = brandBrain;
-  const response = await fetch(`${API_BASE_URL}/customer/workspace/brand-brain`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/workspace/brand-brain`, {
     method: "PUT",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify(editable),
@@ -106,7 +129,7 @@ async function correctSelectedBrandBrain({ accessToken, brandBrain }) {
 }
 
 async function bootstrapCustomerWorkspace({ accessToken, goal }) {
-  const response = await fetch(`${API_BASE_URL}/customer/workspace/bootstrap`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/workspace/bootstrap`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({
@@ -115,7 +138,7 @@ async function bootstrapCustomerWorkspace({ accessToken, goal }) {
       primary_marketing_challenge: goal,
     }),
   });
-  if (!response.ok) throw new Error("Workspace could not be created yet.");
+  if (!response.ok) throw workspaceRefusal(response.status, "create");
   return response.json();
 }
 
@@ -139,20 +162,19 @@ async function bootstrapWorkspaceWithProfile({ accessToken, businessName, websit
   const body = { business_name: businessName };
   if (website) body.website_or_social_profile = website;
   if (challenge) body.primary_marketing_challenge = challenge;
-  const response = await fetch(`${API_BASE_URL}/customer/workspace/bootstrap`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/workspace/bootstrap`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify(body),
   });
-  if (response.status === 401) throw sessionEndedError();
-  if (!response.ok) throw new Error("Your workspace could not be created yet. Nothing was saved.");
+  if (!response.ok) throw workspaceRefusal(response.status, "create");
   return response.json();
 }
 
 // Existing real campaigns for the selected workspace (GET /customer/campaigns). Read only.
 async function getCampaignList({ accessToken, session }) {
   const query = new URLSearchParams({ tenant_id: session.tenantId, project_id: session.projectId });
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns?${query.toString()}`, { headers: authorizationHeader(accessToken) });
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns?${query.toString()}`, { headers: authorizationHeader(accessToken) });
   if (response.status === 401) throw Object.assign(new Error("Your session has ended. Sign in again to continue."), { kind: "auth", code: "AUTHENTICATION_REQUIRED" });
   if (!response.ok) throw new Error("Your campaigns could not be loaded yet.");
   const result = await response.json();
@@ -165,7 +187,7 @@ async function createCampaignFromRecommendation({ accessToken, session, recommen
     throw new Error("This recommendation cannot be turned into a campaign yet.");
   }
 
-  const campaignResponse = await fetch(`${API_BASE_URL}/customer/campaigns`, {
+  const campaignResponse = await apiFetch(`${API_BASE_URL}/customer/campaigns`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({
@@ -187,7 +209,7 @@ async function createCampaignFromRecommendation({ accessToken, session, recommen
   }
 
   for (const [index, item] of recommendation.suggested_items.entries()) {
-    const itemResponse = await fetch(`${API_BASE_URL}/customer/campaigns/${campaignId}/content-items`, {
+    const itemResponse = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaignId}/content-items`, {
       method: "POST",
       headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
       body: JSON.stringify({
@@ -215,7 +237,7 @@ async function generateCampaignVariant({ accessToken, session, campaign, variant
   }
   const campaignVersion = campaign.version;
   if (!Number.isInteger(campaignVersion)) throw new Error("Campaign version could not be checked yet.");
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/generate`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/generate`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({
@@ -260,7 +282,7 @@ async function reviewRequestError(response, fallback) {
 
 async function fetchCampaign({ accessToken, session, campaignId }) {
   const query = new URLSearchParams({ tenant_id: session.tenantId, project_id: session.projectId });
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaignId}?${query.toString()}`, { headers: authorizationHeader(accessToken) });
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaignId}?${query.toString()}`, { headers: authorizationHeader(accessToken) });
   if (!response.ok) throw new Error("The latest campaign could not be loaded yet. Please try again.");
   const result = await response.json();
   if (!result?.campaign?.campaign_id) throw new Error("The latest campaign could not be confirmed yet.");
@@ -280,7 +302,7 @@ async function renderCampaignPreview({ accessToken, session, campaign, variant }
   if (!campaign?.campaign_id || !variant?.variant_id || variant.workflow !== "review" || !revisionId) {
     throw new Error("This content is not ready for preview yet.");
   }
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/preview-renders`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/preview-renders`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, revision_id: revisionId, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "preview-render") }),
@@ -298,7 +320,7 @@ async function renderCampaignPreview({ accessToken, session, campaign, variant }
 async function acknowledgeCampaignPreview({ accessToken, session, campaign, variant, receipt }) {
   const revisionId = currentRevisionFor(variant);
   if (!receipt?.render_receipt_id || receipt.revision_id !== revisionId) throw new Error("Preview is no longer current. Render it again.");
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/preview-acknowledgements`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/preview-acknowledgements`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, render_receipt_id: receipt.render_receipt_id, acknowledged: true, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "preview-acknowledgement") }),
@@ -312,7 +334,7 @@ async function acknowledgeCampaignPreview({ accessToken, session, campaign, vari
 async function approveCampaignVariant({ accessToken, session, campaign, variant, previewId }) {
   const revisionId = currentRevisionFor(variant);
   if (!previewId || !revisionId) throw new Error("A current acknowledged preview is required before approval.");
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/approval`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/approval`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, preview_id: previewId, approved: true, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "approval") }),
@@ -328,7 +350,7 @@ async function scheduleVariant({ accessToken, session, campaign, variant, payloa
   if (mode === "unschedule") return { campaign: await unscheduleVariant({ apiBaseUrl: API_BASE_URL, accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId }, campaign, variant, scheduleId: knownScheduleId }), scheduleId: "" };
   const revisionId = currentRevisionFor(variant);
   if (!revisionId || !["approved", "scheduled"].includes(variant.workflow)) throw new Error("Only approved content can be scheduled.");
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/${mode}`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/${mode}`, {
     method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, ...payload, idempotency_key: await operationKey(campaign, variant, revisionId, `${mode}-${payload.scheduled_for}`) }),
   });
@@ -342,7 +364,7 @@ async function scheduleVariant({ accessToken, session, campaign, variant, payloa
 async function beginManualPublication({ accessToken, session, campaign, variant }) {
   const revisionId = currentRevisionFor(variant);
   if (!revisionId || !["approved", "scheduled"].includes(variant.workflow)) throw new Error("Only approved content can be prepared for manual publication.");
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/manual-publication`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/manual-publication`, {
     method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, revision_id: revisionId, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "manual-publication") }),
   });
@@ -355,7 +377,7 @@ async function beginManualPublication({ accessToken, session, campaign, variant 
 
 async function getCampaignMeasurements({ accessToken, session, campaign }) {
   const query = new URLSearchParams({ tenant_id: session.tenantId, project_id: session.projectId });
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/measurements?${query.toString()}`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/measurements?${query.toString()}`, {
     headers: authorizationHeader(accessToken),
   });
   if (!response.ok) throw new Error("Results could not be loaded yet.");
@@ -364,7 +386,7 @@ async function getCampaignMeasurements({ accessToken, session, campaign }) {
 }
 
 async function recordCampaignMeasurement({ accessToken, session, campaign, variant, input }) {
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/measurements`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/measurements`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({
@@ -384,7 +406,7 @@ async function recordCampaignMeasurement({ accessToken, session, campaign, varia
 
 async function getCampaignCalendar({ accessToken, session, campaign, from, to }) {
   const query = new URLSearchParams({ tenant_id: session.tenantId, project_id: session.projectId, from, to });
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/calendar?${query.toString()}`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/calendar?${query.toString()}`, {
     headers: authorizationHeader(accessToken),
   });
   if (!response.ok) throw new Error("Calendar activity could not be loaded yet.");
@@ -394,7 +416,7 @@ async function getCampaignCalendar({ accessToken, session, campaign, from, to })
 
 async function confirmManualPublication({ accessToken, session, campaign, variant, attemptId, publicationUrl }) {
   if (!attemptId || !publicationUrl) throw new Error("Enter the public URL after you publish the approved content.");
-  const response = await fetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/manual-publication/confirm`, {
+  const response = await apiFetch(`${API_BASE_URL}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/manual-publication/confirm`, {
     method: "POST", headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify({ tenant_id: session.tenantId, project_id: session.projectId, expected_campaign_version: campaign.version, attempt_id: attemptId, published_at: new Date().toISOString(), publication_url: publicationUrl, idempotency_key: await operationKey(campaign, variant, currentRevisionFor(variant), "manual-publication-confirm") }),
   });
@@ -403,6 +425,8 @@ async function confirmManualPublication({ accessToken, session, campaign, varian
 }
 
 export default function App() {
+  // What the email link the customer arrived by said (and the address is cleaned of it). Only shown on the sign-in screen: a valid session is never disturbed.
+  const [authLinkNotice] = useState(() => consumeAuthCallback());
   const [goal, setGoal] = useState("");
   const [state, setState] = useState({ status: "idle", recommendation: null, error: "" });
   const [campaignState, setCampaignState] = useState({ status: "idle", campaign: null, error: "" });
@@ -1420,7 +1444,7 @@ export default function App() {
                 <span className="pill">Account</span>
               </div>
               <p>Sign in to set up your workspace and open your Brand Brain, campaigns and calendar.</p>
-              <AuthPanel onAuthenticated={() => {}} />
+              <AuthPanel onAuthenticated={() => {}} callbackNotice={authLinkNotice} />
             </section>
           ),
           recommendation: recommendationSection,
@@ -1452,7 +1476,7 @@ export default function App() {
             <span className="pill">Account</span>
           </div>
           <p>Sign in before you start a campaign to access your existing workspace and Brand Brain.</p>
-          <AuthPanel onAuthenticated={() => {}} />
+          <AuthPanel onAuthenticated={() => {}} callbackNotice={authLinkNotice} />
         </section>
       )}
       <section className="hero">
@@ -1469,7 +1493,7 @@ export default function App() {
           <div className="account-prompt" role="status">
             <strong>Sign in to get your recommendation.</strong>
             <p>Your goal stays right here — nothing is created until you sign in.</p>
-            <AuthPanel onAuthenticated={() => {}} />
+            <AuthPanel onAuthenticated={() => {}} callbackNotice={authLinkNotice} />
           </div>
         )}
 

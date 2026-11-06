@@ -368,3 +368,19 @@ button.link:focus-visible { outline: 3px solid #0b4943; outline-offset: 2px; bor
 .ps-sitelinks { padding: 16px clamp(24px, 6vw, 96px) 32px; color: #4b564f; font-size: .88rem; }
 .ps-sitelinks ul { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; }
 .ps-sitelinks a { color: inherit; text-decoration: underline; }
+
+/* BG-LAUNCH-019: sign-in and account creation (previously unstyled). Existing palette only: charcoal on white and the warm greys already used. */
+.auth-panel { max-width: 440px; margin: 0 auto; padding: 28px clamp(20px, 5vw, 32px) 32px; background: #fff; border: 1px solid #d9dbd3; border-radius: 14px; display: grid; gap: 16px; }
+.auth-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: #f0f1ec; border-radius: 10px; }
+.auth-mode-toggle button { min-height: 44px; border: 0; border-radius: 8px; background: transparent; color: #16211d; font: inherit; font-weight: 600; cursor: pointer; }
+.auth-mode-toggle button.active { background: #16211d; color: #fff; }
+.auth-form { display: grid; gap: 8px; }
+.auth-form label { font-weight: 600; font-size: .92rem; margin-top: 6px; }
+.auth-form input { min-height: 46px; padding: 0 14px; border: 1px solid #b9bdb2; border-radius: 10px; font: inherit; width: 100%; box-sizing: border-box; }
+.auth-form input:focus-visible, .auth-mode-toggle button:focus-visible { outline: 3px solid #16211d; outline-offset: 2px; }
+.auth-form > button[type="submit"] { min-height: 48px; margin-top: 10px; border: 0; border-radius: 10px; background: #16211d; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.auth-form > button[type="submit"]:disabled { opacity: .6; cursor: progress; }
+.auth-notice { margin: 0; padding: 12px 14px; border-radius: 10px; background: #eef3ee; border: 1px solid #c9d6cb; color: #16211d; line-height: 1.45; display: grid; gap: 10px; }
+.auth-notice p { margin: 0; }
+.auth-notice.auth-link-expired, .auth-notice.auth-link-failed { background: #fbf3e4; border-color: #e5d2a6; }
+.auth-panel .error { margin: 0; padding: 12px 14px; border-radius: 10px; background: #fbeeee; border: 1px solid #e5b9b9; color: #7a1f1f; line-height: 1.45; }
