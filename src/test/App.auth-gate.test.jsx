@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../billingClient", async (importOriginal) => {
   const original = await importOriginal();
@@ -13,6 +13,7 @@ vi.mock("../billingClient", async (importOriginal) => {
 
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import App from "../App";
+import { resetAuthCallbackForTests } from "../authCallback";
 
 const getCustomerSessionMock = vi.fn();
 const refreshCustomerSessionMock = vi.fn();
@@ -27,6 +28,7 @@ vi.mock("../authClient", () => ({
   signOut: vi.fn(),
   signInWithPassword: vi.fn(),
   signUpWithPassword: vi.fn(),
+  resendConfirmation: vi.fn(),
 }));
 
 function typeGoalAndSubmit(goalText) {
@@ -163,5 +165,34 @@ describe("goal-first auth gate", () => {
     // No goal submitted — merely having a ready session must not trigger any request.
     await waitFor(() => expect(getCustomerSessionMock).toHaveBeenCalled());
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// BG-LAUNCH-019: an email link leaves its result in the address bar.
+describe("email-link result in the address (BG-LAUNCH-019)", () => {
+  beforeEach(() => { resetAuthCallbackForTests(); });
+  afterEach(() => { window.history.replaceState(null, "", "/"); resetAuthCallbackForTests(); });
+  it("an expired confirmation link is explained on the sign-in screen with a way to get a new one, and the address is cleaned", async () => {
+    window.history.replaceState(null, "", "/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired");
+    getCustomerSessionMock.mockResolvedValue({ status: "signed-out" });
+    render(<App />);
+    expect(await screen.findByText(/confirmation link has expired/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send me a new confirmation email/i })).toBeInTheDocument();
+    expect(window.location.hash).toBe(""); expect(window.location.href).not.toMatch(/otp_expired|error_code/);
+  });
+  it("a customer who already has a valid session is not shown the stale error and keeps their session; the address is still cleaned", async () => {
+    window.history.replaceState(null, "", "/#error=access_denied&error_code=otp_expired");
+    getCustomerSessionMock.mockResolvedValue({ status: "scope-missing", accessToken: "token-abc" });
+    render(<App />);
+    await waitFor(() => expect(getCustomerSessionMock).toHaveBeenCalled());
+    expect(screen.queryByText(/confirmation link has expired/i)).toBeNull(); expect(screen.queryByRole("region", { name: /sign in/i })).toBeNull();
+    expect(window.location.hash).toBe("");
+  });
+  it("a good link's token is removed from the address and never shown", async () => {
+    window.history.replaceState(null, "", "/#access_token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijk&refresh_token=r&type=signup");
+    getCustomerSessionMock.mockResolvedValue({ status: "signed-out" });
+    render(<App />);
+    expect(await screen.findByText(/your email is confirmed\. sign in to continue/i)).toBeInTheDocument();
+    expect(window.location.href).not.toMatch(/eyJ|access_token/); expect(document.body.textContent).not.toMatch(/eyJ/);
   });
 });
