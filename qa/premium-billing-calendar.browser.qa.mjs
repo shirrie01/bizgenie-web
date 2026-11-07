@@ -32,7 +32,7 @@ async function open(page, { subscription, calendar = [], calendarStatus = 200 })
     if (u.pathname === '/customer/workspace/onboarding') return json(route, { status: 'ready', onboarding, brand_name_placeholder: false });
     if (u.pathname === '/customer/campaigns') return json(route, { campaigns: [{ campaign_id: CID, name: campaign.name, status: 'active', archived_at: null, updated_at: '2026-10-20T09:00:00.000Z' }] });
     if (u.pathname === `/customer/campaigns/${CID}`) return json(route, { campaign });
-    if (u.pathname === `/customer/campaigns/${CID}/calendar`) { log.calendarQuery = Object.fromEntries(u.searchParams); return calendarStatus === 200 ? json(route, { entries: calendar }) : json(route, { status: 'failed' }, calendarStatus); }
+    if (u.pathname === `/customer/campaigns/${CID}/calendar`) { log.calendarQuery = Object.fromEntries(u.searchParams); (log.calendarQueries ||= []).push(log.calendarQuery); return calendarStatus === 200 ? json(route, { entries: calendar }) : json(route, { status: 'failed' }, calendarStatus); }
     if (u.pathname === '/customer/billing/subscription') return json(route, subscription);
     return json(route, { status: 'failed', error: { code: 'NOT_FOUND' } }, 404);
   });
@@ -92,7 +92,10 @@ test('campaign calendar: loads by itself for the open campaign, states the windo
   await expect(page.getByText(/a calendar across all your campaigns is not available yet/i)).toBeVisible();
   await expect(page.getByText('Scheduled', { exact: true })).toBeVisible();
   expect(log.calls.filter((c) => c.endsWith('/calendar'))).toHaveLength(2); // one automatic request per view (all campaigns, then this campaign), no loop
-  expect(Math.round((new Date(log.calendarQuery.to) - new Date(log.calendarQuery.from)) / 86400000)).toBe(120);
+  // Both views read the same endpoint, and which request arrives last depends on timing (it failed once on a slow hosted runner with the other view's window), so the windows are judged as a set:
+  // exactly two requests, and the campaign view's is last 30 days + next 90 days = 120 days.
+  const windows = log.calendarQueries.map((q) => Math.round((new Date(q.to) - new Date(q.from)) / 86400000));
+  expect(windows).toHaveLength(2); expect(windows).toContain(120);
   await checks(page, 'calendar-auto');
 });
 
