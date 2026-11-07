@@ -117,6 +117,9 @@ export default function BillingPanel({ session, pathname = window.location.pathn
       onCheckoutRedirect(result.url);
     } catch (error) {
       setCheckout({ status: "error", error: error.message });
+      // After an unclear outcome, read the plan status again before the customer retries (the retry reuses the same request id).
+      // The read is silent: a fresh answer replaces the old one, a failed read changes nothing on screen.
+      if (error.kind === "ambiguous") readCustomerBillingState({ accessToken: session.accessToken, tenantId: session.tenantId }).then((data) => setBilling({ status: "ready", data, error: "" })).catch(() => {});
     }
   }
 

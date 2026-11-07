@@ -200,12 +200,12 @@
     "POST /billing/stripe/checkout"
    ],
    "purpose": "Start Stripe-hosted checkout for the launch plan (L4)",
-   "studio_gate": "always (the Subscribe button)",
+   "studio_gate": "always (the Subscribe button); OFF in a bridge-marked build (VITE_API_ROUTE_LIMITS=bridge-v1) until separately approved",
    "launch_class": "A",
-   "risk": "COST: opens a payment page; server maps the plan to its own Stripe Price",
+   "risk": "COST: opens a payment page; server maps the plan to its own Stripe Price; stable request_id per intent (Stripe idempotency); bridge gate BG_BRIDGE_ALLOW_STRIPE_CHECKOUT default off",
    "ui_when_unavailable": "Build marked bridge-v1: button replaced by 'not available in this test environment yet; nothing can be charged'",
-   "owner": "Codex route (not carried by the bridge); Claude UX",
-   "decision_needed": "Codex: a narrowly reviewed, tenant-bound, owner-only checkout route reachable from the Studio origin, with a threat model; founder: approved plan/price (L4)"
+   "owner": "Codex route (carried by the bridge at 86b39d70, gate off by default); Claude UX (frontend gate OFF)",
+   "decision_needed": "Founder: approved plan/price (L4) and a separately approved Stripe test-mode activation (bridge gate and frontend gate are both OFF); Codex: deployed bridge origin"
   },
   {
    "routes": [

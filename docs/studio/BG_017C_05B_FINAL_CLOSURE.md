@@ -3,7 +3,7 @@
 Evidence labels: **MOCKED** (browser/unit tests against a bridge-faithful mock), **HOSTED NOT RUN**, **VERIFIED HOSTED PASS**. Nothing here is VERIFIED HOSTED PASS. No live write or checkout has been executed.
 
 ## Route-contract alignment
-Codex API PR #229 head `90f83790` — `src/studio-bridge/service.js` blob `89226b16…` is identical to the blob vendored in `qa/contracts/BG_STUDIO_BRIDGE.extract.json`; the route table is unchanged. Customer routes keep their `/customer/...` paths; Supabase customer bearer is forwarded as `Authorization`; the bridge adds `X-Serverless-Authorization` server-side; it answers CORS preflight itself (allowed headers `authorization,content-type,range`, exact origin only); writes are blocked with `STAGING_WRITES_DISABLED` until a separately approved phase. Workspace bootstrap/retrieval and Brand Brain/onboarding routes are carried. Not carried: `POST /billing/stripe/checkout`, manual publication, OAuth callbacks (the UI says so honestly via `VITE_API_ROUTE_LIMITS=bridge-v1`). The bridge's public URL is UNKNOWN; none is hardcoded.
+**Superseded by `BG_017C_05_FINAL_RELEASE_APPROVAL_PACKAGE.md`.** At API PR #229 head `90f83790` the bridge had no checkout route; at `86b39d70` (blob `e1c72f47…`) it carries `POST /billing/stripe/checkout`, gated off. The vendored extract now follows `86b39d70`. Customer routes keep their `/customer/...` paths; Supabase customer bearer is forwarded as `Authorization`; the bridge adds `X-Serverless-Authorization` server-side; it answers CORS preflight itself (allowed headers `authorization,content-type,range`, exact origin only); writes are blocked with `STAGING_WRITES_DISABLED` until a separately approved phase. Workspace bootstrap/retrieval and Brand Brain/onboarding routes are carried. Not carried: `POST /billing/stripe/checkout`, manual publication, OAuth callbacks (the UI says so honestly via `VITE_API_ROUTE_LIMITS=bridge-v1`). The bridge's public URL is UNKNOWN; none is hardcoded.
 
 ## SM Properties live acceptance sequence (all HOSTED NOT RUN)
 Run only after: bridge deployed and smoke-tested by Codex, origin listed in a reviewed commit, release run `deploy=true` approved, and — for step 3 — a separately approved write phase (`allowWrites`) plus `HOSTED_ALLOW_WORKSPACE_WRITE=create-sm-properties-once`.
@@ -23,7 +23,7 @@ Run only after: bridge deployed and smoke-tested by Codex, origin listed in a re
 
 Scripts: `qa/hosted/hosted-acceptance.mjs` (read-only H01–H08) then `qa/hosted/sm-properties-acceptance.mjs` (A1–A11).
 
-## Stripe checkout readiness — NOT READY
+## Stripe checkout readiness — (historical, see the approval package; the route is now carried, gate OFF)
 The frozen launch contract (#128, L4) requires a customer able to pay. The bridge carries no checkout route and Codex has defined no request/response contract, server-side price verification, tenant verification, or error codes for it. Required before paid launch: a Codex-reviewed checkout route on the bridge (server-resolved price/plan; tenant from trusted scope only; no client-supplied price), an approved plan/price, and a founder-approved test-mode procedure. Until then the UI makes no checkout call and says so.
 
 ## Deployment configuration

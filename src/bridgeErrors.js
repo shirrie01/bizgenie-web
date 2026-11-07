@@ -4,6 +4,7 @@
 export const BRIDGE_REFUSALS = Object.freeze({
   STAGING_WRITES_DISABLED: { kind: "readonly", text: "Changes are switched off in this test environment, so nothing was saved. Your details are still here." },
   GENERATION_CONFIRMATION_DISABLED: { kind: "disabled", text: "Starting a generation is switched off in this test environment. Nothing was started and nothing was charged." },
+  STRIPE_CHECKOUT_DISABLED: { kind: "disabled", text: "Subscribing isn't switched on in this test environment yet. Nothing was charged." },
   SOCIAL_WRITES_DISABLED: { kind: "disabled", text: "Connecting and publishing are switched off in this test environment. Nothing was changed." },
   BRIDGE_RATE_LIMITED: { kind: "busy", text: "Too many requests just now. Wait a moment, then try again." },
   STUDIO_BRIDGE_TIMEOUT: { kind: "unavailable", text: "BizGenie took too long to answer. If you were saving something, check that it saved before trying again." },

@@ -30,10 +30,9 @@ describe("shared route table: every API route the Studio can call, classified ag
     const missing = scanned().filter((p) => !DYNAMIC.includes(p) && !all.some((r) => covers(p, r)));
     expect(missing).toEqual([]);
   });
-  it("exactly one mandatory (A) route is not carried by the bridge: Stripe checkout entry, which must be resolved before a paid launch (#128 L4)", () => {
-    const blockers = rows().filter((r) => r.launch_class === "A" && !r.carried).map((r) => r.route);
-    expect(blockers).toEqual(["POST /billing/stripe/checkout"]);
-    const row = inventory().find((e) => e.routes.includes("POST /billing/stripe/checkout")); expect(row.decision_needed).toMatch(/Codex.*checkout route.*founder.*plan/i);
+  it("every mandatory (A) route is carried by the bridge at API PR #229 86b39d70, including Stripe checkout (gated off in both the bridge and the Studio until separately approved)", () => {
+    expect(rows().filter((r) => r.launch_class === "A" && !r.carried).map((r) => r.route)).toEqual([]);
+    const row = inventory().find((e) => e.routes.includes("POST /billing/stripe/checkout")); expect(row.studio_gate).toMatch(/OFF in a bridge-marked build/); expect(row.decision_needed).toMatch(/separately approved Stripe test-mode activation/);
   });
   it("the first-customer journey (A) routes the bridge does carry are exactly the ones the Studio sends with the methods it uses", () => {
     const carriedA = rows().filter((r) => r.launch_class === "A" && r.carried).map((r) => r.route);

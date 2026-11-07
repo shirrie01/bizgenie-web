@@ -1,9 +1,11 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import QuotedGeneration from "./QuotedGeneration";
 import { QuoteError, normaliseQuote } from "./generationQuoteClient";
 
+// Root cause of two hosted/full-suite flakes (BG-017C-05): findBy*/waitFor default to 1000 ms, which a loaded CI runner running the whole suite in parallel can exceed. The assertions are unchanged; only the wait ceiling is raised.
+configure({ asyncUtilTimeout: 5000 });
 // Component behaviour against injected API functions. The wire contract is covered in generationQuoteClient.test.js and, against the real
 // PostgreSQL-backed router, in qa/integration/quoteConfirm.integration.test.js.
 const C = "11111111-1111-4111-8111-111111111111", V = "22222222-2222-4222-8222-222222222222", Q = "33333333-3333-4333-8333-333333333333";

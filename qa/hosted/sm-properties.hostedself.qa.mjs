@@ -43,6 +43,7 @@ function world({ exists = false, writes = true } = {}) {
       if (u.pathname === '/customer/workspace/onboarding') return json({ status: 'ready', onboarding: ONB, brand_name_placeholder: true });
       if (u.pathname === '/customer/workspace/brand-brain') return json({ status: 'ready', brand_brain: { brand_id: IDS.brand_id, project_id: IDS.project_id, name: 'SM Properties', metadata: { version: 1, status: 'draft' } } });
       if (u.pathname === '/customer/campaigns') return json({ campaigns: [] });
+      if (u.pathname === '/customer/calendar') return json({ items: [] });
       return json({ error: { code: 'RESOURCE_NOT_AVAILABLE', message: 'x' } }, 404);
     });
   };
@@ -60,19 +61,20 @@ test('writes not approved: a new account is signed in and checked, but nothing i
   const w = world({ exists: false }); const rep = await runSmProperties({ target: ORIGIN, settings: SETTINGS, env: IDENT, outDir: out(), selftest: true, intercept: w.intercept });
   const r = by(rep);
   for (const id of ['A1', 'A2', 'A3', 'A9', 'A10']) expect(r[id].status, `${id}: ${r[id].detail}`).toBe('PASS');
-  for (const id of ['A4', 'A5', 'A6']) expect(r[id].status, id).toBe('NOT RUN');
+  for (const id of ['A4', 'A5', 'A6', 'A12', 'A13', 'A14', 'A15', 'A16']) expect(r[id].status, id).toBe('NOT RUN');
   expect(w.bootstraps).toBe(0); expect(rep.evidenceClass).toBe('MOCKED'); expect(rep.hostedReal).toBe(false); expect(rep.writeApproved).toBe(false);
 });
 test('writes approved: the workspace is created exactly once, Step 2 reaches Step 3, the entered name is kept, a reload creates nothing more, and another tenant is refused', async () => {
   const w = world({ exists: false, writes: true }); const rep = await runSmProperties({ target: ORIGIN, settings: SETTINGS, env: { ...IDENT, HOSTED_ALLOW_WORKSPACE_WRITE: 'create-sm-properties-once' }, outDir: out(), selftest: true, intercept: w.intercept });
   const r = by(rep);
-  for (const id of ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11']) expect(r[id].status, `${id}: ${r[id].detail}`).toBe('PASS');
+  for (const id of ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A15']) expect(r[id].status, `${id}: ${r[id].detail}`).toBe('PASS');
   expect(w.bootstraps).toBe(1); expect(rep.evidenceClass).toBe('MOCKED'); expect(rep.hostedReal).toBe(false);
 });
 test('an existing workspace is the resume path: nothing is created even when writes are approved', async () => {
   const w = world({ exists: true }); const rep = await runSmProperties({ target: ORIGIN, settings: SETTINGS, env: { ...IDENT, HOSTED_ALLOW_WORKSPACE_WRITE: 'create-sm-properties-once' }, outDir: out(), selftest: true, intercept: w.intercept });
   const r = by(rep); expect(r.A3.status).toBe('PASS'); expect(r.A4.status).toBe('NOT RUN'); expect(r.A4.detail).toMatch(/already exists/); expect(w.bootstraps).toBe(0);
-  for (const id of ['A7', 'A8', 'A9', 'A10']) expect(r[id].status, `${id}: ${r[id].detail}`).toBe('PASS');
+  for (const id of ['A7', 'A8', 'A9', 'A10', 'A12', 'A13', 'A15']) expect(r[id].status, `${id}: ${r[id].detail}`).toBe('PASS');
+  for (const id of ['A14', 'A16']) expect(r[id].status, id).toBe('NOT RUN'); // writes and Stripe test mode are never run by this script
 });
 test('a read-only test environment is reported as a failure of the create step, not hidden', async () => {
   const w = world({ exists: false, writes: false }); const rep = await runSmProperties({ target: ORIGIN, settings: SETTINGS, env: { ...IDENT, HOSTED_ALLOW_WORKSPACE_WRITE: 'create-sm-properties-once' }, outDir: out(), selftest: true, intercept: w.intercept });

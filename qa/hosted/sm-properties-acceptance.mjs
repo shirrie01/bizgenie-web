@@ -75,6 +75,26 @@ export async function runSmProperties({ target, settings = SETTINGS, env = proce
       const rnd = () => crypto.randomUUID(); try { const r = await fetch(`${apiOrigin}/customer/campaigns?tenant_id=${rnd()}&project_id=${rnd()}`, { headers: { authorization: `Bearer ${t}` }, credentials: "omit" }); return { reached: true, status: r.status }; } catch (e) { return { reached: false }; }
     }, api);
     add("A9", "Another tenant's data cannot be read (a read naming a different tenant is refused)", probe.reached && [403, 404].includes(probe.status) ? STATUS.PASS : STATUS.FAIL, probe.reached ? `HTTP ${probe.status} (expected 403 or 404; 200 would be a cross-tenant leak)` : "the request could not be sent");
+    // BG-017C-05: read-only coverage of the rest of the journey. Reads use the page's own session from the Studio origin (real CORS path); nothing is created, saved, quoted, generated or charged.
+    const readProbe = (route) => page.evaluate(async ([apiOrigin, r]) => {
+      const k = Object.keys(localStorage).find((x) => /^sb-.*-auth-token$/.test(x)); let t = ""; try { t = JSON.parse(localStorage.getItem(k) || "null").access_token; } catch { /* none */ }
+      try { const res = await fetch(`${apiOrigin}${r}`, { headers: { authorization: `Bearer ${t}` }, credentials: "omit" }); let j = null; try { j = await res.json(); } catch { /* not JSON */ } return { reached: true, status: res.status, keys: j && typeof j === "object" ? Object.keys(j).slice(0, 8) : [] }; } catch { return { reached: false }; }
+    }, [api, route]);
+    const scoped = exists || (writeApproved && seen.bootstraps.some((b) => b.status === 200 || b.status === 201));
+    if (!scoped) for (const [i, t] of [["A12", "Brand Brain readout loads (read-only)"], ["A13", "Calendar loads (read-only)"]]) add(i, t, STATUS.NOT_RUN, "No workspace exists for this account yet, so there is nothing to read.");
+    else {
+      const bb = await readProbe("/customer/workspace/brand-brain"); add("A12", "Brand Brain readout loads (read-only)", bb.reached && bb.status === 200 ? STATUS.PASS : STATUS.FAIL, bb.reached ? `HTTP ${bb.status}` : "the request could not be sent");
+      const cal = await readProbe("/customer/calendar"); add("A13", "Calendar loads (read-only)", cal.reached && cal.status === 200 ? STATUS.PASS : STATUS.FAIL, cal.reached ? `HTTP ${cal.status}` : "the request could not be sent");
+    }
+    add("A14", "Brand Brain completion and campaign recommendations (writes)", STATUS.NOT_RUN, "These save or request work, so they belong to the separately approved write phase (BG-017C-06). This script never saves Brand Brain or requests recommendations.");
+    // checkout entry: the gate must be OFF; the script observes and never clicks
+    const checkoutCalls = []; page.on("request", (rq) => { if (new URL(rq.url()).pathname === "/billing/stripe/checkout") checkoutCalls.push(rq.method()); });
+    await page.reload({ waitUntil: "networkidle" }); await signedIn();
+    const entry = await page.getByRole("button", { name: /continue to secure checkout/i }).first().isVisible().catch(() => false);
+    const gated = await page.getByText(/Subscribing isn't available in this test environment yet/i).first().isVisible().catch(() => false);
+    if (!scoped) add("A15", "Checkout entry is observed only (gated OFF; the script never clicks it)", STATUS.NOT_RUN, "No workspace exists for this account yet, so the billing area is not shown.");
+    else add("A15", "Checkout entry is observed only: no checkout request is made and the entry is gated OFF (the script never clicks it)", ok(checkoutCalls.length === 0 && !entry), `checkout requests: ${checkoutCalls.length}; live subscribe button visible: ${entry}; gate notice visible: ${gated}`);
+    add("A16", "Stripe test-mode checkout (hosted)", STATUS.NOT_RUN, "Needs the separate Stripe test-mode approval (bridge BG_BRIDGE_ALLOW_STRIPE_CHECKOUT plus the Studio gate) and an isolated billing test (BG-017C-06). Not attempted.");
     // expired session recovery
     await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (/^sb-.*-auth-token$/.test(k)) localStorage.removeItem(k); });
     await page.reload({ waitUntil: "networkidle" }); const signInScreen = await page.getByRole("button", { name: /^sign in$/i }).first().isVisible().catch(() => false); const back = signInScreen ? await signIn() : false; await shot("a10-recovered");

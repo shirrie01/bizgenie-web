@@ -23,7 +23,6 @@ const allowedAny = (p) => METHODS.some((m) => bridgeAllows(m, p));
 
 // Everything the Studio calls that the bridge will answer 404 RESOURCE_NOT_AVAILABLE for, with the reason it does not matter for the staging first-customer journey, or why it does.
 const NOT_THROUGH_THE_BRIDGE = {
-  "/billing/stripe/checkout": "STRIPE CHECKOUT ENTRY: outside /customer/, so the bridge refuses it. Starting a subscription from the Studio cannot work through this bridge. Needs a decision with Codex before billing is tested (not part of the first-customer journey)",
   "/public/paid-beta-interest": "lead capture, not shown in the premium Studio build",
   "/billing/checkout/success": "a Studio page, not an API route", "/billing/checkout/cancel": "a Studio page, not an API route",
   "/customer/billing/invoices": "gate off (VITE_BILLING_MANAGEMENT_API); no API implementation",
@@ -57,8 +56,19 @@ describe("Studio requests against the trusted staging bridge route table (BG-017
     ];
     for (const [m, p] of journey) expect(bridgeAllows(m, p), `${m} ${p}`).toBe(true);
   });
-  it("the one launch-journey route the bridge does not carry is named: Stripe checkout entry", () => {
-    expect(bridgeAllows("POST", "/billing/stripe/checkout")).toBe(false); expect("/billing/stripe/checkout" in NOT_THROUGH_THE_BRIDGE).toBe(true);
+  it("Stripe checkout entry is carried (86b39d70), refused while its own gate is closed, and validated strictly when open", () => {
+    expect(bridgeAllows("POST", "/billing/stripe/checkout")).toBe(true); expect(bridgeAllows("GET", "/billing/stripe/checkout")).toBe(false); expect("/billing/stripe/checkout" in NOT_THROUGH_THE_BRIDGE).toBe(false);
+    const o = { origin: "https://bizgenie-studio-staging.pages.dev", scope: { tenant_id: "t1", project_id: "p1", brand_id: "b1" } };
+    const body = (x = {}) => JSON.stringify({ tenant_id: "t1", plan_code: "standard", request_id: "checkout_abc", ...x });
+    const call = (b, opts = {}, headers = {}) => bridgeGate({ method: "POST", url: "https://bridge.test/billing/stripe/checkout", headers: { origin: o.origin, authorization: "Bearer a.b.c", "content-type": "application/json", ...headers }, postData: b }, { ...o, ...opts });
+    expect(call(body()).body.error.code).toBe("STAGING_WRITES_DISABLED");
+    expect(call(body(), { writes: true }).body.error.code).toBe("STRIPE_CHECKOUT_DISABLED"); // the general write approval does not open checkout
+    const open = { writes: true, stripeCheckout: true };
+    expect(call(body(), open).pass).toBe(true);
+    expect(call(body(), open, { authorization: "" }).body.error.code).toBe("AUTHENTICATION_REQUIRED");
+    expect(call(body({ tenant_id: "other" }), open).body.error.code).toBe("RESOURCE_NOT_AVAILABLE"); // cross-tenant
+    for (const extra of [{ price_id: "price_x" }, { success_url: "https://x.test" }, { user_id: "u" }, { plan_code: "gold" }, { request_id: "" }]) expect(call(body(extra), open).body.error.code, JSON.stringify(extra)).toBe("STRIPE_BILLING_VALIDATION_ERROR");
+    expect(call(JSON.stringify({ tenant_id: "t1", plan_code: "standard" }), open).body.error.code).toBe("STRIPE_BILLING_VALIDATION_ERROR");
   });
   it("the Studio sends only the request headers the bridge allows (authorization, content-type, range)", () => {
     const sent = new Set();
@@ -84,6 +94,6 @@ describe("Studio requests against the trusted staging bridge route table (BG-017
     expect(call("GET", "/customer/workspace", { headers: { authorization: "" } }).body.error.code).toBe("AUTHENTICATION_REQUIRED");
     expect(call("GET", "/customer/workspace", { headers: { "x-serverless-authorization": "Bearer x" } }).body.error.code).toBe("SERVER_HEADERS_FORBIDDEN");
     expect(call("POST", `/customer/generation-quotes/${U}/confirm`, { opts: { writes: true } }).body.error.code).toBe("GENERATION_CONFIRMATION_DISABLED");
-    expect(call("GET", "/billing/stripe/checkout").status).toBe(404);
+    expect(call("GET", "/billing/stripe/checkout").status).toBe(404); // only POST is allowed
   });
 });
