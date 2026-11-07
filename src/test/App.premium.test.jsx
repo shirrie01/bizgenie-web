@@ -311,6 +311,26 @@ describe("workspace creation (existing bootstrap contract)", () => {
     expect(screen.getByLabelText(/business name/i)).toHaveValue("SM Properties"); expect(button(/create my workspace/i)).toBeEnabled();
     expect(called("POST", "/workspace/bootstrap")).toHaveLength(1);
   });
+  // BG-017C-05B: the trusted staging bridge answers writes with 403 STAGING_WRITES_DISABLED until writes are switched on. That is not a permission problem.
+  it("a read-only test environment (bridge 403 STAGING_WRITES_DISABLED) says changes are switched off and keeps the form", async () => {
+    handlers["POST /customer/workspace/bootstrap"] = () => fail(403, { error: { code: "STAGING_WRITES_DISABLED", message: "Studio API request is unavailable" } });
+    await toIdentity();
+    fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "SM Properties" } });
+    fireEvent.click(button(/create my workspace/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/switched off in this test environment.*nothing was saved.*still here/i); expect(alert).not.toHaveTextContent(/contact support|can.t create a workspace/i);
+    expect(screen.getByLabelText(/business name/i)).toHaveValue("SM Properties"); expect(button(/create my workspace/i)).toBeEnabled();
+  });
+  it("after a create request that got no answer, trying again looks the workspace up first and sends one create request, never two", async () => {
+    let posts = 0; handlers["POST /customer/workspace/bootstrap"] = async () => { posts += 1; if (posts === 1) throw new TypeError("Failed to fetch"); return ok({ status: "ready", workspace: {}, requires_session_refresh: false }, 201); };
+    await toIdentity();
+    fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "SM Properties" } });
+    fireEvent.click(button(/create my workspace/i));
+    await screen.findByRole("alert"); const getsBefore = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/create my workspace/i));
+    await waitFor(() => expect(posts).toBe(2));
+    expect(called("GET", "/customer/workspace").length).toBeGreaterThan(getsBefore); expect(called("POST", "/workspace/bootstrap")).toHaveLength(2);
+  });
   it("a validation refusal (422) asks the customer to check their details and keeps them", async () => {
     handlers["POST /customer/workspace/bootstrap"] = () => fail(422, { status: "failed", error: { code: "VALIDATION_ERROR", message: "x" } });
     await toIdentity();

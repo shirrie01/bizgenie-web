@@ -4,6 +4,7 @@ import { getCustomerSession, refreshCustomerSession } from "./session";
 import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import { consumeAuthCallback } from "./authCallback";
+import { bridgeRefusal, responseCode } from "./bridgeErrors";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
 const PremiumBilling = lazy(() => import("./premium/PremiumBilling"));
@@ -89,8 +90,10 @@ async function apiFetch(url, init) {
 }
 
 // Customer wording for a refused workspace request (status only; the server's text is never shown).
-function workspaceRefusal(status, what) {
+function workspaceRefusal(status, what, code = "") {
   if (status === 401) return sessionEndedError();
+  const bridge = bridgeRefusal(code);
+  if (bridge) return Object.assign(new Error(bridge.text), { kind: bridge.kind, code });
   if (status === 400 || status === 422) return Object.assign(new Error("Some details need another look. Check your business name and website, then try again. Your details are still here."), { kind: "validation" });
   if (status === 403) return Object.assign(new Error("This account can't create a workspace yet. Please contact support."), { kind: "forbidden" });
   if (status === 429) return Object.assign(new Error("Too many attempts. Wait a moment, then try again. Your details are still here."), { kind: "busy" });
@@ -105,7 +108,7 @@ async function getCustomerWorkspace(accessToken) {
   const response = await apiFetch(`${API_BASE_URL}/customer/workspace`, {
     headers: authorizationHeader(accessToken),
   });
-  if (!response.ok) throw workspaceRefusal(response.status, "check");
+  if (!response.ok) throw workspaceRefusal(response.status, "check", await responseCode(response));
   return response.json();
 }
 
@@ -138,7 +141,7 @@ async function bootstrapCustomerWorkspace({ accessToken, goal }) {
       primary_marketing_challenge: goal,
     }),
   });
-  if (!response.ok) throw workspaceRefusal(response.status, "create");
+  if (!response.ok) throw workspaceRefusal(response.status, "create", await responseCode(response));
   return response.json();
 }
 
@@ -167,7 +170,7 @@ async function bootstrapWorkspaceWithProfile({ accessToken, businessName, websit
     headers: { "content-type": "application/json", ...authorizationHeader(accessToken) },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw workspaceRefusal(response.status, "create");
+  if (!response.ok) throw workspaceRefusal(response.status, "create", await responseCode(response));
   return response.json();
 }
 

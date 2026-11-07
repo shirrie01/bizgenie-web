@@ -6,6 +6,7 @@
 //   POST  .../variants/:v/manual-publication/fail | /cancel   { ...scope, idempotency_key, expected_campaign_version, attempt_id, reason }
 // Responses carry the whole campaign document. Nothing here talks to a social platform: a "confirm" is the customer's own attestation.
 // Archive/restore are refused (409 INVALID_TRANSITION) while any item is scheduled or awaiting a manual-publication answer.
+import { bridgeRefusal } from "../bridgeErrors";
 
 export class CampaignApiError extends Error {
   constructor(message, { kind = "error", status = 0, code = "" } = {}) { super(message); this.name = "CampaignApiError"; this.kind = kind; this.status = status; this.code = code; }
@@ -28,6 +29,8 @@ export async function errorFor(response, action = "That") {
   try { code = (await response.json())?.error?.code || ""; } catch { /* no JSON body */ }
   const s = response.status;
   if (s === 401) return new CampaignApiError("Your session has ended. Sign in again to continue. Nothing was changed.", { kind: "auth", status: s, code: code || "AUTHENTICATION_REQUIRED" });
+  const bridge = bridgeRefusal(code);
+  if (bridge) return new CampaignApiError(bridge.text, { kind: bridge.kind === "busy" || bridge.kind === "unavailable" ? "unconfirmed" : "refused", status: s, code });
   if (s === 403 || s === 404) return new CampaignApiError("This campaign is not available to you any more. It may have been removed or your access may have changed. Nothing was changed.", { kind: "unavailable", status: s, code: code || "RESOURCE_NOT_AVAILABLE" });
   if (s === 409) return new CampaignApiError(MESSAGES[code] || MESSAGES.INVALID_TRANSITION, { kind: code === "VERSION_CONFLICT" ? "conflict" : "refused", status: s, code });
   if (s === 400) return new CampaignApiError(MESSAGES.VALIDATION_ERROR, { kind: "invalid", status: s, code: code || "VALIDATION_ERROR" });

@@ -13,6 +13,10 @@ on:
         description: 'Deploy after verification (still needs Environment approval). Default false = build and verify only'
         type: boolean
         default: false
+      api_origin:
+        description: 'API origin the Studio will call. Leave empty for the default staging API host. Any other value must already be listed in APPROVED_API_ORIGINS in this file (a reviewed change), e.g. the trusted bridge once Codex has verified its origin'
+        required: false
+        default: ''
       smoke_url:
         description: 'Hostname to smoke-test after deploy'
         required: false
@@ -23,6 +27,8 @@ defaults: { run: { shell: bash } }
 concurrency: { group: studio-staging-release, cancel-in-progress: false }
 env:
   STAGING_API_ORIGIN: https://staging-api.getbizgenie.com
+  # Space-separated. Extended only by a reviewed commit after the trusted bridge's browser-facing origin is verified (qa/hosted/staging-settings.json: approved_api_origins).
+  APPROVED_API_ORIGINS: https://staging-api.getbizgenie.com
   STAGING_SUPABASE_URL: https://zrczojyxebwjgpymbmgu.supabase.co
   STAGING_SUPABASE_REF: zrczojyxebwjgpymbmgu
   PAGES_PROJECT: bizgenie-studio-staging
@@ -31,12 +37,20 @@ jobs:
   build-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    outputs: { dist_sha256: '${{ steps.hash.outputs.dist_sha256 }}' }
+    outputs: { dist_sha256: '${{ steps.hash.outputs.dist_sha256 }}', api_origin: '${{ steps.api.outputs.origin }}' }
     steps:
       - name: Refuse a smoke-test host that is not the approved staging Studio
         env: { SMOKE_URL: '${{ inputs.smoke_url }}' }
         run: |
           echo "$SMOKE_URL" | grep -Eq '^https://(staging-app\.getbizgenie\.com|([a-z0-9-]+\.)?bizgenie-studio-staging\.pages\.dev)/?$' || { echo "smoke_url must be the approved staging Studio host or the project's pages.dev host"; exit 1; }
+      - id: api
+        name: Resolve the API origin (the default staging host, or an origin approved in this workflow)
+        env: { REQUESTED: '${{ inputs.api_origin }}' }
+        run: |
+          ORIGIN="${REQUESTED:-$STAGING_API_ORIGIN}"
+          echo "$ORIGIN" | grep -Eq '^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?$' || { echo "::error::api_origin must be a bare https origin (no path, port, query or credentials)"; exit 1; }
+          case " $APPROVED_API_ORIGINS " in *" $ORIGIN "*) ;; *) echo "::error::$ORIGIN is not in APPROVED_API_ORIGINS. Add it in a reviewed change once its owner has verified it."; exit 1;; esac
+          echo "origin=$ORIGIN" >> "$GITHUB_OUTPUT"; echo "API origin for this build: \`$ORIGIN\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Refuse anything but a full SHA
         env: { SHA: '${{ inputs.sha }}' }
         run: |
@@ -55,7 +69,7 @@ jobs:
       - run: npm test
       - name: Build for staging (fails closed on missing or mismatched settings)
         env:
-          VITE_BIZGENIE_API_URL: ${{ env.STAGING_API_ORIGIN }}
+          VITE_BIZGENIE_API_URL: ${{ steps.api.outputs.origin }}
           VITE_SUPABASE_URL: ${{ env.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.STAGING_SUPABASE_PUBLISHABLE_KEY }}
           VITE_PREMIUM_STUDIO_ENABLED: 'true'
@@ -67,7 +81,7 @@ jobs:
           VITE_SUPPORT_URL: ${{ vars.STAGING_SUPPORT_URL }}
           VITE_TERMS_URL: ${{ vars.STAGING_TERMS_URL }}
           VITE_PRIVACY_URL: ${{ vars.STAGING_PRIVACY_URL }}
-          PAGES_EXPECT_API_ORIGIN: ${{ env.STAGING_API_ORIGIN }}
+          PAGES_EXPECT_API_ORIGIN: ${{ steps.api.outputs.origin }}
           PAGES_EXPECT_SUPABASE_REF: ${{ env.STAGING_SUPABASE_REF }}
           PAGES_NOINDEX: '1'
         run: |
@@ -75,7 +89,7 @@ jobs:
           case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_secret_*|eyJ*) echo "that is not a publishable key"; exit 1;; esac
           npm run build:pages
       - name: Verify headers, CSP, noindex and that no secret or other-environment value is in the bundle
-        run: node scripts/smoke-pages.mjs --dir dist --api "$STAGING_API_ORIGIN" --supabase-ref "$STAGING_SUPABASE_REF" --noindex
+        run: node scripts/smoke-pages.mjs --dir dist --api "${{ steps.api.outputs.origin }}" --supabase-ref "$STAGING_SUPABASE_REF" --noindex
       - id: hash
         name: Fingerprint the exact files that would be deployed
         run: |
@@ -128,7 +142,7 @@ jobs:
           cat deployment.txt >> "$GITHUB_ENV"
           { echo "### Cloudflare deployment"; sed 's/^/- /' deployment.txt; } >> "$GITHUB_STEP_SUMMARY"
       - name: Smoke test the live host
-        run: node scripts/smoke-pages.mjs --url "${{ inputs.smoke_url }}" --api "$STAGING_API_ORIGIN" --supabase-ref "$STAGING_SUPABASE_REF" --noindex
+        run: node scripts/smoke-pages.mjs --url "${{ inputs.smoke_url }}" --api "${{ needs.build-verify.outputs.api_origin }}" --supabase-ref "$STAGING_SUPABASE_REF" --noindex
       - if: ${{ failure() }}
         name: Say how to roll back
         run: |

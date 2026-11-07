@@ -4,6 +4,7 @@
 // Pure network code. Both routes use the customer's IDENTITY token: the workspace is never taken from the request
 // scope, and the browser never picks a workspace on the customer's behalf. Every response is validated, and the
 // workspace the API confirms must be exactly the one that was requested.
+import { bridgeRefusal } from "../bridgeErrors";
 
 export class WorkspaceError extends Error {
   constructor(message, { code = "WORKSPACE_ERROR", status = 0, unavailable = false } = {}) {
@@ -52,6 +53,8 @@ async function send({ apiBaseUrl, accessToken, path, method, body, fetchImpl }) 
 export async function fetchWorkspaces({ apiBaseUrl, accessToken, fetchImpl = (...a) => fetch(...a) }) {
   const { response, json } = await send({ apiBaseUrl, accessToken, path: "/customer/workspace", method: "GET", fetchImpl });
   if (response.status === 401) throw new WorkspaceError("Your session has ended. Sign in again to see your workspaces.", { code: "AUTHENTICATION_REQUIRED", status: 401 });
+  const gate = bridgeRefusal((json && json.error && json.error.code) || "");
+  if (!response.ok && gate) throw new WorkspaceError(gate.text, { code: (json && json.error && json.error.code) || "", status: response.status, unavailable: gate.kind === "unavailable" });
   if (!response.ok) throw new WorkspaceError(`Your workspaces could not be loaded (error ${response.status}). Nothing was changed.`, { status: response.status });
   const status = json && json.status;
   if (status === "missing_workspace") return { status, workspace: null, workspaces: [] };
@@ -68,6 +71,8 @@ export async function selectWorkspace({ apiBaseUrl, accessToken, workspace, fetc
   if (response.status === 401) throw new WorkspaceError("Your session has ended. Sign in again to choose a workspace. Nothing was changed.", { code: "AUTHENTICATION_REQUIRED", status: 401 });
   if (response.status === 400) throw new WorkspaceError("That workspace is not available to your account any more. Your list has been refreshed. Nothing was changed.", { code: "WORKSPACE_UNAVAILABLE", status: 400, unavailable: true });
   if (response.status === 503) throw new WorkspaceError("Switching workspace is not available right now. Nothing was changed. Try again shortly.", { code: "WORKSPACE_PROVISIONING_UNAVAILABLE", status: 503 });
+  const gate = bridgeRefusal((json && json.error && json.error.code) || "");
+  if (!response.ok && gate) throw new WorkspaceError(gate.text, { code: (json && json.error && json.error.code) || "", status: response.status });
   if (!response.ok) throw new WorkspaceError(`The workspace could not be selected (error ${response.status}). Nothing was changed.`, { status: response.status });
   if (!json || json.status !== "ready" || !validWorkspace(json.workspace) || !sameWorkspace(json.workspace, body)) {
     throw new WorkspaceError("The server did not confirm the workspace you chose, so nothing was switched.", { code: "WORKSPACE_BAD_RESPONSE" });
