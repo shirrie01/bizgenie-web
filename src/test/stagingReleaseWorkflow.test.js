@@ -57,4 +57,12 @@ describe("staging release workflow guards (BG-LAUNCH-013)", () => {
     const run = (origin, bridge) => execFileSync("bash", ["-c", `BRIDGE_API_ORIGINS='${bridge}'; ORIGIN='${origin}'; case " $BRIDGE_API_ORIGINS " in *" $ORIGIN "*) echo "limits=bridge-v1";; *) echo "limits=";; esac`]).toString().trim();
     expect(run("https://staging-api.getbizgenie.com", "")).toBe("limits="); expect(run("https://b.example.test", "https://b.example.test")).toBe("limits=bridge-v1"); expect(run("https://staging-api.getbizgenie.com", "https://b.example.test")).toBe("limits=");
   });
+  it("deploy=true is refused unless the origin is a listed trusted-bridge origin; build-only stays allowed (BG-017C-05B closure)", () => {
+    const wf = readFileSync(".github/workflows/studio-staging-release.yml", "utf8");
+    expect(wf).toContain("DEPLOY: '${{ inputs.deploy }}'"); expect(wf).toContain("deploy=true refused");
+    const run = (deploy, origin, bridge) => { try { return execFileSync("bash", ["-c", `DEPLOY='${deploy}'; BRIDGE_API_ORIGINS='${bridge}'; ORIGIN='${origin}'; if [ "$DEPLOY" = "true" ]; then case " $BRIDGE_API_ORIGINS " in *" $ORIGIN "*) ;; *) exit 1;; esac; fi; echo ok`]).toString().trim(); } catch (e) { return `exit${e.status}`; } };
+    const priv = "https://staging-api.getbizgenie.com";
+    expect(run("false", priv, "")).toBe("ok"); expect(run("true", priv, "")).toBe("exit1"); expect(run("true", "https://localhost", "")).toBe("exit1");
+    expect(run("true", "https://b.example.test", "https://b.example.test")).toBe("ok");
+  });
 });

@@ -48,11 +48,13 @@ jobs:
           echo "$SMOKE_URL" | grep -Eq '^https://(staging-app\.getbizgenie\.com|([a-z0-9-]+\.)?bizgenie-studio-staging\.pages\.dev)/?$' || { echo "smoke_url must be the approved staging Studio host or the project's pages.dev host"; exit 1; }
       - id: api
         name: Resolve the API origin (the default staging host, or an origin approved in this workflow)
-        env: { REQUESTED: '${{ inputs.api_origin }}' }
+        env: { REQUESTED: '${{ inputs.api_origin }}', DEPLOY: '${{ inputs.deploy }}' }
         run: |
           ORIGIN="${REQUESTED:-$STAGING_API_ORIGIN}"
           echo "$ORIGIN" | grep -Eq '^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?$' || { echo "::error::api_origin must be a bare https origin (no path, port, query or credentials)"; exit 1; }
           case " $APPROVED_API_ORIGINS " in *" $ORIGIN "*) ;; *) echo "::error::$ORIGIN is not in APPROVED_API_ORIGINS. Add it in a reviewed change once its owner has verified it."; exit 1;; esac
+          # A deployment must never point customers at the private IAM-protected API (browsers cannot satisfy its IAM/preflight) or localhost: deploy only to a listed trusted-bridge origin.
+          if [ "$DEPLOY" = "true" ]; then case " $BRIDGE_API_ORIGINS " in *" $ORIGIN "*) ;; *) echo "::error::deploy=true refused: $ORIGIN is not a verified trusted-bridge origin (BRIDGE_API_ORIGINS). Build-only (deploy=false) is still allowed."; exit 1;; esac; fi
           case " $BRIDGE_API_ORIGINS " in *" $ORIGIN "*) echo "limits=bridge-v1" >> "$GITHUB_OUTPUT";; *) echo "limits=" >> "$GITHUB_OUTPUT";; esac
           echo "origin=$ORIGIN" >> "$GITHUB_OUTPUT"; echo "API origin for this build: \`$ORIGIN\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Refuse anything but a full SHA
