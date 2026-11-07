@@ -49,4 +49,12 @@ describe("staging release workflow guards (BG-LAUNCH-013)", () => {
     expect(run("https://bridge.example.test", approved)).toBe("exit4"); expect(run("https://localhost", approved)).toBe("exit4");
     for (const bad of ["http://staging-api.getbizgenie.com", "https://staging-api.getbizgenie.com/", "https://staging-api.getbizgenie.com:8443", "https://user@staging-api.getbizgenie.com", "https://x.test/path"]) expect(run(bad, approved + " " + bad), bad).toBe("exit3");
   });
+  it("a build for a listed bridge origin (and only that) carries the route-limits marker (BG-017C-05B)", () => {
+    const S = JSON.parse(readFileSync("qa/hosted/staging-settings.json", "utf8"));
+    expect(wf).toContain(`BRIDGE_API_ORIGINS: '${S.bridge_api_origins.join(" ")}'`);
+    for (const o of S.bridge_api_origins) expect(S.approved_api_origins).toContain(o); // a bridge origin must also be approved
+    expect(wf).toContain("VITE_API_ROUTE_LIMITS: ${{ steps.api.outputs.limits }}"); expect(wf).toContain('echo "limits=bridge-v1"');
+    const run = (origin, bridge) => execFileSync("bash", ["-c", `BRIDGE_API_ORIGINS='${bridge}'; ORIGIN='${origin}'; case " $BRIDGE_API_ORIGINS " in *" $ORIGIN "*) echo "limits=bridge-v1";; *) echo "limits=";; esac`]).toString().trim();
+    expect(run("https://staging-api.getbizgenie.com", "")).toBe("limits="); expect(run("https://b.example.test", "https://b.example.test")).toBe("limits=bridge-v1"); expect(run("https://staging-api.getbizgenie.com", "https://b.example.test")).toBe("limits=");
+  });
 });

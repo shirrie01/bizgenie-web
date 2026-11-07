@@ -19,5 +19,6 @@
     "status": "NOT_VERIFIED",
     "origin": null,
     "note": "BG-017C-05B: Codex's trusted staging bridge (API PR #229) is not deployed and its browser-facing origin is not verified. Add the verified origin to approved_api_origins (and APPROVED_API_ORIGINS in studio-staging-release.yml) in a reviewed commit only after Codex records it; never hard-code an unverified URL."
-  }
+  },
+  "bridge_api_origins": []
 }

@@ -5,6 +5,7 @@ import { onAuthStateChange, signOut } from "./authClient";
 import AuthPanel from "./AuthPanel";
 import { consumeAuthCallback } from "./authCallback";
 import { bridgeRefusal, responseCode } from "./bridgeErrors";
+import { limitedNotice, routeLimited } from "./bridgeLimits";
 import Founding100Panel from "./Founding100Panel";
 import BillingPanel from "./BillingPanel";
 const PremiumBilling = lazy(() => import("./premium/PremiumBilling"));
@@ -1051,7 +1052,7 @@ export default function App() {
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
                     {premiumEnabled && isSocialApiEnabled() && variant.platform === "tiktok" && variant.workflow === "scheduled" && <Lazy><SendDraftToTikTok campaign={campaignState.campaign} variant={variant} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} apiBaseUrl={API_BASE_URL} /></Lazy>}
                     {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <Lazy><ScheduleControls campaign={campaignState.campaign} variant={variant} schedule={scheduleFor(variant)} state={scheduleState} onSchedule={runSchedule} /></Lazy>}
-                    {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <Lazy><ManualPublicationPanel campaign={campaignState.campaign} variant={variant} pendingAttemptId={pendingAttemptFor(variant)} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} /></Lazy>}
+                    {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && (routeLimited("manualPublication") ? <p className="ps-hint" role="note">{limitedNotice("manualPublication")}</p> : <Lazy><ManualPublicationPanel campaign={campaignState.campaign} variant={variant} pendingAttemptId={pendingAttemptFor(variant)} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} /></Lazy>)}
                     {!premiumEnabled && variant.workflow === "approved" && <div>
                       <p>Manual publication required. BizGenie will not claim this was published until you confirm it.</p>
                       <button className="secondary" type="button" onClick={() => runManualStart(variant)} disabled={manualState.status === "starting"}>{manualState.status === "starting" ? "Preparing handoff…" : "Prepare manual publication"}</button>

@@ -29,6 +29,9 @@ env:
   STAGING_API_ORIGIN: https://staging-api.getbizgenie.com
   # Space-separated. Extended only by a reviewed commit after the trusted bridge's browser-facing origin is verified (qa/hosted/staging-settings.json: approved_api_origins).
   APPROVED_API_ORIGINS: https://staging-api.getbizgenie.com
+  # The subset of the approved origins that is the trusted staging bridge (empty until Codex verifies one). A build for one of these sets VITE_API_ROUTE_LIMITS=bridge-v1, so features the
+  # bridge does not carry (Stripe checkout entry, manual publication) say so instead of calling it. Must be a subset of APPROVED_API_ORIGINS (qa/hosted/staging-settings.json: bridge_api_origins).
+  BRIDGE_API_ORIGINS: ''
   STAGING_SUPABASE_URL: https://zrczojyxebwjgpymbmgu.supabase.co
   STAGING_SUPABASE_REF: zrczojyxebwjgpymbmgu
   PAGES_PROJECT: bizgenie-studio-staging
@@ -50,6 +53,7 @@ jobs:
           ORIGIN="${REQUESTED:-$STAGING_API_ORIGIN}"
           echo "$ORIGIN" | grep -Eq '^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?$' || { echo "::error::api_origin must be a bare https origin (no path, port, query or credentials)"; exit 1; }
           case " $APPROVED_API_ORIGINS " in *" $ORIGIN "*) ;; *) echo "::error::$ORIGIN is not in APPROVED_API_ORIGINS. Add it in a reviewed change once its owner has verified it."; exit 1;; esac
+          case " $BRIDGE_API_ORIGINS " in *" $ORIGIN "*) echo "limits=bridge-v1" >> "$GITHUB_OUTPUT";; *) echo "limits=" >> "$GITHUB_OUTPUT";; esac
           echo "origin=$ORIGIN" >> "$GITHUB_OUTPUT"; echo "API origin for this build: \`$ORIGIN\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Refuse anything but a full SHA
         env: { SHA: '${{ inputs.sha }}' }
@@ -70,6 +74,7 @@ jobs:
       - name: Build for staging (fails closed on missing or mismatched settings)
         env:
           VITE_BIZGENIE_API_URL: ${{ steps.api.outputs.origin }}
+          VITE_API_ROUTE_LIMITS: ${{ steps.api.outputs.limits }}
           VITE_SUPABASE_URL: ${{ env.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.STAGING_SUPABASE_PUBLISHABLE_KEY }}
           VITE_PREMIUM_STUDIO_ENABLED: 'true'

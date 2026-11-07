@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { readCustomerBillingState, startStandardCheckout } from "./billingClient";
+import { limitedNotice, routeLimited } from "./bridgeLimits";
 
 const SUCCESS_PATH = "/billing/checkout/success";
 const CANCEL_PATH = "/billing/checkout/cancel";
@@ -165,7 +166,8 @@ export default function BillingPanel({ session, pathname = window.location.pathn
         </div>
       )}
       {billing.status === "ready" && billing.data?.subscription && <BillingState state={billing} />}
-      {showCheckout && billing.status === "ready" && !activeEntitlement ? (
+      {showCheckout && billing.status === "ready" && !activeEntitlement && routeLimited("checkout") ? <p className="notice" role="note">{limitedNotice("checkout")}</p> : null}
+      {showCheckout && billing.status === "ready" && !activeEntitlement && !routeLimited("checkout") ? (
         <button type="button" onClick={beginCheckout} disabled={checkoutBlocked}>
           {checkout.status === "loading" ? "Starting checkout…" : checkout.status === "redirecting" ? "Opening checkout…" : "Continue to secure checkout"}
         </button>

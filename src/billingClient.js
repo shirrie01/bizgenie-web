@@ -1,3 +1,4 @@
+import { limitedNotice, routeLimited } from "./bridgeLimits";
 const API_BASE_URL = import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
 
 function authHeaders(accessToken, json = false) {
@@ -26,6 +27,8 @@ function safeCheckoutUrl(value) {
 // `planCode` defaults to the one plan the app has always offered; a server-owned catalogue (BG-STUDIO-019-FE) may name another. The backend
 // validates the code and maps it to its own approved Stripe Price: the browser never supplies a price.
 export async function startStandardCheckout({ accessToken, tenantId, planCode = "standard" }) {
+  // The trusted staging bridge does not carry this route (BG-017C-05B): say so instead of calling it and letting a 404 read as "not available for this account".
+  if (routeLimited("checkout")) throw Object.assign(new Error(limitedNotice("checkout")), { kind: "not_available_here" });
   if (!/^[a-z0-9_-]{1,32}$/.test(planCode)) throw new Error("Choose a plan from the list.");
   if (!accessToken || !tenantId) throw new Error("Sign in to start checkout.");
 
