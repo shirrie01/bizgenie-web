@@ -331,6 +331,54 @@ describe("workspace creation (existing bootstrap contract)", () => {
     await waitFor(() => expect(posts).toBe(2));
     expect(called("GET", "/customer/workspace").length).toBeGreaterThan(getsBefore); expect(called("POST", "/workspace/bootstrap")).toHaveLength(2);
   });
+  // BG-017C-08: simulated persistence lives in the fake server, not browser storage.
+  it("SM Properties bootstrap survives a full remount without creating a second workspace", async () => {
+    let created = false;
+    const workspace = { tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a", brand_name: "SM Properties", membership_role: "owner" };
+    handlers["GET /customer/workspace"] = () => ok(created ? { status: "ready", workspace } : { status: "missing_workspace", workspace: null });
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("SM Properties") });
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(NOT_STARTED);
+    handlers["POST /customer/workspace/bootstrap"] = () => { created = true; return ok({ status: "ready", workspace, requires_session_refresh: true }, 201); };
+    refreshCustomerSessionMock.mockResolvedValue(SESSION_A);
+    await toIdentity();
+    fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "SM Properties" } });
+    fireEvent.click(button(/create my workspace/i));
+    await screen.findByRole("heading", { name: /what does your business do/i });
+    expect(called("POST", "/workspace/bootstrap")).toHaveLength(1);
+    expect(called("POST", "/workspace/bootstrap")[0].options.headers.authorization).toBe("Bearer token-new");
+    expect(refreshCustomerSessionMock).toHaveBeenCalledTimes(1);
+    expect(called("GET", "/brand-brain").at(-1).options.headers.authorization).toBe("Bearer token-a");
+    cleanup(); window.localStorage.clear(); window.sessionStorage.clear();
+    getCustomerSessionMock.mockResolvedValue(SESSION_A);
+    render(<App />);
+    await screen.findByRole("heading", { name: /what does your business do/i });
+    expect(called("GET", "/brand-brain")).toHaveLength(2);
+    expect(called("POST", "/workspace/bootstrap")).toHaveLength(1);
+    expect(document.body.textContent).not.toMatch(/Northgate|Brookside/);
+  });
+
+  it("a committed bootstrap whose response is lost is reused on retry without creating another workspace", async () => {
+    let committed = false; let creations = 0;
+    const workspace = { tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a", brand_name: "SM Properties", membership_role: "owner" };
+    handlers["GET /customer/workspace"] = () => ok(committed ? { status: "ready", workspace } : { status: "missing_workspace", workspace: null });
+    handlers["POST /customer/workspace/bootstrap"] = () => { if (!committed) { committed = true; creations += 1; throw new TypeError("Failed to fetch"); } return ok({ status: "ready", workspace, requires_session_refresh: true }, 201); };
+    handlers["GET /customer/workspace/brand-brain"] = () => ok({ status: "ready", brand_brain: brainFor("SM Properties") });
+    handlers["GET /customer/workspace/onboarding"] = () => onboardingResponse(NOT_STARTED);
+    refreshCustomerSessionMock.mockResolvedValue(SESSION_A);
+    await toIdentity();
+    fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "SM Properties" } });
+    fireEvent.click(button(/create my workspace/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/can.t confirm that went through/i);
+    expect(screen.getByLabelText(/business name/i)).toHaveValue("SM Properties");
+    const reads = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/create my workspace/i));
+    await screen.findByRole("heading", { name: /what does your business do/i });
+    expect(called("GET", "/customer/workspace").length).toBeGreaterThan(reads);
+    expect(called("POST", "/workspace/bootstrap")).toHaveLength(2);
+    expect(creations).toBe(1);
+    expect(committed).toBe(true);
+  });
+
   it("a validation refusal (422) asks the customer to check their details and keeps them", async () => {
     handlers["POST /customer/workspace/bootstrap"] = () => fail(422, { status: "failed", error: { code: "VALIDATION_ERROR", message: "x" } });
     await toIdentity();
