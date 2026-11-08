@@ -55,7 +55,7 @@ export async function checkUrl(base, opts, fetchImpl = fetch) {
   const robots = root.headers.get("x-robots-tag") || "";
   if (opts.noindex && !/noindex/i.test(robots)) bad.push("/ lacks X-Robots-Tag noindex");
   if (!opts.noindex && /noindex/i.test(robots)) bad.push("noindex on a build not marked staging");
-  if (!/no-cache/i.test(root.headers.get("cache-control") || "")) bad.push("/ is not no-cache");
+  if (!/no-cache/i.test(root.headers.get("cache-control") || "")) bad.push(`/ is not no-cache (the host answered "${root.headers.get("cache-control") || "no Cache-Control"}")`);
   for (const p of ["/billing/checkout/success", "/billing/checkout/cancel", "/some/deep/link"]) {
     const r = await get(p); const t = await r.text();
     if (r.status !== 200 || t !== rootHtml) bad.push(`${p} does not fall back to index.html (status ${r.status})`);

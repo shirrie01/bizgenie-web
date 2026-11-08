@@ -15,7 +15,11 @@ describe("Cloudflare Pages response headers (BG-LAUNCH-011)", () => {
   it("caches hashed assets for a year and never the HTML entry", () => {
     const t = buildHeaders(ok);
     expect(t).toMatch(/\/assets\/\*\n  Cache-Control: public, max-age=31536000, immutable/); expect(t).toMatch(/\/index\.html\n  Cache-Control: no-cache/);
-    expect((t.match(/Cache-Control/g) || []).length).toBe(2); // never on /*, so rules cannot join into a conflicting value
+    // BG-017C-06: HTML is no-cache on BOTH "/" (what a browser requests; the live smoke test failed on it) and "/index.html", and on the SPA-served checkout return pages
+    const rules = Object.fromEntries(t.split("\n\n").map((b) => b.split("\n")).filter((l) => l.some((x) => /Cache-Control/.test(x))).map((l) => [l[0], l.find((x) => /Cache-Control/.test(x)).trim()]));
+    expect(rules).toEqual({ "/assets/*": "Cache-Control: public, max-age=31536000, immutable", "/": "Cache-Control: no-cache", "/index.html": "Cache-Control: no-cache", "/billing/*": "Cache-Control: no-cache" });
+    expect((t.match(/Cache-Control/g) || []).length).toBe(4); // never on /*, so rules cannot join into a conflicting value
+    const star = t.split("\n\n").find((b) => b.startsWith("/*\n")); expect(star).toContain("Content-Security-Policy"); expect(star).not.toContain("Cache-Control"); // CSP stays on /*, cache rules do not
   });
   it("refuses anything that is not one https origin without credentials, query or wildcard", () => {
     for (const bad of ["", "not a url", "http://staging-api.getbizgenie.com", "https://user:pw@x.example", "https://x.example/?a=1", "https://x.example/#f", "https://*.example.com"]) expect(() => originOf("X", bad)).toThrow();
