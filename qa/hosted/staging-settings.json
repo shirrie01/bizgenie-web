@@ -12,13 +12,16 @@
     "uvgblmejpbswkvlqvqmz"
   ],
   "approved_api_origins": [
-    "https://staging-api.getbizgenie.com"
+    "https://staging-api.getbizgenie.com",
+    "https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app"
   ],
   "studio_origin": "https://bizgenie-studio-staging.pages.dev",
   "bridge": {
-    "status": "NOT_VERIFIED",
-    "origin": null,
-    "note": "BG-017C-05B: Codex's trusted staging bridge (API PR #229) is not deployed and its browser-facing origin is not verified. Add the verified origin to approved_api_origins (and APPROVED_API_ORIGINS in studio-staging-release.yml) in a reviewed commit only after Codex records it; never hard-code an unverified URL."
+    "status": "FOUNDER_ALLOWLISTED",
+    "origin": "https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app",
+    "note": "BG-017C-06: allowlisted by explicit founder order for WEB PR #71. Allowlisting only permits a build/release for this origin; it does not mean the bridge is deployed or verified, and it does not open any write or checkout gate (those stay off in the bridge). Deploys still need the staging-studio approval."
   },
-  "bridge_api_origins": []
+  "bridge_api_origins": [
+    "https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app"
+  ]
 }

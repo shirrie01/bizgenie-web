@@ -33,7 +33,8 @@ describe("staging release workflow guards (BG-LAUNCH-013)", () => {
   it("the API origin is the default staging host or one approved in this file, checked before any build (BG-017C-05B)", () => {
     const S = JSON.parse(readFileSync("qa/hosted/staging-settings.json", "utf8"));
     expect(wf).toContain(`APPROVED_API_ORIGINS: ${S.approved_api_origins.join(" ")}`);
-    expect(S.approved_api_origins).toContain(S.api_origin); expect(S.bridge).toMatchObject({ status: "NOT_VERIFIED", origin: null });
+    expect(S.approved_api_origins).toContain(S.api_origin); expect(S.bridge.origin).toBe("https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app"); expect(S.bridge_api_origins).toEqual([S.bridge.origin]); expect(S.approved_api_origins).toEqual([S.api_origin, S.bridge.origin]); // BG-017C-06: exactly one founder-allowlisted bridge origin, no wildcard
+    expect(S.bridge.origin).toMatch(/^https:\/\/[a-z0-9-]+\.europe-west1\.run\.app$/);
     expect(wf).toMatch(/api_origin:\n\s+description:[^\n]*\n\s+required: false\n\s+default: ''/);
     const resolveAt = wf.indexOf("id: api"), buildAt = wf.indexOf("Build for staging"), shaAt = wf.indexOf("Refuse anything but a full SHA");
     expect(resolveAt).toBeGreaterThan(0); expect(resolveAt).toBeLessThan(shaAt); expect(shaAt).toBeLessThan(buildAt);

@@ -28,10 +28,10 @@ concurrency: { group: studio-staging-release, cancel-in-progress: false }
 env:
   STAGING_API_ORIGIN: https://staging-api.getbizgenie.com
   # Space-separated. Extended only by a reviewed commit after the trusted bridge's browser-facing origin is verified (qa/hosted/staging-settings.json: approved_api_origins).
-  APPROVED_API_ORIGINS: https://staging-api.getbizgenie.com
+  APPROVED_API_ORIGINS: https://staging-api.getbizgenie.com https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app
   # The subset of the approved origins that is the trusted staging bridge (empty until Codex verifies one). A build for one of these sets VITE_API_ROUTE_LIMITS=bridge-v1, so features the
   # bridge does not carry (Stripe checkout entry, manual publication) say so instead of calling it. Must be a subset of APPROVED_API_ORIGINS (qa/hosted/staging-settings.json: bridge_api_origins).
-  BRIDGE_API_ORIGINS: ''
+  BRIDGE_API_ORIGINS: 'https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app'
   STAGING_SUPABASE_URL: https://zrczojyxebwjgpymbmgu.supabase.co
   STAGING_SUPABASE_REF: zrczojyxebwjgpymbmgu
   PAGES_PROJECT: bizgenie-studio-staging
