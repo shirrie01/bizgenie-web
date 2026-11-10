@@ -289,12 +289,62 @@ describe("workspace creation (existing bootstrap contract)", () => {
     expect(called("POST", "/bootstrap")).toHaveLength(1);
   });
 
+  // BG-LAUNCH-019: the hosted failure was a blocked cross-origin request, which reaches the app as a bare TypeError("Failed to fetch").
+  it("a blocked or unreachable API shows a plain sentence, never 'Failed to fetch', keeps what was typed, and creates nothing", async () => {
+    await toIdentity();
+    handlers["GET /customer/workspace"] = async () => { throw new TypeError("Failed to fetch"); };
+    fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "SM Properties" } });
+    fireEvent.click(button(/create my workspace/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/couldn.t reach bizgenie just now.*nothing was changed/i); expect(alert).not.toHaveTextContent(/failed to fetch/i);
+    expect(screen.getByLabelText(/business name/i)).toHaveValue("SM Properties");
+    expect(button(/create my workspace/i)).toBeEnabled(); expect(called("POST", "/workspace/bootstrap")).toHaveLength(0);
+    expect(screen.queryByText(/workspace (has been|was) created/i)).toBeNull();
+  });
+  it("if the creation request itself gets no answer, it is not described as saved or as failed, and the form is kept", async () => {
+    handlers["POST /customer/workspace/bootstrap"] = async () => { throw new TypeError("Failed to fetch"); };
+    await toIdentity();
+    fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "SM Properties" } });
+    fireEvent.click(button(/create my workspace/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/can.t confirm that went through.*nothing is shown as saved until bizgenie confirms it/i); expect(alert).not.toHaveTextContent(/failed to fetch/i);
+    expect(screen.getByLabelText(/business name/i)).toHaveValue("SM Properties"); expect(button(/create my workspace/i)).toBeEnabled();
+    expect(called("POST", "/workspace/bootstrap")).toHaveLength(1);
+  });
+  // BG-017C-05B: the trusted staging bridge answers writes with 403 STAGING_WRITES_DISABLED until writes are switched on. That is not a permission problem.
+  it("a read-only test environment (bridge 403 STAGING_WRITES_DISABLED) says changes are switched off and keeps the form", async () => {
+    handlers["POST /customer/workspace/bootstrap"] = () => fail(403, { error: { code: "STAGING_WRITES_DISABLED", message: "Studio API request is unavailable" } });
+    await toIdentity();
+    fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "SM Properties" } });
+    fireEvent.click(button(/create my workspace/i));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/switched off in this test environment.*nothing was saved.*still here/i); expect(alert).not.toHaveTextContent(/contact support|can.t create a workspace/i);
+    expect(screen.getByLabelText(/business name/i)).toHaveValue("SM Properties"); expect(button(/create my workspace/i)).toBeEnabled();
+  });
+  it("after a create request that got no answer, trying again looks the workspace up first and sends one create request, never two", async () => {
+    let posts = 0; handlers["POST /customer/workspace/bootstrap"] = async () => { posts += 1; if (posts === 1) throw new TypeError("Failed to fetch"); return ok({ status: "ready", workspace: {}, requires_session_refresh: false }, 201); };
+    await toIdentity();
+    fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "SM Properties" } });
+    fireEvent.click(button(/create my workspace/i));
+    await screen.findByRole("alert"); const getsBefore = called("GET", "/customer/workspace").length;
+    fireEvent.click(button(/create my workspace/i));
+    await waitFor(() => expect(posts).toBe(2));
+    expect(called("GET", "/customer/workspace").length).toBeGreaterThan(getsBefore); expect(called("POST", "/workspace/bootstrap")).toHaveLength(2);
+  });
+  it("a validation refusal (422) asks the customer to check their details and keeps them", async () => {
+    handlers["POST /customer/workspace/bootstrap"] = () => fail(422, { status: "failed", error: { code: "VALIDATION_ERROR", message: "x" } });
+    await toIdentity();
+    fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "SM Properties" } });
+    fireEvent.click(button(/create my workspace/i));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/some details need another look.*still here/i);
+    expect(screen.getByLabelText(/business name/i)).toHaveValue("SM Properties");
+  });
   it("reports a failed creation honestly and stays on the step", async () => {
     handlers["POST /customer/workspace/bootstrap"] = () => fail(500);
     await toIdentity();
     fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "Northgate Vehicle Leasing" } });
     fireEvent.click(button(/create my workspace/i));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be created yet\. nothing was saved/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/temporarily unavailable\. nothing was saved/i);
     expect(screen.getByRole("heading", { name: /tell us about your business/i })).toBeInTheDocument();
   });
 

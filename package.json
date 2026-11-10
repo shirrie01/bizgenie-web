@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "build:pages": "vite build && node scripts/pages-headers.mjs",
-    "acceptance:hosted": "node qa/hosted/hosted-acceptance.mjs"
+    "acceptance:hosted": "node qa/hosted/hosted-acceptance.mjs",
+    "acceptance:sm-properties": "node qa/hosted/sm-properties-acceptance.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

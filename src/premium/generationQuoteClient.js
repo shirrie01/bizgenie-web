@@ -13,6 +13,7 @@
 //  * Confirmation is queued-job semantics. 202 means a reservation and a queued job exist, never that anything was generated.
 //  * A confirmation key is created once per quote, saved before it is sent, and reused for every retry; a lost response is never answered with a new key.
 //  * Status `state` is worker state (queued, claimed, calling, recovery_required, succeeded, failed, cancelled), not approval and not publication.
+import { bridgeRefusal } from "../bridgeErrors";
 export const isGenerationQuoteApiEnabled = (env = import.meta.env) => {
   const raw = env && env.VITE_GENERATION_QUOTE_API;
   return typeof raw === "string" && raw.trim().toLowerCase() === "true";
@@ -102,7 +103,8 @@ async function call(fetchImpl, url, options, { paid = false } = {}) {
   let json = null; try { json = await response.json(); } catch { json = null; }
   const code = (json && json.error && json.error.code) || "";
   if (response.ok) return json;
-  const by = CODE_TEXT[code] || TEXT[response.status];
+  const bridge = bridgeRefusal(code);
+  const by = CODE_TEXT[code] || (bridge && [bridge.kind, bridge.text]) || TEXT[response.status];
   if (by) throw new QuoteError(by[1], { kind: by[0], status: response.status, code });
   if (response.status === 400) throw new QuoteError("Some of the details were not accepted. Nothing was started or charged.", { kind: "invalid", status: 400, code });
   if (response.status === 503) throw new QuoteError(paid ? "The service is not available right now. If this was a confirmation, check its status before trying again." : BILLING_UNAVAILABLE_TEXT, { kind: paid ? "uncertain" : "unavailable", status: 503, code });

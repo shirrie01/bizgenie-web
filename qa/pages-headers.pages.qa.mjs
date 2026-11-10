@@ -23,7 +23,8 @@ test.beforeAll(async () => {
     let file = path.join(DIST, p === '/' ? 'index.html' : p); let served = p === '/' ? '/index.html' : p;
     if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { file = path.join(DIST, 'index.html'); served = '/index.html'; } // Pages' SPA fallback (no 404.html)
     const headers = { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' };
-    for (const r of rules) if (matches(r.pattern, p) || matches(r.pattern, served)) Object.assign(headers, r.headers);
+    // Cloudflare Pages matches _headers rules on the REQUESTED path only (BG-017C-06: the live host answered "/" with its default cache header although "/index.html" had a rule; matching on the served file hid that).
+    for (const r of rules) if (matches(r.pattern, p)) Object.assign(headers, r.headers);
     res.writeHead(200, headers); fs.createReadStream(file).pipe(res);
   }).listen(4190, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
@@ -44,7 +45,9 @@ test('headers: strict CSP naming only the two configured origins, no framing, ha
   const root = await request.get('/'); const h = root.headers();
   expect(h['content-security-policy']).toContain("script-src 'self';"); expect(h['content-security-policy']).toContain('connect-src \'self\' http://api.test http://supabase.test;');
   expect(h['content-security-policy']).toContain("frame-ancestors 'none'"); expect(h['x-frame-options']).toBe('DENY'); expect(h['referrer-policy']).toBe('no-referrer'); expect(h['x-content-type-options']).toBe('nosniff');
+  expect(h['cache-control']).toBe('no-cache'); // "/" is what a browser requests (BG-017C-06)
   expect((await request.get('/index.html')).headers()['cache-control']).toBe('no-cache');
+  expect((await request.get('/billing/checkout/success')).headers()['cache-control']).toBe('no-cache');
   const asset = fs.readdirSync(path.join(DIST, 'assets')).find((f) => f.endsWith('.js'));
   expect((await request.get(`/assets/${asset}`)).headers()['cache-control']).toBe('public, max-age=31536000, immutable');
 });

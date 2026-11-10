@@ -140,7 +140,8 @@ describe("paid beta checkout surface", () => {
     render(<BillingPanel session={readySession} pathname="/" onCheckoutRedirect={vi.fn()} />);
 
     fireEvent.click(await screen.findByRole("button", { name: /secure checkout/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be started/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't confirm whether checkout started/i); // BG-017C-05: a 5xx is an unclear outcome (the retry reuses the same request id)
+    expect(screen.getByRole("alert")).toHaveTextContent(/won't be charged twice/i);
     expect(screen.getByRole("button", { name: /secure checkout/i })).toBeEnabled();
   });
 

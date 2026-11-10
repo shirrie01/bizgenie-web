@@ -54,7 +54,16 @@ export function buildHeaders({ apiUrl, supabaseUrl, allowHttp = false, hstsSecon
     "/assets/*",
     "  Cache-Control: public, max-age=31536000, immutable",
     "",
+    // HTML is never cached without revalidation. Cloudflare Pages matches these rules on the REQUESTED path: "/" is what browsers request (and serves index.html),
+    // "/index.html" is redirected to "/", and "/billing/*" are the Stripe return pages served by the SPA fallback. The live host first showed this gap on "/"
+    // (BG-017C-06: it answered the Pages default "public, max-age=0, must-revalidate", not no-cache). Never put Cache-Control on "/*": it would join with /assets/*.
+    "/",
+    "  Cache-Control: no-cache",
+    "",
     "/index.html",
+    "  Cache-Control: no-cache",
+    "",
+    "/billing/*",
     "  Cache-Control: no-cache",
     "",
   ].join("\n");

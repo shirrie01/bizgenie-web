@@ -40,3 +40,11 @@ export function onAuthStateChange(callback) {
   const { data } = supabase.auth.onAuthStateChange(() => callback());
   return () => data.subscription.unsubscribe();
 }
+
+// Asks Supabase for a new confirmation email. The answer shown to the customer never says whether the address has an account.
+export async function resendConfirmation(email) {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+  const { error } = await supabase.auth.resend({ type: "signup", email });
+  if (error && /rate/i.test(`${error.code} ${error.message}`)) throw new Error(toSafeAuthMessage(error));
+}

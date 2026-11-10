@@ -1,0 +1,209 @@
+{
+ "_provenance": "Extract of src/studio-bridge/service.js (route table, CORS rules, refusal codes, checkout contract) from Codex API PR #229, head 86b39d70be1d9adfa9ab51d56b2799af94d48182 (hosted CI run 42385664735 success), file blob e1c72f478ebf3b5eb09e8ed2f21ff3949b3dbcf9. Supersedes the extract of 6adeed03/90f83790 (blob 89226b16\u2026), which lacked POST /billing/stripe/checkout. The bridge is staging-only and NOT yet deployed; its browser-facing URL is NOT yet verified. Re-vendor if the source changes. {U} stands for the UUID pattern.",
+ "uuid_pattern": "[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}",
+ "routes": [
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/billing/stripe/checkout"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/customer/workspace(?:/brand-brain|/onboarding)?"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/customer/workspace/(?:bootstrap|select|brands)"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/customer/workspace/(?:brand-brain|onboarding)"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/customer/(?:calendar|assets|creative-jobs|social/(?:connections|dispatches|calendar)|billing/(?:subscription|plans|credit-preview))"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/customer/(?:generation-quotes/[a-f0-9-]+|creative-jobs/[A-Za-z0-9_:%-]+)"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/customer/generation-quotes(?:/[a-f0-9-]+/(?:confirm|cancel))?"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/customer/creative-jobs/[A-Za-z0-9_:%-]+/(?:attach|cancel)"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/customer/campaign-recommendations"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD",
+    "POST"
+   ],
+   "path": "/customer/campaigns"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/customer/campaigns/discovery"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD",
+    "PATCH"
+   ],
+   "path": "/customer/campaigns/{U}"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/customer/campaigns/{U}/(?:archive|restore|content-items)"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/customer/campaigns/{U}/(?:calendar|measurements|publication-history)"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/customer/campaigns/{U}/variants/{U}/creative-preview"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/customer/campaigns/{U}/variants/{U}/revisions/{U}/assets/{U}/preview"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/customer/campaigns/{U}/variants/{U}/(?:review|preview-renders|preview-acknowledgements|approval|schedule|reschedule|unschedule|measurements)"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD",
+    "DELETE"
+   ],
+   "path": "/customer/assets/{U}"
+  },
+  {
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/customer/assets/{U}/preview"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/customer/assets/(?:uploads|{U}/complete|{U}/revoke)"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/customer/assets/uploads/{U}/bytes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/customer/social/(?:oauth-intents|oauth-complete|connections/{U}/(?:refresh|disconnect)|dispatches|dispatches/{U}/cancel)"
+  }
+ ],
+ "identity_routes": "^/customer/workspace(?:/(?:bootstrap|select|brands))?$",
+ "cors": {
+  "allowed_request_headers": [
+   "authorization",
+   "content-type",
+   "range"
+  ],
+  "allow_methods": "exactly the method named in Access-Control-Request-Method",
+  "preflight_status": 204,
+  "origin": "exactly one configured Studio origin; anything else 403 ORIGIN_FORBIDDEN"
+ },
+ "scope_rule": "For every route except the identity routes, tenant_id / project_id / brand_id present in the query or JSON body must equal the verified token's trusted scope, otherwise 404 RESOURCE_NOT_AVAILABLE",
+ "write_gates": {
+  "non_get_head": "STAGING_WRITES_DISABLED",
+  "generation_confirm": "GENERATION_CONFIRMATION_DISABLED",
+  "social_writes": "SOCIAL_WRITES_DISABLED",
+  "stripe_checkout": "STRIPE_CHECKOUT_DISABLED"
+ },
+ "refusal_codes": [
+  "ORIGIN_FORBIDDEN",
+  "SERVER_HEADERS_FORBIDDEN",
+  "RESOURCE_NOT_AVAILABLE",
+  "HEADERS_FORBIDDEN",
+  "STAGING_WRITES_DISABLED",
+  "GENERATION_CONFIRMATION_DISABLED",
+  "SOCIAL_WRITES_DISABLED",
+  "BRIDGE_RATE_LIMITED",
+  "STUDIO_BRIDGE_TIMEOUT",
+  "AUTHENTICATION_REQUIRED",
+  "BRIDGE_REQUEST_TOO_LARGE",
+  "JSON_REQUIRED",
+  "VALIDATION_ERROR",
+  "PRIVATE_API_UNAVAILABLE",
+  "STRIPE_CHECKOUT_DISABLED",
+  "STRIPE_BILLING_VALIDATION_ERROR"
+ ],
+ "limits": {
+  "json_body_bytes": 102400,
+  "quote_body_bytes": 16384,
+  "max_requests_per_identity_per_minute": 60,
+  "timeout_ms": 30000,
+  "checkout_body_bytes": 32768
+ },
+ "checkout": {
+  "method": "POST",
+  "path": "/billing/stripe/checkout",
+  "body": {
+   "tenant_id": "identifier, must equal the verified token's trusted tenant (else 404 RESOURCE_NOT_AVAILABLE)",
+   "plan_code": "standard | pro",
+   "request_id": "identifier /^[A-Za-z0-9][A-Za-z0-9._:-]*$/, stable per checkout intent"
+  },
+  "unknown_fields": "400 STRIPE_BILLING_VALIDATION_ERROR (strict schema; no price, URL or user id)",
+  "success": "201 {checkout_session_id, url}",
+  "gate": "needs BG_BRIDGE_ALLOW_WRITES AND BG_BRIDGE_ALLOW_STRIPE_CHECKOUT; both default off; closed gate 403 STRIPE_CHECKOUT_DISABLED",
+  "retry_rule": "an unknown outcome is retried with the SAME request_id (Stripe idempotency key = tenant + plan + request_id), never a new one",
+  "server_authority": "plan->price, success/cancel URLs and owner membership are decided server-side"
+ }
+}

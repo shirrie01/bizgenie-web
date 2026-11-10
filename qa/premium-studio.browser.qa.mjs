@@ -4,6 +4,7 @@
 import { test, expect } from '@playwright/test';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
+import { bridgeGate } from './bridge-gate.mjs';
 
 const require = createRequire(import.meta.url);
 let AXE = null;
@@ -22,8 +23,9 @@ const onboardingDoc = (over = {}) => ({ contract_version: 'workspace-onboarding.
 const NOT_STARTED = onboardingDoc({ version: 0, status: 'not_started', sector: { key: null, source: null }, industry_text: null, channels: { values: [], source: null }, current_step: null, completed_at: null, updated_at: null });
 const camp = (version, items, workflow = 'draft') => ({ campaign_id: CID, tenant_id: 't', project_id: 'p', brand_id: 'b', name: 'Lease Enquiry Campaign', version, items: items ? [{ content_item_id: 'c1', name: 'Offer announcement', format: 'text', variants: [{ variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow, ...(workflow !== 'draft' ? { current_revision_id: 'rev-1', current_content: 'Server persisted review copy' } : {}) }] }] : [] });
 
-async function setup(page, { bootstrapStatus = 201, scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false, role = null, brainPut = 'ok', lostAck = false, putIncomplete = null, putForbidden = false } = {}) {
-  const log = { calls: [], errors: [], puts: [], brainPuts: [], doc: onboarding };
+async function setup(page, { bridge = null, workspaceAbort = false, bootstrapStatus = 201, scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false, role = null, brainPut = 'ok', lostAck = false, putIncomplete = null, putForbidden = false } = {}) {
+  const log = { calls: [], errors: [], puts: [], brainPuts: [], doc: onboarding, refusals: [], scopes: [], preflights: [], requests: [] };
+  let sessionScoped = scoped; // the trusted scope the bridge would read from the signed-in token (MOCKED)
   page.on('pageerror', (e) => log.errors.push(e.message));
   if (!signedOut) await page.addInitScript(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(scoped)]);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
@@ -31,8 +33,20 @@ async function setup(page, { bootstrapStatus = 201, scoped = true, signedOut = f
   await page.route('http://api.test/**', async (route) => {
     const req = route.request(); const u = new URL(req.url()); const m = req.method();
     log.calls.push(`${m} ${u.pathname}`);
-    const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }, body: JSON.stringify(body) });
+    let bridgeHeaders = null;
+    if (bridge) { // judge every request by the trusted staging bridge's own rules (MOCKED stand-in built from the vendored route table)
+      const hdrs = await req.allHeaders(); const scope = sessionScoped ? { tenant_id: 't', project_id: 'p', brand_id: 'b' } : null;
+      for (const k of ['tenant_id', 'project_id', 'brand_id']) { const q = u.searchParams.get(k); if (q) log.scopes.push([k, q, m, u.pathname]); try { const bd = req.postData() ? JSON.parse(req.postData()) : null; if (bd && typeof bd[k] === 'string') log.scopes.push([k, bd[k], m, u.pathname]); } catch { /* not JSON */ } }
+      const verdict = bridgeGate({ method: m, url: req.url(), headers: hdrs, postData: req.postData() }, { origin: bridge.origin || 'http://127.0.0.1:4180', scope, writes: bridge.writes === true, confirmations: bridge.confirmations === true, socialWrites: bridge.socialWrites === true });
+      if (m !== 'OPTIONS') log.requests.push({ method: m, path: u.pathname, headers: hdrs });
+      if (m === 'OPTIONS') log.preflights.push({ path: u.pathname, method: hdrs['access-control-request-method'], headers: hdrs['access-control-request-headers'], status: verdict.status });
+      if (verdict.status) { if (m !== 'OPTIONS') log.refusals.push(`${m} ${u.pathname} ${verdict.status} ${verdict.body && verdict.body.error && verdict.body.error.code}`); return route.fulfill({ status: verdict.status, contentType: 'application/json', headers: verdict.headers, body: verdict.body ? JSON.stringify(verdict.body) : '' }); }
+      if (bridge.expired) { log.refusals.push(`${m} ${u.pathname} 401 AUTHENTICATION_REQUIRED`); return route.fulfill({ status: 401, contentType: 'application/json', headers: verdict.cors, body: JSON.stringify({ error: { code: 'AUTHENTICATION_REQUIRED', message: 'Studio API request is unavailable' } }) }); }
+      bridgeHeaders = verdict.cors;
+    }
+    const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*', ...(bridgeHeaders || {}), 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }, body: JSON.stringify(body) });
     if (m === 'OPTIONS') return json({});
+    if (workspaceAbort && u.pathname === '/customer/workspace') return route.abort('failed'); // what a blocked cross-origin request looks like to the page (MOCKED)
     if (u.pathname.endsWith('/workspace/onboarding')) {
       if (m === 'GET') return onboardingGetStatus === 200 ? json({ status: 'ready', onboarding: log.doc, brand_name_placeholder: placeholder }) : json({ status: 'failed', error: { code: 'ONBOARDING_UNAVAILABLE', message: 'x' } }, onboardingGetStatus);
       if (m === 'PUT') {
@@ -62,7 +76,7 @@ async function setup(page, { bootstrapStatus = 201, scoped = true, signedOut = f
     if (u.pathname === '/customer/campaigns' && m === 'GET') return json({ campaigns: [] });
     if (u.pathname === '/customer/workspace') return role ? json({ status: 'ready', workspace: { tenant_id: 't', tenant_name: 'T', project_id: 'p', project_name: 'P', brand_id: 'b', brand_name: 'B', brand_status: 'approved', membership_role: role } }) : json({ status: 'missing_workspace', workspace: null });
     if (u.pathname.endsWith('/workspace/bootstrap') && bootstrapStatus !== 201) return json({ status: 'failed', error: { code: 'X', message: 'x' } }, bootstrapStatus);
-    if (u.pathname.endsWith('/workspace/bootstrap')) { brainDoc = brain(JSON.parse(req.postData()).business_name); await page.evaluate(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(true)]); return json({ status: 'ready', workspace: { tenant_id: 't' }, requires_session_refresh: false }, 201); }
+    if (u.pathname.endsWith('/workspace/bootstrap')) { sessionScoped = true; brainDoc = brain(JSON.parse(req.postData()).business_name); await page.evaluate(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(true)]); return json({ status: 'ready', workspace: { tenant_id: 't' }, requires_session_refresh: false }, 201); }
     if (u.pathname.endsWith('/campaign-recommendations')) return json({ recommendation: rec });
     if (u.pathname.endsWith('/campaigns') && m === 'POST') { items = 0; return json({ result: { campaign_id: CID, campaign_version: 1 }, campaign: camp(1, 0) }); }
     if (u.pathname.endsWith('/content-items')) { items += 1; return json({ campaign: camp(2, 1) }); }
@@ -504,4 +518,108 @@ test('a failed workspace creation says nothing was saved and can be retried', as
   await expect(page.getByText(/nothing was saved/i).first()).toBeVisible();
   await expect(page.getByRole('button', { name: /create my workspace/i })).toBeEnabled();
   expect(log.errors).toEqual([]);
+});
+
+// BG-LAUNCH-019 (MOCKED): the hosted failure was a blocked cross-origin request. The customer must not see "Failed to fetch" and must not lose what they typed.
+test('a blocked API request while creating the workspace shows a plain sentence, keeps the form, and offers a retry', async ({ page }) => {
+  const log = await setup(page, { scoped: false, onboarding: NOT_STARTED, workspaceAbort: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByLabel('Business name').fill('SM Properties');
+  await page.getByLabel(/website/i).fill('https://smproperties.example');
+  await page.getByRole('button', { name: /create my workspace/i }).click();
+  await expect(page.getByText(/couldn.t reach bizgenie just now/i).first()).toBeVisible();
+  expect(await page.locator('body').innerText()).not.toMatch(/failed to fetch/i);
+  await expect(page.getByLabel('Business name')).toHaveValue('SM Properties');
+  await expect(page.getByLabel(/website/i)).toHaveValue('https://smproperties.example');
+  await expect(page.getByRole('button', { name: /create my workspace/i })).toBeEnabled();
+  expect(log.calls.filter((c) => c.endsWith('/workspace/bootstrap'))).toHaveLength(0);
+  expect(log.errors).toEqual([]);
+});
+
+test('an expired confirmation link is explained on the sign-in screen, offers a new email, and leaves nothing in the address bar', async ({ page }) => {
+  await setup(page, { signedOut: true });
+  await page.goto('/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired');
+  await expect(page.getByText(/confirmation link has expired/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /send me a new confirmation email/i })).toBeVisible();
+  expect(page.url()).not.toMatch(/otp_expired|error_code|error=/);
+  await scan(page, 'expired-link');
+});
+
+test('a customer who is already signed in is not troubled by a stale expired-link error in the address', async ({ page }) => {
+  const log = await setup(page, { scoped: true });
+  await page.goto('/#error=access_denied&error_code=otp_expired');
+  await expect(page.getByText(/confirmation link has expired/i)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /sign out/i }).first()).toBeVisible();
+  expect(page.url()).not.toMatch(/otp_expired|error_code/); expect(log.errors).toEqual([]);
+});
+
+// ---- BG-017C-05B (MOCKED, bridge-faithful) ---------------------------------------------------------------------------------------------------------------------------
+// Every request below is judged by the trusted staging bridge's own rules (exact-origin CORS, the three allowed headers, the route allowlist, write gates, tenant scope), taken from
+// the vendored route table of Codex's API PR #229. This proves the Studio's requests satisfy those rules in a real browser. It does NOT prove a bridge is deployed or reachable.
+const BRIDGE_ORIGIN = 'http://127.0.0.1:4180';
+const fillStep2 = async (page) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByLabel('Business name').fill('SM Properties');
+  await page.getByLabel(/website/i).fill('https://smproperties.example');
+};
+
+test('through the bridge rules: workspace lookup and creation pass their preflights, Step 2 advances to Step 3, a reload does not create a second workspace', async ({ page }) => {
+  const log = await setup(page, { scoped: false, onboarding: NOT_STARTED, bridge: { origin: BRIDGE_ORIGIN, writes: true } });
+  await fillStep2(page);
+  await page.getByRole('button', { name: /create my workspace/i }).click();
+  await expect(page.getByRole('heading', { name: /what does your business do/i })).toBeVisible();
+  const posts = () => log.calls.filter((c) => c === 'POST /customer/workspace/bootstrap').length;
+  expect(posts()).toBe(1);
+  // Chromium sends a CORS preflight for each of these requests, but Playwright answers preflights itself and does not show them to a route handler. So the preflight each request
+  // would trigger is rebuilt here from the headers the page really sent, by the browser's own rule (every non-safelisted request header is listed), and judged by the bridge's rules.
+  const SAFE_CT = /^(text\/plain|multipart\/form-data|application\/x-www-form-urlencoded)/i;
+  const needsPreflight = (r) => r.method !== 'GET' || r.headers.authorization || r.headers.range;
+  const asked = (r) => ['authorization', 'range', ...(r.headers['content-type'] && !SAFE_CT.test(r.headers['content-type']) ? ['content-type'] : [])].filter((h) => r.headers[h]).sort();
+  const checked = new Set();
+  for (const r of log.requests.filter(needsPreflight)) {
+    const key = `${r.method} ${r.path.replace(/[0-9a-f-]{36}/g, ':id')}`; if (checked.has(key)) continue; checked.add(key);
+    const v = bridgeGate({ method: 'OPTIONS', url: `http://api.test${r.path}`, headers: { origin: BRIDGE_ORIGIN, 'access-control-request-method': r.method, 'access-control-request-headers': asked(r).join(',') } }, { origin: BRIDGE_ORIGIN, scope: null });
+    expect(v.status, `preflight for ${key} (${asked(r).join(',')})`).toBe(204);
+    expect(v.headers['access-control-allow-methods']).toBe(r.method);
+  }
+  expect([...checked]).toEqual(expect.arrayContaining(['GET /customer/workspace', 'POST /customer/workspace/bootstrap']));
+  await page.reload();
+  await expect(page.getByRole('button', { name: /sign out/i }).first()).toBeVisible();
+  expect(posts()).toBe(1); // reload recognised the workspace; no second create
+  expect(log.refusals).toEqual([]); expect(log.errors).toEqual([]);
+});
+
+test('a read-only test environment (bridge 403 STAGING_WRITES_DISABLED) is explained, nothing advances, and the form is kept', async ({ page }) => {
+  const log = await setup(page, { scoped: false, onboarding: NOT_STARTED, bridge: { origin: BRIDGE_ORIGIN, writes: false } });
+  await fillStep2(page);
+  await page.getByRole('button', { name: /create my workspace/i }).click();
+  await expect(page.getByText(/switched off in this test environment/i).first()).toBeVisible();
+  expect(await page.locator('body').innerText()).not.toMatch(/contact support|failed to fetch|can.t create a workspace/i);
+  await expect(page.getByLabel('Business name')).toHaveValue('SM Properties'); await expect(page.getByLabel(/website/i)).toHaveValue('https://smproperties.example');
+  await expect(page.getByRole('button', { name: /create my workspace/i })).toBeEnabled();
+  expect(log.calls.filter((c) => c === 'POST /customer/workspace/bootstrap').length).toBe(1);
+  expect(log.refusals.some((r) => r.includes('STAGING_WRITES_DISABLED'))).toBe(true);
+});
+
+test('tenant isolation: a signed-in customer browsing the workspace only ever names their own tenant, project and brand, and the bridge never has to refuse them', async ({ page }) => {
+  const log = await setup(page, { scoped: true, bridge: { origin: BRIDGE_ORIGIN, writes: true } });
+  await page.goto('/');
+  for (const name of [/overview/i, /campaigns/i, /calendar/i, /brand/i, /plan and billing/i]) { const b = page.getByRole('button', { name }).first(); if (await b.isVisible().catch(() => false)) { await b.click(); await page.waitForLoadState('networkidle'); } }
+  const own = { tenant_id: 't', project_id: 'p', brand_id: 'b' };
+  for (const [k, v, m, path] of log.scopes) expect(v, `${m} ${path} ${k}`).toBe(own[k]);
+  expect(log.refusals.filter((r) => /RESOURCE_NOT_AVAILABLE/.test(r) && !/\/customer\/(billing|social|assets|campaigns\/discovery)/.test(r))).toEqual([]);
+  // the same rule, from the other side: a request naming another tenant is answered as not available (the bridge's rule, MOCKED)
+  const status = await page.evaluate(async () => (await fetch('http://api.test/customer/campaigns?tenant_id=other&project_id=p', { headers: { authorization: 'Bearer a.b.c' } })).status);
+  expect(status).toBe(404);
+});
+
+test('an expired session through the bridge shows a clear way back in, with no data and no "Failed to fetch"', async ({ page }) => {
+  const log = await setup(page, { scoped: false, onboarding: NOT_STARTED, bridge: { origin: BRIDGE_ORIGIN, writes: true, expired: true } });
+  await page.goto('/');
+  await expect(page.getByText(/your session has ended/i).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /sign in again/i }).first()).toBeVisible();
+  expect(await page.locator('body').innerText()).not.toMatch(/failed to fetch/i);
+  expect(log.refusals.every((r) => /401 AUTHENTICATION_REQUIRED/.test(r))).toBe(true);
 });
