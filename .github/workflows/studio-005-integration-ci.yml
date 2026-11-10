@@ -34,7 +34,7 @@ jobs:
       - run: npm test
       - run: npm run build
   preview-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions: { contents: read }
     strategy:
@@ -70,7 +70,7 @@ jobs:
           if [ -z "$FILES" ] || [ ! -f studio-preview/playwright.config.mjs ]; then echo "no preview browser checks at this ref" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
           npx playwright test $FILES --config studio-preview/playwright.config.mjs
   app-a11y-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions: { contents: read }
     strategy:
@@ -116,7 +116,7 @@ jobs:
         run: npx playwright test --config qa/playwright.config.mjs
   premium-browser:
     # BG-STUDIO-008-FE: the flag-ON production build, real browser, mocked API and session (no network, no secrets).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions: { contents: read }
     strategy:
@@ -195,7 +195,7 @@ jobs:
           if-no-files-found: ignore
   pages-headers-browser:
     # BG-LAUNCH-011: the Cloudflare Pages release candidate (flag-ON build + generated _headers) in a real browser; mocked identity and API (no network, no secrets).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions: { contents: read }
     strategy:
