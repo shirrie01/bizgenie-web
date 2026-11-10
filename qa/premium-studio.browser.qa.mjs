@@ -22,7 +22,7 @@ const onboardingDoc = (over = {}) => ({ contract_version: 'workspace-onboarding.
 const NOT_STARTED = onboardingDoc({ version: 0, status: 'not_started', sector: { key: null, source: null }, industry_text: null, channels: { values: [], source: null }, current_step: null, completed_at: null, updated_at: null });
 const camp = (version, items, workflow = 'draft') => ({ campaign_id: CID, tenant_id: 't', project_id: 'p', brand_id: 'b', name: 'Lease Enquiry Campaign', version, items: items ? [{ content_item_id: 'c1', name: 'Offer announcement', format: 'text', variants: [{ variant_id: 'v1', platform: 'instagram', placement: 'feed', destination_label: 'Instagram', workflow, ...(workflow !== 'draft' ? { current_revision_id: 'rev-1', current_content: 'Server persisted review copy' } : {}) }] }] : [] });
 
-async function setup(page, { scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false, role = null, brainPut = 'ok', lostAck = false, putIncomplete = null, putForbidden = false } = {}) {
+async function setup(page, { bootstrapStatus = 201, scoped = true, signedOut = false, brainDoc = brain('Northgate Vehicle Leasing', 'We lease cars to small businesses.'), brainStatus = 200, onboarding = onboardingDoc(), onboardingGetStatus = 200, onboardingPutStatus = 200, placeholder = false, role = null, brainPut = 'ok', lostAck = false, putIncomplete = null, putForbidden = false } = {}) {
   const log = { calls: [], errors: [], puts: [], brainPuts: [], doc: onboarding };
   page.on('pageerror', (e) => log.errors.push(e.message));
   if (!signedOut) await page.addInitScript(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(scoped)]);
@@ -61,6 +61,7 @@ async function setup(page, { scoped = true, signedOut = false, brainDoc = brain(
     if (u.pathname.endsWith('/brand-brain') && m === 'PUT') { const b = JSON.parse(req.postData()); log.brainPuts.push(b); if (brainPut === 'forbidden') return json({ status: 'failed', error: { code: 'BRAND_BRAIN_WRITE_FORBIDDEN', message: 'Current workspace-owner authority is required for business identity changes' } }, 403); if (brainPut === 'conflict') return json({ status: 'failed', error: { code: 'BRAND_BRAIN_VERSION_CONFLICT', message: 'Brand Brain changed; reload before saving' } }, 409); if (brainPut === 'unavailable') return json({ status: 'failed', error: { code: 'BRAND_BRAIN_PERSISTENCE_UNAVAILABLE', message: 'x' } }, 503); brainDoc = { ...b, brand_id: 'b', project_id: 'p', metadata: { version: 2, status: 'draft' } }; return json({ status: 'ready', brand_brain: brainDoc }); }
     if (u.pathname === '/customer/campaigns' && m === 'GET') return json({ campaigns: [] });
     if (u.pathname === '/customer/workspace') return role ? json({ status: 'ready', workspace: { tenant_id: 't', tenant_name: 'T', project_id: 'p', project_name: 'P', brand_id: 'b', brand_name: 'B', brand_status: 'approved', membership_role: role } }) : json({ status: 'missing_workspace', workspace: null });
+    if (u.pathname.endsWith('/workspace/bootstrap') && bootstrapStatus !== 201) return json({ status: 'failed', error: { code: 'X', message: 'x' } }, bootstrapStatus);
     if (u.pathname.endsWith('/workspace/bootstrap')) { brainDoc = brain(JSON.parse(req.postData()).business_name); await page.evaluate(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(true)]); return json({ status: 'ready', workspace: { tenant_id: 't' }, requires_session_refresh: false }, 201); }
     if (u.pathname.endsWith('/campaign-recommendations')) return json({ recommendation: rec });
     if (u.pathname.endsWith('/campaigns') && m === 'POST') { items = 0; return json({ result: { campaign_id: CID, campaign_version: 1 }, campaign: camp(1, 0) }); }
@@ -479,4 +480,28 @@ test('Brand tab, refused save (403): the Brand Brain stays on screen and is neve
   await expect(page.getByText(/could not be loaded/i)).toHaveCount(0);
   expect(log.brainPuts).toHaveLength(1);
   await scan(page, 'brand-tab-refused');
+});
+
+// BG-LAUNCH-015 (MOCKED): an expired sign-in during workspace creation is a session problem, not a missing workspace.
+test('workspace creation with an expired sign-in offers Sign in again and shows no workspace data', async ({ page }) => {
+  const log = await setup(page, { scoped: false, onboarding: NOT_STARTED, bootstrapStatus: 401 });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByLabel('Business name').fill('Northgate Vehicle Leasing');
+  await page.getByRole('button', { name: /create my workspace/i }).click();
+  await expect(page.getByText(/your session has ended/i).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /sign in again/i }).first()).toBeVisible();
+  expect(log.calls.filter((c) => c.endsWith('/workspace/bootstrap'))).toHaveLength(1);
+  expect(await page.locator('body').innerText()).not.toMatch(/Lease Enquiry|Northgate Vehicle Leasing Campaign/);
+});
+
+test('a failed workspace creation says nothing was saved and can be retried', async ({ page }) => {
+  const log = await setup(page, { scoped: false, onboarding: NOT_STARTED, bootstrapStatus: 503 });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByLabel('Business name').fill('Northgate Vehicle Leasing');
+  await page.getByRole('button', { name: /create my workspace/i }).click();
+  await expect(page.getByText(/nothing was saved/i).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /create my workspace/i })).toBeEnabled();
+  expect(log.errors).toEqual([]);
 });
