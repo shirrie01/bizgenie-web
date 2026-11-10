@@ -1,3 +1,5 @@
+> **HISTORICAL SNAPSHOT (written 27 Oct 2026; not current status).** Pull-request numbers, head SHAs, open/merged counts, gate states, "17 tabs" and the proposed sequences below were true when written and are **superseded**: WEB #56–#73 are now merged or closed, and Mission Control now has 18 tabs. Authority for current status is the Google Sheets Mission Control, GitHub #128 (frozen launch contract) and #191 (checkpoints). Nothing here is an approval of any price, launch date, provider capability or customer acceptance.
+
 # BG-PROGRAMME-001 — integration contracts and mismatches
 
 27 Oct 2026. Format: Consumer → expected contract → actual provider → consequence → correction → owner → test. Evidence: native inspection of web #56 and api #218, plus the 023 backend218 integration test (local Postgres).

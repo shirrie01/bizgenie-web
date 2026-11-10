@@ -1,3 +1,5 @@
+> **HISTORICAL SNAPSHOT (written 27 Oct 2026; not current status).** Pull-request numbers, head SHAs, open/merged counts, gate states, "17 tabs" and the proposed sequences below were true when written and are **superseded**: WEB #56–#73 are now merged or closed, and Mission Control now has 18 tabs. Authority for current status is the Google Sheets Mission Control, GitHub #128 (frozen launch contract) and #191 (checkpoints). Nothing here is an approval of any price, launch date, provider capability or customer acceptance.
+
 # BG-PROGRAMME-001 — capability matrix (25 capabilities) — corrected
 
 Corrected 27 Oct 2026: every Learning Brain, Hybrid UGC and social-connection row is **PRE-LAUNCH** (`DEC-014`), i.e. launch-blocking, not deferrable. Evidence classes: **H** historical staging PASS (in Mission Control, preserved by `LOCK-015`, not visible to me), **L** local draft integration, **D** current deployed operational acceptance. The statuses below are class L/code inspection only; they neither erase nor restate class H.
