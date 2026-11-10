@@ -3,6 +3,8 @@ dist
 .env
 .env.*
 !.env.example
+site-dist
+site-dist*
 dist-*
 test-results
 playwright-report
