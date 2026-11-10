@@ -7,13 +7,13 @@ import { join } from "node:path";
 const SECRET_MARKERS = [/service_role/i, /sk_(live|test)_[A-Za-z0-9]/, /client_secret/i, /TIKTOK_CLIENT_SECRET/, /BEGIN [A-Z ]*PRIVATE KEY/, /whsec_[A-Za-z0-9]/, /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/];
 const REQUIRED_HEADERS = ["content-security-policy", "strict-transport-security", "x-content-type-options", "x-frame-options", "referrer-policy", "permissions-policy"];
 
-export function checkCsp(csp, { api, supabaseRef }) {
+export function checkCsp(csp, { api, supabaseRef, supabaseOrigin }) {
   const bad = []; const d = Object.fromEntries(String(csp || "").split(";").map((s) => s.trim()).filter(Boolean).map((s) => { const [k, ...v] = s.split(/\s+/); return [k, v]; }));
   if (!d["script-src"] || d["script-src"].join(" ") !== "'self'") bad.push("script-src must be 'self' only");
   if (JSON.stringify(d["object-src"]) !== '["\'none\'"]') bad.push("object-src must be 'none'");
   if (JSON.stringify(d["frame-ancestors"]) !== '["\'none\'"]') bad.push("frame-ancestors must be 'none'");
   const connect = d["connect-src"] || [];
-  const allowed = new Set(["'self'", api, `https://${supabaseRef}.supabase.co`]);
+  const allowed = new Set(["'self'", api, supabaseOrigin || `https://${supabaseRef}.supabase.co`]);
   for (const c of connect) if (!allowed.has(c)) bad.push(`connect-src has an unexpected origin: ${c}`);
   for (const a of allowed) if (!connect.includes(a)) bad.push(`connect-src is missing ${a}`);
   if (/\*/.test(csp) || /unsafe-eval/.test(csp)) bad.push("wildcard or unsafe-eval in CSP");
@@ -23,7 +23,9 @@ export function scanText(name, text, { api, supabaseRef }) {
   const bad = [];
   for (const re of SECRET_MARKERS) if (re.test(text)) bad.push(`${name}: secret-like content (${re})`);
   for (const m of text.matchAll(/https:\/\/([a-z0-9-]+)\.supabase\.co/g)) if (m[1] !== supabaseRef) bad.push(`${name}: another Supabase project (${m[1]})`);
-  for (const m of text.matchAll(/https:\/\/[a-z0-9.-]*getbizgenie\.com/g)) { if (m[0] !== api && !/^https:\/\/(www\.|staging-app\.|getbizgenie)/.test(m[0]) && m[0] !== "https://getbizgenie.com") bad.push(`${name}: another BizGenie origin (${m[0]})`); }
+  // The Studio source names the two reviewed TikTok callback hosts (it checks a connect URL against them), so those two are always present in every build.
+  const BUILT_IN = new Set(["https://getbizgenie.com", "https://staging-api.getbizgenie.com"]);
+  for (const m of text.matchAll(/https:\/\/[a-z0-9.-]*getbizgenie\.com/g)) { if (m[0] !== api && !BUILT_IN.has(m[0]) && !/^https:\/\/(www\.|staging-app\.)/.test(m[0])) bad.push(`${name}: another BizGenie origin (${m[0]})`); }
   return bad;
 }
 function walk(dir) { return readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? walk(p) : [p]; }); }

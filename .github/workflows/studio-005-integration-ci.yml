@@ -233,6 +233,19 @@ jobs:
       - name: Pages headers and CSP browser checks
         env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
         run: npx playwright test --config qa/pages-headers.playwright.config.mjs
+      - name: Build the staging-shaped candidate for the hosted-acceptance harness self-test (MOCKED origins, noindex on)
+        env:
+          PAGES_ALLOW_HTTP_ORIGINS: '1'
+          PAGES_NOINDEX: '1'
+          VITE_PREMIUM_STUDIO_ENABLED: 'true'
+          VITE_SUPABASE_URL: http://supabase.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
+          VITE_BIZGENIE_API_URL: http://api.test
+        run: |
+          npx vite build --outDir dist-hostedself
+          node scripts/pages-headers.mjs dist-hostedself
+      - name: Hosted-acceptance harness self-test (refuses production, never marks MOCKED runs as hosted)
+        run: npx playwright test --config qa/hosted/hosted-selftest.playwright.config.mjs
       - if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:

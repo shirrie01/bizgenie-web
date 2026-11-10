@@ -12,10 +12,10 @@ The Vite single-page Studio built from `bizgenie-web` branch `bg-launch-010-fe-c
 | Setting | Value |
 |---|---|
 | Project | `bizgenie-studio-staging` (one project per environment; never reuse for production) |
-| Source | GitHub `shirrie01/bizgenie-web`; production branch `bg-launch-010-fe-customer-journey` |
-| Preview deployments | **None** (branch control: no previews), so other branches never get a public URL |
+| Source | **Direct upload from the manual release workflow** (BG-LAUNCH-017 correction: the earlier "Git source" row contradicted the workflow). Production branch label `main`, the value the workflow deploys with (`PAGES_PRODUCTION_BRANCH`). No Git integration, so nothing builds or deploys on push |
+| Preview deployments | **None** (no Git integration; the workflow deploys only the approved SHA to the production branch label) |
 | Framework preset | None |
-| Build command / output | `npm run build:pages` / `dist` |
+| Build command / output | built by the workflow (`npm run build:pages`), uploaded from `dist` |
 | Root directory | `/` |
 | Node | `NODE_VERSION=22` (what CI uses). Pages' build image runs `npm clean-install` when a lockfile exists, which honours `package-lock.json` (confirm in the first build log) |
 | Custom domain | `staging-app.getbizgenie.com` (GoDaddy `CNAME staging-app -> <project>.pages.dev`; one new record, nothing existing edited) |
