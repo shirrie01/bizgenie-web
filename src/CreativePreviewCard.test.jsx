@@ -76,3 +76,29 @@ describe("CreativePreviewCard", () => {
     expect(screen.getByText(/no saved text/i)).toBeInTheDocument();
   });
 });
+
+describe("platform fit (BG-LAUNCH-002)", () => {
+  const variant = { variant_id: "v1", platform: "instagram", placement: "feed", destination_label: "Instagram" };
+  const media = (fit, extra = {}) => ({ asset_id: "a1", role: "primary", media_kind: "video", status: "unavailable", reason: "PRIVATE_MEDIA_DELIVERY_UNAVAILABLE", width: 720, height: 1280, duration_ms: 4000, byte_size: 1048576, platform_suitability: fit, ...extra });
+  const preview = (m) => ({ copy: { body: "Hello" }, media: [m], revision_number: 2 });
+  it("shows the measured facts and a passing verdict, still saying the platform decides", () => {
+    render(<CreativePreviewCard variant={variant} preview={preview(media({ status: "suitable", suitable: true, profile_id: "instagram.feed.video", reasons: [] }))} />);
+    expect(screen.getByText(/720×1280 · 4 s · 1 MB/)).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(/Suits Instagram.*final decision/);
+  });
+  it("lists each reason in plain English when the media does not suit the placement", () => {
+    render(<CreativePreviewCard variant={variant} preview={preview(media({ status: "not_suitable", suitable: false, profile_id: "instagram.feed.video", reasons: [{ code: "AUDIO_UNSUPPORTED" }, { code: "DURATION_UNSUPPORTED", detail: "70s, allowed 3-60s" }, { code: "SOMETHING_NEW" }] }))} />);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Doesn’t suit Instagram yet");
+    expect(alert).toHaveTextContent("without an audio track"); expect(alert).toHaveTextContent("70s, allowed 3-60s"); expect(alert).toHaveTextContent("does not meet the placement");
+  });
+  it("never claims a fit it was not told about", () => {
+    render(<CreativePreviewCard variant={variant} preview={preview(media(undefined))} />);
+    expect(screen.getByText(/Not checked against Instagram/)).toBeInTheDocument();
+    expect(screen.queryByText(/Suits Instagram/)).toBeNull();
+  });
+  it("treats an inconsistent verdict as unchecked, not suitable", () => {
+    render(<CreativePreviewCard variant={variant} preview={preview(media({ status: "suitable", suitable: false, reasons: [] }))} />);
+    expect(screen.getByText(/Not checked against Instagram/)).toBeInTheDocument();
+  });
+});
