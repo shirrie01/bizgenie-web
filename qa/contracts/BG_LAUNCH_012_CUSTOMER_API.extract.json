@@ -1,0 +1,385 @@
+{
+ "_provenance": "Extract of docs/contracts/BG_LAUNCH_012_CUSTOMER_API.json (bizgenie.customer-launch.v1, status review_candidate_not_deployed) from Codex branch bg-launch-012-backend-completion @ d44b29f185f20b1ac6b23df439c14cfaec8c906b, file blob 10c7fd3d565fd2f34ca3a5ca674ee91231430970. Only the facts the Studio contract test needs. Not authoritative: re-vendor when the contract changes.",
+ "endpoints": [
+  {
+   "id": "workspaces",
+   "method": "GET",
+   "path": "/customer/workspace"
+  },
+  {
+   "id": "select_workspace",
+   "method": "POST",
+   "path": "/customer/workspace/select",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "brand_id"
+   ]
+  },
+  {
+   "id": "brand_read",
+   "method": "GET",
+   "path": "/customer/workspace/brand-brain"
+  },
+  {
+   "id": "brand_save",
+   "method": "PUT",
+   "path": "/customer/workspace/brand-brain"
+  },
+  {
+   "id": "onboarding",
+   "method": "GET",
+   "path": "/customer/workspace/onboarding"
+  },
+  {
+   "id": "onboarding_save",
+   "method": "PUT",
+   "path": "/customer/workspace/onboarding",
+   "request_fields": [
+    "idempotency_key",
+    "expected_version"
+   ],
+   "optional_fields": [
+    "sector_key",
+    "sector_source",
+    "industry_text",
+    "channels",
+    "channels_source",
+    "current_step",
+    "draft",
+    "complete"
+   ]
+  },
+  {
+   "id": "campaign_create",
+   "method": "POST",
+   "path": "/customer/campaigns",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "idempotency_key",
+    "brand_id",
+    "name",
+    "goal",
+    "display_timezone"
+   ]
+  },
+  {
+   "id": "campaign_get",
+   "method": "GET",
+   "path": "/customer/campaigns/:id"
+  },
+  {
+   "id": "content_item",
+   "method": "POST",
+   "path": "/customer/campaigns/:id/content-items",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "idempotency_key",
+    "expected_campaign_version",
+    "name",
+    "format",
+    "platform",
+    "placement",
+    "destination_label"
+   ],
+   "optional_fields": [
+    "destination_key",
+    "initial_content"
+   ]
+  },
+  {
+   "id": "generation_quote",
+   "method": "POST",
+   "path": "/customer/generation-quotes",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "campaign_id",
+    "variant_id",
+    "expected_campaign_version",
+    "execution_class",
+    "idempotency_key"
+   ],
+   "optional_fields": [
+    "execution_mode",
+    "execution_brief",
+    "supplied_assets",
+    "content_dna",
+    "strategy_stage"
+   ]
+  },
+  {
+   "id": "generation_confirm",
+   "method": "POST",
+   "path": "/customer/generation-quotes/:id/confirm",
+   "request_fields": [
+    "idempotency_key",
+    "max_credits",
+    "confirmed"
+   ]
+  },
+  {
+   "id": "generation_status",
+   "method": "GET",
+   "path": "/customer/generation-quotes/:id"
+  },
+  {
+   "id": "generation_cancel",
+   "method": "POST",
+   "path": "/customer/generation-quotes/:id/cancel"
+  },
+  {
+   "id": "creative_job",
+   "method": "GET",
+   "path": "/customer/creative-jobs/:id"
+  },
+  {
+   "id": "creative_attach",
+   "method": "POST",
+   "path": "/customer/creative-jobs/:id/attach"
+  },
+  {
+   "id": "creative_preview",
+   "method": "GET",
+   "path": "/customer/campaigns/:id/variants/:id/creative-preview"
+  },
+  {
+   "id": "media_bytes",
+   "method": "GET",
+   "path": "/customer/campaigns/:id/variants/:id/revisions/:id/assets/:id/preview"
+  },
+  {
+   "id": "calendar",
+   "method": "GET",
+   "path": "/customer/calendar"
+  },
+  {
+   "id": "review",
+   "method": "POST",
+   "path": "/customer/campaigns/:id/variants/:id/review",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "idempotency_key",
+    "expected_campaign_version",
+    "revision_id"
+   ]
+  },
+  {
+   "id": "preview-renders",
+   "method": "POST",
+   "path": "/customer/campaigns/:id/variants/:id/preview-renders",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "idempotency_key",
+    "revision_id"
+   ]
+  },
+  {
+   "id": "preview-acknowledgements",
+   "method": "POST",
+   "path": "/customer/campaigns/:id/variants/:id/preview-acknowledgements",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "idempotency_key",
+    "expected_campaign_version",
+    "revision_id",
+    "render_receipt_id",
+    "acknowledged"
+   ]
+  },
+  {
+   "id": "approval",
+   "method": "POST",
+   "path": "/customer/campaigns/:id/variants/:id/approval",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "idempotency_key",
+    "expected_campaign_version",
+    "revision_id",
+    "preview_id",
+    "approved"
+   ]
+  },
+  {
+   "id": "schedule",
+   "method": "POST",
+   "path": "/customer/campaigns/:id/variants/:id/schedule",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "idempotency_key",
+    "expected_campaign_version",
+    "revision_id",
+    "scheduled_for",
+    "timezone",
+    "local_datetime",
+    "utc_offset_minutes"
+   ]
+  },
+  {
+   "id": "reschedule",
+   "method": "POST",
+   "path": "/customer/campaigns/:id/variants/:id/reschedule",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "idempotency_key",
+    "expected_campaign_version",
+    "revision_id",
+    "scheduled_for",
+    "timezone",
+    "local_datetime",
+    "utc_offset_minutes"
+   ]
+  },
+  {
+   "id": "unschedule",
+   "method": "POST",
+   "path": "/customer/campaigns/:id/variants/:id/unschedule",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "idempotency_key",
+    "expected_campaign_version",
+    "schedule_id"
+   ]
+  },
+  {
+   "id": "connections",
+   "method": "GET",
+   "path": "/customer/social/connections"
+  },
+  {
+   "id": "oauth_intent",
+   "method": "POST",
+   "path": "/customer/social/oauth-intents",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "brand_id",
+    "platform",
+    "pkce_challenge"
+   ]
+  },
+  {
+   "id": "oauth_complete",
+   "method": "POST",
+   "path": "/customer/social/oauth-complete",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "brand_id",
+    "intent_id",
+    "state",
+    "code",
+    "code_verifier"
+   ]
+  },
+  {
+   "id": "disconnect",
+   "method": "POST",
+   "path": "/customer/social/connections/:id/disconnect"
+  },
+  {
+   "id": "dispatch",
+   "method": "POST",
+   "path": "/customer/social/dispatches",
+   "request_fields": [
+    "tenant_id",
+    "project_id",
+    "brand_id",
+    "campaign_id",
+    "variant_id",
+    "schedule_id",
+    "expected_campaign_version",
+    "publishing_confirmed"
+   ],
+   "optional_fields": [
+    "connection_id"
+   ]
+  },
+  {
+   "id": "credit_read",
+   "method": "GET",
+   "path": "/customer/billing/subscription"
+  },
+  {
+   "id": "plans",
+   "method": "GET",
+   "path": "/customer/billing/plans"
+  }
+ ],
+ "execution_classes": [
+  "text.standard",
+  "image.normal",
+  "video.normal",
+  "video.premium"
+ ],
+ "job_states": [
+  "queued",
+  "claimed",
+  "calling",
+  "recovery_required",
+  "succeeded",
+  "failed",
+  "cancelled"
+ ],
+ "dispatch_states": [
+  "queued",
+  "claimed",
+  "sending",
+  "reconciliation_required",
+  "published",
+  "uploaded",
+  "failed",
+  "cancelled"
+ ],
+ "connection_states": [
+  "active",
+  "expired",
+  "revoked"
+ ],
+ "workspace_statuses": [
+  "missing_workspace",
+  "ready",
+  "selection_required"
+ ],
+ "error_codes": {
+  "401": [
+   "AUTHENTICATION_REQUIRED"
+  ],
+  "402": [
+   "GENERATION_CREDITS_UNAVAILABLE"
+  ],
+  "409": [
+   "VERSION_CONFLICT",
+   "QUOTE_CHANGED",
+   "QUOTE_EXPIRED",
+   "QUOTE_CANCELLED",
+   "IDEMPOTENCY_KEY_CONFLICT",
+   "RESULT_NOT_READY",
+   "PUBLICATION_AUTHORITY_STALE",
+   "CONNECTION_UNAVAILABLE",
+   "OAUTH_STATE_INVALID"
+  ],
+  "503": [
+   "SOCIAL_NOT_CONFIGURED",
+   "GENERATION_BILLING_UNAVAILABLE",
+   "CREATIVE_JOBS_UNAVAILABLE",
+   "EXECUTION_RECONCILIATION_REQUIRED",
+   "COMMERCIAL_CATALOG_UNAVAILABLE"
+  ]
+ },
+ "not_in_contract_but_implemented_in_api_226": [
+  "POST /customer/workspace/bootstrap",
+  "POST /customer/workspace/brands",
+  "GET /customer/campaigns",
+  "POST /customer/campaign-recommendations"
+ ]
+}

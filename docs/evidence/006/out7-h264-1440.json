@@ -1,0 +1,44 @@
+{
+ "1440": [
+  [
+   "media-alert",
+   "This video couldn’t be displayed in your browser."
+  ],
+  [
+   "media-calls-so-far",
+   "HEAD | GET"
+  ],
+  [
+   "review-note",
+   [
+    "Step 1 of 3: render a preview of this content.",
+    "An image or video is attached but couldn’t be displayed here. Acknowledging covers the text and the preview receipt only."
+   ]
+  ],
+  [
+   "real-writes",
+   []
+  ],
+  [
+   "blobs",
+   {
+    "created": 1,
+    "revoked": 1
+   }
+  ],
+  [
+   "aborted-media-requests",
+   [
+    "HEAD net::ERR_ABORTED"
+   ]
+  ],
+  [
+   "media-calls",
+   "HEAD auth=Bearer a tokenInUrl=false | GET auth=Bearer a tokenInUrl=false"
+  ],
+  [
+   "overflow",
+   false
+  ]
+ ]
+}
