@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 jobs:
   browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -26,14 +26,14 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
-      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - run: npm install --no-save @playwright/test@1.56.1
       - run: npx playwright install --with-deps chromium
       - name: Serve isolated preview
         run: python3 -m http.server 4178 --bind 127.0.0.1 &
       - name: Run browser tests
         env:
           BG_VIEWPORT: ${{ matrix.viewport }}
-        run: npx playwright test studio-preview/browser.check.mjs --config studio-preview/playwright.config.mjs
+        run: npx playwright test studio-preview/browser.check.mjs studio-preview/v3/browser.check.mjs --config studio-preview/playwright.config.mjs
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

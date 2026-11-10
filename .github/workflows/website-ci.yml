@@ -35,7 +35,7 @@ jobs:
         run: |
           if SITE_OUT=site-dist-strict node site/build.mjs --strict; then echo "strict build unexpectedly succeeded"; exit 1; fi
   browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions: { contents: read }
     strategy:

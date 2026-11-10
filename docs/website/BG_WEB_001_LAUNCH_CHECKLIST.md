@@ -27,7 +27,7 @@
 | Approved brand assets: **no logo file exists in the repository**; the site uses a text wordmark and a plain "B" favicon as placeholders | founder / design |
 | Approval of the product screenshots (real pre-release UI, sample data, sample business name) or replacement with approved imagery | founder |
 | Confirm the status wording for each capability (Pre-release build / In development) is acceptable | founder |
-| Confirm which social channels may be named in the FAQ (currently "Instagram and Facebook are being worked on first; others may follow", subject to platform approval) | founder |
+| Confirm which social channels may be named in the FAQ (the FAQ now names no channel as "first": it says which channels come first depends on each platform approving BizGenie; corrected 10 Nov 2026 because no Meta connector exists in the code) | founder |
 
 ### A3. Backend and infrastructure (separate approvals; nothing activated)
 | Item | Owner |

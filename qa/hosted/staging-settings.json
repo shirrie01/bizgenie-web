@@ -1,0 +1,27 @@
+{
+  "_note": "Single source of truth for the staging Studio (BG-LAUNCH-017). Consumed by the hosted acceptance harness, the release workflow guard test and the activation request. Nothing here is a secret.",
+  "environment": "staging",
+  "studio_hostname": "staging-app.getbizgenie.com",
+  "pages_project": "bizgenie-studio-staging",
+  "pages_hostname_suffix": "bizgenie-studio-staging.pages.dev",
+  "pages_production_branch": "main",
+  "api_origin": "https://staging-api.getbizgenie.com",
+  "supabase_ref": "zrczojyxebwjgpymbmgu",
+  "supabase_origin": "https://zrczojyxebwjgpymbmgu.supabase.co",
+  "never_ref": [
+    "uvgblmejpbswkvlqvqmz"
+  ],
+  "approved_api_origins": [
+    "https://staging-api.getbizgenie.com",
+    "https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app"
+  ],
+  "studio_origin": "https://bizgenie-studio-staging.pages.dev",
+  "bridge": {
+    "status": "FOUNDER_ALLOWLISTED",
+    "origin": "https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app",
+    "note": "BG-017C-06: allowlisted by explicit founder order for WEB PR #71. Allowlisting only permits a build/release for this origin; it does not mean the bridge is deployed or verified, and it does not open any write or checkout gate (those stay off in the bridge). Deploys still need the staging-studio approval."
+  },
+  "bridge_api_origins": [
+    "https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app"
+  ]
+}

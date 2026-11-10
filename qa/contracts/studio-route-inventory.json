@@ -1,0 +1,363 @@
+{
+ "_note": "One row per capability: every API route the Studio can call. launch_class: A = mandatory first-paying-customer operation (frozen launch contract #128); B = required but through a separate first-party secure route with its own approved contract; C = explicitly deferred or disabled with truthful UI; E = extra, not needed for the first paying customer. The bridge column is computed from the vendored bridge route table, never written by hand.",
+ "entries": [
+  {
+   "routes": [
+    "GET /customer/workspace"
+   ],
+   "purpose": "Find the customer's workspace",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "read",
+   "ui_when_unavailable": "Plain error, Sign in again on 401",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/workspace/bootstrap"
+   ],
+   "purpose": "Create the workspace once (onboarding step 2)",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "write: creates tenant, project, brand (idempotent per user); bridge needs writes switched on",
+   "ui_when_unavailable": "'Switched off in this test environment' / retry keeps the form",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/workspace/select"
+   ],
+   "purpose": "Choose between several workspaces",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "write: session scope change",
+   "ui_when_unavailable": "Plain error",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "GET /customer/workspace/brand-brain",
+    "GET /customer/workspace/onboarding"
+   ],
+   "purpose": "Read Brand Brain / onboarding progress",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "read",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "PUT /customer/workspace/brand-brain",
+    "PUT /customer/workspace/onboarding"
+   ],
+   "purpose": "Save Brand Brain / onboarding progress",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "write: customer's own business data",
+   "ui_when_unavailable": "'Not confirmed' wording; nothing shown as saved",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/campaign-recommendations"
+   ],
+   "purpose": "First recommendation from the customer's goal",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "AI text; spend governed by backend provider flags",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "GET /customer/campaigns",
+    "GET /customer/campaigns/:id",
+    "GET /customer/campaigns/:id/calendar",
+    "GET /customer/calendar"
+   ],
+   "purpose": "List/open campaigns and calendars",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "read",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/campaigns",
+    "POST /customer/campaigns/:id/content-items"
+   ],
+   "purpose": "Create a campaign and its content items",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "write: customer's campaign data",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "PATCH /customer/campaigns/:id",
+    "POST /customer/campaigns/:id/archive",
+    "POST /customer/campaigns/:id/restore"
+   ],
+   "purpose": "Rename, archive, restore a campaign",
+   "studio_gate": "always",
+   "launch_class": "E",
+   "risk": "write: customer's campaign data",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/campaigns/:id/variants/:id/review",
+    "POST /customer/campaigns/:id/variants/:id/preview-renders",
+    "POST /customer/campaigns/:id/variants/:id/preview-acknowledgements",
+    "POST /customer/campaigns/:id/variants/:id/approval"
+   ],
+   "purpose": "Review, preview and approve content",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "write: approval records (nothing is published)",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/campaigns/:id/variants/:id/schedule",
+    "POST /customer/campaigns/:id/variants/:id/reschedule",
+    "POST /customer/campaigns/:id/variants/:id/unschedule"
+   ],
+   "purpose": "Plan, move, remove a planned time",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "write: schedule records (nothing is published)",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "GET /customer/campaigns/:id/variants/:id/creative-preview",
+    "GET /customer/campaigns/:id/variants/:id/revisions/:id/assets/:id/preview"
+   ],
+   "purpose": "Show the content and its media to the customer",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "read (private media bytes)",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/generation-quotes",
+    "GET /customer/generation-quotes/:id",
+    "POST /customer/generation-quotes/:id/cancel"
+   ],
+   "purpose": "Binding price, status, pre-start cancel",
+   "studio_gate": "VITE_GENERATION_QUOTE_API",
+   "launch_class": "A",
+   "risk": "write: stored quote (no spend)",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/generation-quotes/:id/confirm"
+   ],
+   "purpose": "Confirm a quote (reserves credits; may start a paid generation if provider flags are on)",
+   "studio_gate": "VITE_GENERATION_QUOTE_API",
+   "launch_class": "A",
+   "risk": "COST: reserves credits; bridge gate GENERATION_CONFIRMATION_DISABLED",
+   "ui_when_unavailable": "'Nothing was started and nothing was charged'",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "GET /customer/creative-jobs/:id",
+    "POST /customer/creative-jobs/:id/attach"
+   ],
+   "purpose": "Follow and attach a finished creative",
+   "studio_gate": "VITE_GENERATION_QUOTE_API",
+   "launch_class": "A",
+   "risk": "read / write: attaches an existing output",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "GET /customer/creative-jobs",
+    "POST /customer/creative-jobs/:id/cancel"
+   ],
+   "purpose": "Job list, cancel a queued job",
+   "studio_gate": "VITE_GENERATION_QUOTE_API",
+   "launch_class": "E",
+   "risk": "read / write",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /billing/stripe/checkout"
+   ],
+   "purpose": "Start Stripe-hosted checkout for the launch plan (L4)",
+   "studio_gate": "always (the Subscribe button); OFF in a bridge-marked build (VITE_API_ROUTE_LIMITS=bridge-v1) until separately approved",
+   "launch_class": "A",
+   "risk": "COST: opens a payment page; server maps the plan to its own Stripe Price; stable request_id per intent (Stripe idempotency); bridge gate BG_BRIDGE_ALLOW_STRIPE_CHECKOUT default off",
+   "ui_when_unavailable": "Build marked bridge-v1: button replaced by 'not available in this test environment yet; nothing can be charged'",
+   "owner": "Codex route (carried by the bridge at 86b39d70, gate off by default); Claude UX (frontend gate OFF)",
+   "decision_needed": "Founder: approved plan/price (L4) and a separately approved Stripe test-mode activation (bridge gate and frontend gate are both OFF); Codex: deployed bridge origin"
+  },
+  {
+   "routes": [
+    "GET /customer/billing/subscription"
+   ],
+   "purpose": "Entitlement and credits after payment (L4)",
+   "studio_gate": "always",
+   "launch_class": "A",
+   "risk": "read",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "GET /customer/billing/plans",
+    "GET /customer/billing/credit-preview"
+   ],
+   "purpose": "Server plan catalogue and read-only credit price",
+   "studio_gate": "VITE_PLAN_CATALOGUE_API / VITE_CREDIT_PREVIEW_API (off)",
+   "launch_class": "C",
+   "risk": "read; no approved catalogue yet",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/billing/management/:id",
+    "GET /customer/billing/invoices"
+   ],
+   "purpose": "Cancel, payment details, invoice list",
+   "studio_gate": "VITE_BILLING_MANAGEMENT_API (off)",
+   "launch_class": "C",
+   "risk": "write/cost via Stripe-hosted pages",
+   "ui_when_unavailable": "Hidden while the gate is off",
+   "owner": "Codex route; founder decision",
+   "decision_needed": "Founder: whether self-service cancellation is required for the first paying customer, or truthful cancellation/refund/support wording suffices (L4). Invoices route has no API implementation"
+  },
+  {
+   "routes": [
+    "POST /public/paid-beta-interest"
+   ],
+   "purpose": "Lead capture from the public website",
+   "studio_gate": "not in the premium Studio build",
+   "launch_class": "B",
+   "risk": "write: a lead record; public, rate limited, off by default",
+   "ui_when_unavailable": "n/a (public site calls the API directly, not through the bridge)",
+   "owner": "Codex API; website owner",
+   "decision_needed": "Legal review of notice/consent and retention before activation"
+  },
+  {
+   "routes": [
+    "GET /customer/social/connections",
+    "GET /customer/social/dispatches",
+    "GET /customer/social/calendar"
+   ],
+   "purpose": "Show connected accounts and delivery status",
+   "studio_gate": "VITE_SOCIAL_ACCOUNTS_API",
+   "launch_class": "E",
+   "risk": "read",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/social/oauth-intents",
+    "POST /customer/social/oauth-complete",
+    "POST /customer/social/connections/:id/disconnect",
+    "POST /customer/social/dispatches"
+   ],
+   "purpose": "Connect/disconnect an account; send a draft",
+   "studio_gate": "VITE_SOCIAL_ACCOUNTS_API + providers",
+   "launch_class": "C",
+   "risk": "write; real OAuth; bridge gate SOCIAL_WRITES_DISABLED",
+   "ui_when_unavailable": "'Switched off in this test environment'",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "GET /customer/social/oauth/callback/:platform"
+   ],
+   "purpose": "Provider redirect back to the API after consent",
+   "studio_gate": "server redirect (not a Studio call)",
+   "launch_class": "C",
+   "risk": "unauthenticated by design; must reach the API host, not the bridge",
+   "ui_when_unavailable": "Social connection deferred in staging",
+   "owner": "Codex; founder",
+   "decision_needed": "Founder/Codex: how a provider callback reaches the API while it stays private"
+  },
+  {
+   "routes": [
+    "POST /customer/campaigns/:id/variants/:id/manual-publication",
+    "POST /customer/campaigns/:id/variants/:id/manual-publication/:id",
+    "POST /customer/campaigns/:id/variants/:id/manual-publication/confirm"
+   ],
+   "purpose": "Customer records that they published a post themselves",
+   "studio_gate": "always (approved/scheduled variants)",
+   "launch_class": "C",
+   "risk": "write: attestation records",
+   "ui_when_unavailable": "Build marked bridge-v1: replaced by 'not available in this test environment yet; nothing was changed'",
+   "owner": "Codex route; founder decision",
+   "decision_needed": "Founder: whether manual publication attestation is part of the first paying customer's journey (it is the v1 publication path while connectors are deferred)"
+  },
+  {
+   "routes": [
+    "GET /customer/campaigns/:id/measurements",
+    "POST /customer/campaigns/:id/variants/:id/measurements"
+   ],
+   "purpose": "Results the customer enters",
+   "studio_gate": "VITE_ANALYTICS_API (off)",
+   "launch_class": "C",
+   "risk": "read / write",
+   "ui_when_unavailable": "",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "GET /customer/insights/:id"
+   ],
+   "purpose": "Learning insights",
+   "studio_gate": "VITE_ANALYTICS_API (off)",
+   "launch_class": "C",
+   "risk": "read / write (snapshots)",
+   "ui_when_unavailable": "Hidden while the gate is off",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "GET /customer/assets",
+    "POST /customer/assets/uploads",
+    "PUT /customer/assets/uploads/:id/bytes",
+    "POST /customer/assets/:id/complete",
+    "POST /customer/assets/:id/revoke",
+    "GET /customer/assets/:id/preview",
+    "DELETE /customer/assets/:id"
+   ],
+   "purpose": "Customer media uploads",
+   "studio_gate": "VITE_CUSTOMER_MEDIA_INTAKE_API (off); DELETE also VITE_CUSTOMER_MEDIA_DELETE_API",
+   "launch_class": "C",
+   "risk": "write; no malware scanner exists",
+   "ui_when_unavailable": "Hidden while the gate is off",
+   "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/campaigns/:id/variants/:id/generate"
+   ],
+   "purpose": "Legacy generation route (answers 428 without a quote)",
+   "studio_gate": "legacy",
+   "launch_class": "C",
+   "risk": "COST if ever enabled",
+   "ui_when_unavailable": "Superseded by quote + confirm",
+   "owner": "Codex route; Claude UI"
+  }
+ ]
+}
