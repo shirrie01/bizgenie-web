@@ -55,10 +55,11 @@ describe("CreativeJobResult", () => {
     expect(await screen.findByText(/Replaced by a newer version of the post/)).toBeInTheDocument(); expect(screen.getByText(/A newer version of the post replaced this one/)).toBeInTheDocument(); expect(screen.queryByText(/Approved for this version/)).toBeNull();
   });
   it("follows a running job and can cancel it before it starts", async () => {
-    const states = [J({ state: "queued", outputs: [], can_cancel: true }), J({ state: "calling", outputs: [] }), J()]; let i = 0; const cancel = vi.fn(async () => ({ jobId: "j1" }));
-    mount({ fetchCreativeJob: async () => states[Math.min(i++, 2)], cancelCreativeJob: cancel });
+    // The queued state is held until the assertions on it have run, so the 5 ms test poll cannot advance past it first (the cause of a hosted-CI-only failure).
+    const states = [J({ state: "queued", outputs: [], can_cancel: true }), J({ state: "calling", outputs: [] }), J()]; let i = 0; let release; const held = new Promise((r) => { release = r; }); const cancel = vi.fn(async () => ({ jobId: "j1" }));
+    mount({ fetchCreativeJob: async () => { const n = i++; if (n >= 1) await held; return states[Math.min(n, 2)]; }, cancelCreativeJob: cancel });
     expect(await screen.findByText(/Waiting to start/)).toBeInTheDocument(); expect(screen.getByRole("button", { name: "Cancel before it starts" })).toBeInTheDocument();
-    expect(await screen.findByText(/Finished\./)).toBeInTheDocument();
+    release(); expect(await screen.findByText(/Finished\./)).toBeInTheDocument();
   });
   it("failed and recovery states say what is safe", async () => {
     const { unmount } = mount({ fetchCreativeJob: async () => J({ state: "failed", outputs: [], retry_guidance: "new_quote_required" }) });

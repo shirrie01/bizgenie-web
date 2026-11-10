@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { CampaignApiError, campaignKey, errorFor, fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived } from "./campaignManagementClient";
+import { CampaignApiError, addContentItem, campaignKey, errorFor, fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived } from "./campaignManagementClient";
 
 const SCOPE = { tenantId: "t1", projectId: "p1" };
 const CAMP = { campaign_id: "11111111-1111-4111-8111-111111111111", version: 7, name: "Spring", display_timezone: "Europe/London" };
@@ -142,5 +142,18 @@ describe("addContentItem (BG-STUDIO-021-FE)", () => {
     await submitForReview({ apiBaseUrl: "http://a", accessToken: "t", scope: { tenantId: "t", projectId: "p" }, campaign, variant, revisionId: REV, fetchImpl: ok }); expect(JSON.parse(ok.mock.calls[1][1].body).idempotency_key).toBe(body.idempotency_key); // a retry is the same request
     await expect(submitForReview({ apiBaseUrl: "h", accessToken: "t", scope: { tenantId: "t", projectId: "p" }, campaign, variant, revisionId: "", fetchImpl: ok })).rejects.toMatchObject({ kind: "invalid" });
     await expect(submitForReview({ apiBaseUrl: "h", accessToken: "t", scope: { tenantId: "t", projectId: "p" }, campaign, variant, revisionId: REV, fetchImpl: async () => ({ ok: false, status: 409, json: async () => ({ error: { code: "VERSION_CONFLICT" } }) }) })).rejects.toMatchObject({ kind: "conflict" });
+  });
+});
+
+describe("addContentItem destination key (BG-LAUNCH-006)", () => {
+  const campaign = { campaign_id: "k1", version: 4 };
+  const base = { apiBaseUrl: "https://api.test", accessToken: "t", scope: { tenantId: "t", projectId: "p", brandId: "b" }, campaign, name: "Reel", format: "video", platform: "tiktok", placement: "feed", destinationLabel: "Creator" };
+  it("sends the connection id as destination_key only when given, and refuses anything that is not an id", async () => {
+    const bodies = []; const fetchImpl = vi.fn(async (_u, o) => { bodies.push(JSON.parse(o.body)); return { ok: true, status: 201, json: async () => ({ campaign: { campaign_id: "k1", version: 5, items: [] } }), headers: { get: () => null } }; });
+    const key = "0b0e5b8e-6f3a-4c1f-8f0a-1d2c3b4a5f60";
+    await addContentItem({ ...base, destinationKey: key, fetchImpl }).catch(() => {}); await addContentItem({ ...base, fetchImpl }).catch(() => {});
+    expect(bodies[0].destination_key).toBe(key); expect(bodies[1].destination_key).toBeUndefined();
+    expect(bodies[0].idempotency_key).not.toBe(bodies[1].idempotency_key);
+    for (const bad of ["not-an-id", "", "../../x", "0b0e5b8e"]) await expect(addContentItem({ ...base, destinationKey: bad, fetchImpl })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 });

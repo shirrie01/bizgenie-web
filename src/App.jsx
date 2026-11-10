@@ -13,7 +13,7 @@ const ScheduleControls = lazy(() => import("./premium/ScheduleControls"));
 const ManualPublicationPanel = lazy(() => import("./premium/ManualPublicationPanel"));
 const GenerateWithQuote = lazy(() => import("./premium/GenerateWithQuote"));
 const CreativeStudio = lazy(() => import("./premium/CreativeStudio"));
-import { isSocialApiEnabled } from "./premium/socialClient";
+import { fetchConnections as fetchSocialConnections, isSocialApiEnabled } from "./premium/socialClient";
 import { isMediaIntakeApiEnabled } from "./premium/mediaIntakeClient";
 import { isAnalyticsApiEnabled, makeInsightsApi } from "./premium/insightsClient";
 import { isCustomerMediaApiEnabled } from "./premium/creativeProductionClient";
@@ -30,6 +30,7 @@ import { operationKey } from "./operationKey";
 function Lazy({ children }) { return <Suspense fallback={<span className="visually-hidden" role="status">Loading…</span>}>{children}</Suspense>; }
 const AddCreativeItem = lazy(() => import("./premium/AddCreativeItem"));
 const PremiumConnections = lazy(() => import("./premium/PremiumConnections"));
+const SendDraftToTikTok = lazy(() => import("./premium/SendDraftToTikTok"));
 const PremiumMedia = lazy(() => import("./premium/PremiumMedia"));
 const PremiumInsights = lazy(() => import("./premium/PremiumInsights"));
 const PremiumStudio = lazy(() => import("./premium/PremiumStudio"));
@@ -719,12 +720,13 @@ export default function App() {
   }
   // Add an image or video item, and re-read the campaign after a creative job finishes (the server, not this screen, says what the campaign now holds).
   const [addItemState, setAddItemState] = useState({ status: "idle", error: "", notice: "" });
+  const loadSocialConnections = useMemo(() => (isSocialApiEnabled() && session && session.brandId ? () => fetchSocialConnections({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: { tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId } }).then((r) => r.connections) : null), [session && session.accessToken, session && session.tenantId, session && session.projectId, session && session.brandId]);
   async function premiumAddItem(fields) {
     if (!campaignState.campaign || addItemState.status === "working") return { ok: false };
     const scopeToken = scopeTokenRef.current; setAddItemState({ status: "working", error: "", notice: "" });
     try {
       const detail = await fetchCampaignDetail({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaignId: campaignState.campaign.campaign_id });
-      const updated = await addContentItem({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaign: detail, name: fields.name, format: fields.format, platform: fields.platform, placement: fields.placement, destinationLabel: fields.destinationLabel });
+      const updated = await addContentItem({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaign: detail, name: fields.name, format: fields.format, platform: fields.platform, placement: fields.placement, destinationLabel: fields.destinationLabel, destinationKey: fields.destinationKey || null });
       if (scopeToken !== scopeTokenRef.current) return { ok: false };
       setCampaignState({ status: "ready", campaign: updated, error: "" }); setCalendarState({ status: "idle", entries: [], error: "" }); setWorkspaceCalendarState(WS_CAL_IDLE);
       setAddItemState({ status: "done", error: "", notice: `Added ${fields.name.trim()}. Get a price below when you are ready.` }); return { ok: true };
@@ -991,8 +993,8 @@ export default function App() {
             <textarea id="execution-brief" maxLength={4000} value={executionBrief} onChange={(event) => setExecutionBrief(event.target.value)} placeholder="Temporary direction for this execution, e.g. focus on the founder story and keep the opening conversational." />
             <small>This brief applies only to this generation. It does not change your approved Brand Brain.</small>
           </div>
-          {premiumEnabled && !isReadOnlyRole(roleState.role) && <Lazy><AddCreativeItem busy={addItemState.status === "working"} error={addItemState.error} notice={addItemState.notice} onAdd={premiumAddItem} /></Lazy>}
-          <div className="item-grid">
+          {premiumEnabled && !isReadOnlyRole(roleState.role) && <Lazy><AddCreativeItem busy={addItemState.status === "working"} error={addItemState.error} notice={addItemState.notice} onAdd={premiumAddItem} loadConnections={loadSocialConnections} /></Lazy>}
+          <div className="item-grid item-grid-fit">
             {campaignState.campaign.items.map((item) => (
               <article className={item.variants.some((v) => v.workflow === "review") ? "item item-review" : "item"} key={item.content_item_id}>
                 <span>{item.format}</span>
@@ -1014,6 +1016,7 @@ export default function App() {
                       </button>
                     ))}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
+                    {premiumEnabled && isSocialApiEnabled() && variant.platform === "tiktok" && variant.workflow === "scheduled" && <Lazy><SendDraftToTikTok campaign={campaignState.campaign} variant={variant} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} apiBaseUrl={API_BASE_URL} /></Lazy>}
                     {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <Lazy><ScheduleControls campaign={campaignState.campaign} variant={variant} schedule={scheduleFor(variant)} state={scheduleState} onSchedule={runSchedule} /></Lazy>}
                     {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && <Lazy><ManualPublicationPanel campaign={campaignState.campaign} variant={variant} pendingAttemptId={pendingAttemptFor(variant)} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} /></Lazy>}
                     {!premiumEnabled && variant.workflow === "approved" && <div>

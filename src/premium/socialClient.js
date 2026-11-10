@@ -29,19 +29,38 @@ export class SocialError extends Error {
   constructor(message, { kind = "error", status = 0, code = "" } = {}) { super(message); this.name = "SocialError"; this.kind = kind; this.status = status; this.code = code; }
 }
 export const PROVIDERS = ["instagram", "facebook", "linkedin", "tiktok", "youtube"];
+// Which platforms the Connect buttons offer. Optional build-time list (VITE_SOCIAL_PROVIDERS, comma separated); unset = every platform this client knows. A staging or launch build can offer only what is actually set up.
+export function connectableProviders(list = (typeof import.meta !== "undefined" && import.meta.env ? import.meta.env.VITE_SOCIAL_PROVIDERS : undefined)) {
+  if (typeof list !== "string" || list.trim() === "") return PROVIDERS;
+  const wanted = list.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  return PROVIDERS.filter((p) => wanted.includes(p));
+}
 export const PROVIDER_LABEL = { instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube" };
 const CONNECTION_STATUS = { active: "connected", revoked: "revoked", expired: "needs_reauth" };
-const DISPATCH_STATE = ["queued", "claimed", "sending", "reconciliation_required", "published", "failed", "cancelled"];
+// "uploaded" (BG-SOCIAL-001) means a DRAFT reached the creator's platform inbox and awaits their own action. It is never a publication: it can never be platform-verified or carry a post link.
+const DISPATCH_STATE = ["queued", "claimed", "sending", "reconciliation_required", "published", "uploaded", "failed", "cancelled"];
 const str = (v) => typeof v === "string" && v.trim().length > 0; const https = (v) => { try { return new URL(v).protocol === "https:"; } catch { return false; } };
 const bad = () => new SocialError("The server's answer was not in the expected form, so nothing is shown from it.", { kind: "invalid", code: "BAD_RESPONSE" });
 const q = (scope, extra = {}) => new URLSearchParams({ tenant_id: scope.tenantId, project_id: scope.projectId, brand_id: scope.brandId, ...extra });
 const body = (scope, extra = {}) => ({ tenant_id: scope.tenantId, project_id: scope.projectId, brand_id: scope.brandId, ...extra });
 
+// Typed capabilities (BG-SOCIAL-002): what the backend says it can and cannot do with a connected account. Only known keys, only a boolean `available`, the reason is shown as TEXT.
+export const CAPABILITY_LABEL = { member_login: "Sign-in", member_text_post: "Text posts", member_image_post: "Image posts", member_video_post: "Video posts", company_page_post: "Company page posts", organisation_administration: "Organisation tools", engagement_metrics: "Engagement metrics", post_analytics: "Post analytics", token_refresh: "Automatic renewal", provider_revocation: "Removing access at the platform", publication_confirmation: "Confirmation that a post is live" };
+function normaliseCapabilities(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [key, v] of Object.entries(raw)) {
+    if (!Object.hasOwn(CAPABILITY_LABEL, key) || !v || typeof v.available !== "boolean") continue;
+    const reason = typeof v.reason === "string" && v.reason.trim().length > 0 && v.reason.length <= 300 && !/[\u0000-\u001f\u007f]/.test(v.reason) ? v.reason.trim() : null;
+    out[key] = { available: v.available, reason };
+  }
+  return out;
+}
 export function normaliseConnection(c) {
   if (!c || !str(c.connection_id) || !PROVIDERS.includes(c.platform) || !str(c.account_id) || !Object.hasOwn(CONNECTION_STATUS, c.status) || !Number.isFinite(Date.parse(c.expires_at)) || !Number.isInteger(c.version)) return null;
   // display_name is verified connector output, shown as TEXT only (max 200, no control characters); otherwise the account id stands in.
   const display = typeof c.display_name === "string" && c.display_name.trim().length > 0 && c.display_name.length <= 200 && !/[\u0000-\u001f\u007f]/.test(c.display_name) ? c.display_name.trim() : "";
-  return { id: c.connection_id, provider: c.platform, accountId: c.account_id, displayName: display, name: display || c.account_id, status: CONNECTION_STATUS[c.status], expiresAt: c.expires_at, version: c.version };
+  return { id: c.connection_id, provider: c.platform, accountId: c.account_id, displayName: display, name: display || c.account_id, status: CONNECTION_STATUS[c.status], expiresAt: c.expires_at, version: c.version, capabilities: normaliseCapabilities(c.capabilities) };
 }
 export function normaliseConnections(b) {
   if (!b || !Array.isArray(b.connections)) throw bad();
@@ -51,7 +70,11 @@ export function normaliseConnections(b) {
 export function normaliseDispatch(d) {
   if (!d || !str(d.dispatch_id) || !str(d.campaign_id) || !str(d.variant_id) || !DISPATCH_STATE.includes(d.state)) return null;
   const verified = d.state === "published" && d.evidence_kind === "platform_api" && https(d.publication_url);
-  return { id: d.dispatch_id, campaignId: d.campaign_id, variantId: d.variant_id, state: d.state, scheduledFor: Number.isFinite(Date.parse(d.scheduled_for)) ? d.scheduled_for : null, platformVerified: verified, postUrl: verified ? new URL(d.publication_url).toString() : "", publishedAt: verified && Number.isFinite(Date.parse(d.published_at)) ? d.published_at : null };
+  return { id: d.dispatch_id, campaignId: d.campaign_id, variantId: d.variant_id, state: d.state, scheduledFor: Number.isFinite(Date.parse(d.scheduled_for)) ? d.scheduled_for : null, platformVerified: verified, postUrl: verified ? new URL(d.publication_url).toString() : "", publishedAt: verified && Number.isFinite(Date.parse(d.published_at)) ? d.published_at : null,
+    operationKind: d.operation_kind === "draft_upload" ? "draft_upload" : "publish",
+    // true only for an uploaded draft the backend says still awaits the creator; anything else is false, never guessed
+    creatorActionRequired: d.state === "uploaded" && d.operation_kind === "draft_upload" && d.creator_action_required !== false,
+    uploadedAt: d.state === "uploaded" && Number.isFinite(Date.parse(d.uploaded_at)) ? d.uploaded_at : null };
 }
 export function normaliseDispatches(b) {
   if (!b || !Array.isArray(b.dispatches)) throw bad();
@@ -118,7 +141,18 @@ export async function startConnect({ apiBaseUrl, accessToken, scope, provider, p
   if (j.authorization_status !== "ready" || !j.authorize_url || !j.redirect_uri) throw new SocialError("This platform connection is not set up yet, so nothing was opened and nothing was connected.", { kind: "unavailable", code: "PROVIDER_CONFIGURATION_REQUIRED" });
   let target, redirect; try { target = new URL(j.authorize_url); redirect = new URL(j.redirect_uri); } catch { throw new SocialError("The platform's sign-in page could not be opened safely, so nothing was connected.", { kind: "invalid", code: "BAD_URL" }); }
   const sp = target.searchParams;
-  if (target.protocol !== "https:" || redirect.protocol !== "https:" || target.username || target.password || sp.get("state") !== j.state || sp.get("code_challenge") !== p.challenge || sp.get("code_challenge_method") !== "S256" || sp.get("redirect_uri") !== j.redirect_uri || sp.get("response_type") !== "code")
+  // Providers whose web sign-in carries no PKCE parameters (BizGenie's own S256 verifier stays in this browser for the later completion call), each checked against ITS contract:
+  //  - TikTok (Web Login Kit, BG-SOCIAL-001): exact host and path, client_key.
+  //  - LinkedIn (OpenID Connect, BG-SOCIAL-002): exact host and path, client_id, and ONLY when the server states oauth_protocol "linkedin_oidc_web" with provider_pkce_required false.
+  // Every other platform, and a LinkedIn response without that statement, keeps the S256 check. Callback pages are exactly the reviewed ones (production or staging API host).
+  const CALLBACK_ORIGINS = ["https://getbizgenie.com", "https://staging-api.getbizgenie.com"];
+  const web = { tiktok: { origin: "https://www.tiktok.com", path: "/v2/auth/authorize/", client: "client_key", other: "client_id", needsStatement: false }, linkedin: { origin: "https://www.linkedin.com", path: "/oauth/v2/authorization", client: "client_id", other: "client_key", needsStatement: true } }[provider];
+  const statedWeb = Boolean(web) && (!web.needsStatement || (j.oauth_protocol === "linkedin_oidc_web" && j.provider_pkce_required === false));
+  const noPkceOk = statedWeb && target.origin === web.origin && target.pathname === web.path && str(sp.get(web.client)) && sp.getAll(web.client).length === 1 && !sp.has(web.other) && !sp.has("code_challenge") && !sp.has("code_challenge_method") && !sp.has("code_verifier")
+    && CALLBACK_ORIGINS.includes(redirect.origin) && redirect.pathname === `/customer/social/oauth/callback/${provider}`;
+  const pkceOk = statedWeb ? noPkceOk : sp.get("code_challenge") === p.challenge && sp.get("code_challenge_method") === "S256";
+  if (target.protocol !== "https:" || redirect.protocol !== "https:" || target.username || target.password || target.port || target.hash || redirect.username || redirect.password || redirect.port || redirect.hash || redirect.search
+    || sp.get("state") !== j.state || sp.getAll("state").length !== 1 || !pkceOk || sp.get("redirect_uri") !== j.redirect_uri || sp.getAll("redirect_uri").length !== 1 || sp.get("response_type") !== "code" || sp.getAll("response_type").length !== 1)
     throw new SocialError("The platform's sign-in page did not match this attempt, so it was not opened and nothing was connected.", { kind: "invalid", code: "BAD_URL" });
   return { url: target.toString(), pending: { intentId: j.intent_id, state: j.state, verifier: p.verifier, provider, redirectUri: j.redirect_uri, expiresAt: j.expires_at } };
 }
@@ -135,7 +169,7 @@ export async function disconnect({ apiBaseUrl, accessToken, scope, connectionId,
   return { connectionId };
 }
 export async function enqueueDispatch({ apiBaseUrl, accessToken, scope, connectionId, campaignId, variantId, scheduleId, expectedCampaignVersion, fetchImpl = (...a) => fetch(...a) }) {
-  const d = normaliseDispatch(await post(fetchImpl, u(apiBaseUrl, "/dispatches"), accessToken, body(scope, { connection_id: connectionId, campaign_id: campaignId, variant_id: variantId, schedule_id: scheduleId, expected_campaign_version: expectedCampaignVersion, publishing_confirmed: true }), "Queueing the post"));
+  const d = normaliseDispatch(await post(fetchImpl, u(apiBaseUrl, "/dispatches"), accessToken, body(scope, { ...(connectionId ? { connection_id: connectionId } : {}), campaign_id: campaignId, variant_id: variantId, schedule_id: scheduleId, expected_campaign_version: expectedCampaignVersion, publishing_confirmed: true }), "Queueing the post"));
   if (!d) throw bad();
   return d;
 }

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import CreativeJobResult from "./CreativeJobResult";
-import { fetchCreativeJobs as realList } from "./creativeJobsClient";
+import { fetchCreativeJobs as realList, failureReason } from "./creativeJobsClient";
 
 // Earlier results for one post (BG-STUDIO-025-FE), from GET /customer/creative-jobs filtered to the post. Opening one loads it from the server.
 const API = () => import.meta.env.VITE_BIZGENIE_API_URL || "http://localhost:8080";
@@ -27,7 +27,7 @@ export default function CreativeJobsList({ session, scope, campaign, variant, ca
       {s.status === "ready" && mine.length > 0 && (
         <ul aria-label="Earlier results">
           {mine.map((j) => (
-            <li key={j.id}>{when(j.createdAt)} · {j.executionClass} · <strong>{STATE_TEXT[j.state]}</strong>{" "}
+            <li key={j.id}>{when(j.createdAt)} · {j.executionClass} · <strong>{STATE_TEXT[j.state]}</strong>{j.state === "failed" && failureReason(j.errorCode) ? <small> · {failureReason(j.errorCode)}</small> : null}{" "}
               <button type="button" className="secondary" aria-expanded={open === j.id} onClick={() => setOpen(open === j.id ? "" : j.id)}>{open === j.id ? "Hide" : "Open"}</button>
               {open === j.id && <CreativeJobResult jobId={j.id} session={session} scope={scope} campaign={campaign} variant={variant} canAttach={canAttach} api={api} onAttached={onAttached} onSessionEnded={onSessionEnded} />}
             </li>

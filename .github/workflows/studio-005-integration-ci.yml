@@ -53,7 +53,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - run: npm ci
-      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - run: npm install --no-save @playwright/test@1.56.1
       - name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
         timeout-minutes: 12
         run: |
@@ -93,7 +93,7 @@ jobs:
         id: has
         run: test -f qa/playwright.config.mjs && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
       - if: steps.has.outputs.run == 'true'
-        run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+        run: npm install --no-save @playwright/test@1.56.1
       - if: steps.has.outputs.run == 'true'
         name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
         timeout-minutes: 12
@@ -139,7 +139,7 @@ jobs:
         id: has
         run: test -f qa/premium.playwright.config.mjs && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
       - if: steps.has.outputs.run == 'true'
-        run: npm install --no-save --package-lock=false @playwright/test@1.56.1 axe-core@4.10.2
+        run: npm install --no-save @playwright/test@1.56.1 axe-core@4.10.2
       - if: steps.has.outputs.run == 'true'
         name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
         timeout-minutes: 12
@@ -161,7 +161,7 @@ jobs:
       - if: steps.has.outputs.run == 'true'
         env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
         run: npx playwright test --config qa/premium.playwright.config.mjs
-      - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
+      - if: ${{ !cancelled() && steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != '' }}
         name: Build with the BG-STUDIO-019 capability gates ON (plan catalogue, billing management, credit preview, binding quotes, customer image/video, workspace calendar API; all mocked in the browser)
         env:
           VITE_PREMIUM_STUDIO_ENABLED: 'true'
@@ -178,9 +178,65 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
           VITE_BIZGENIE_API_URL: http://api.test
         run: npx vite build --outDir dist-gates
-      - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
+      - if: ${{ !cancelled() && steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != '' }}
         run: npx vite preview --outDir dist-gates --port 4181 --strictPort --host 127.0.0.1 &
-      - if: steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != ''
+      - if: ${{ !cancelled() && steps.has.outputs.run == 'true' && hashFiles('qa/premium-gates.playwright.config.mjs') != '' }}
         name: Premium browser checks with the capability gates ON
         env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
         run: npx playwright test --config qa/premium-gates.playwright.config.mjs
+      # Diagnostics (BG-LAUNCH-011): on any failure keep the Playwright traces and failure screenshots. These jobs run ONLY mocked values and placeholder public keys (no secret, no real
+      # token, no customer data), so nothing sensitive can be in a trace; the artefact is kept for 7 days.
+      - if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-premium-${{ matrix.viewport }}
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+  pages-headers-browser:
+    # BG-LAUNCH-011: the Cloudflare Pages release candidate (flag-ON build + generated _headers) in a real browser; mocked identity and API (no network, no secrets).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ['1440x900', '768x1024', '390x844', '320x568']
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref || github.sha }}' }
+      - name: Record workflow SHA vs checked-out SHA
+        env: { EXPECTED: '${{ inputs.expected_sha }}', WORKFLOW_SHA: '${{ github.sha }}', REQUESTED_REF: '${{ inputs.ref }}' }
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          { echo "workflow/dispatch SHA: $WORKFLOW_SHA"; echo "requested ref: ${REQUESTED_REF:-<none>}"; echo "CHECKED-OUT (tested) SHA: $HEAD_SHA"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EXPECTED" ] && [ "$HEAD_SHA" != "$EXPECTED" ]; then echo "checked-out SHA does not match expected_sha"; exit 1; fi
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - run: npm install --no-save @playwright/test@1.56.1
+      - name: Install Chromium and its OS dependencies (apt fetches fail fast and retry)
+        timeout-minutes: 12
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          npx playwright install --with-deps chromium
+      - name: Build the Pages candidate with placeholder public origins (the headers generator is given the same values)
+        env:
+          PAGES_ALLOW_HTTP_ORIGINS: '1'
+          VITE_PREMIUM_STUDIO_ENABLED: 'true'
+          VITE_SUPABASE_URL: http://supabase.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-public-key
+          VITE_BIZGENIE_API_URL: http://api.test
+        run: |
+          npx vite build --outDir dist-pages
+          node scripts/pages-headers.mjs dist-pages
+      - name: Pages headers and CSP browser checks
+        env: { BG_VIEWPORT: '${{ matrix.viewport }}' }
+        run: npx playwright test --config qa/pages-headers.playwright.config.mjs
+      - if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-pages-${{ matrix.viewport }}
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore

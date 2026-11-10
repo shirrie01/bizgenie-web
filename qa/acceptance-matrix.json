@@ -1,0 +1,44 @@
+{
+  "contract": "BG-LAUNCH-011 acceptance matrix. Evidence classes: HOSTED REAL (verified against a live staging environment), LOCAL REAL (real application and backend code on an isolated local database; every stand-in is listed), MOCKED (stand-in identity, API, payment or social behaviour). Nothing is HOSTED REAL until a hosted environment exists and the entry names its evidence URL.",
+  "classes": ["HOSTED REAL", "LOCAL REAL", "MOCKED"],
+  "hosted": { "status": "NOT RUN", "reason": "No hosted Studio exists (no Cloudflare Pages project, no staging-app host); see docs/studio/BG_LAUNCH_011_STAGING_STUDIO_DEPLOYMENT_MANIFEST.md" },
+  "standIns": {
+    "local-real": ["sign-in/identity (bearer fixture)", "workspace bootstrap", "billing and Stripe endpoints", "image and video providers (an H.264 stand-in; a real 1080x1080 PNG)", "media inspector and storage", "TikTok HTTP (stand-in)", "no real platform data"]
+  },
+  "journeys": [
+    { "id": "signin-boundary", "journey": "Landing and sign-in boundary", "specs": [
+      { "class": "MOCKED", "file": "qa/premium-studio.browser.qa.mjs", "test": "signed-out visitors see sign-in and no customer data" },
+      { "class": "MOCKED", "file": "qa/pages-headers.pages.qa.mjs", "test": "signed-out boundary" } ] },
+    { "id": "onboarding-brand-brain", "journey": "Onboarding and Brand Brain", "specs": [
+      { "class": "MOCKED", "file": "qa/premium-studio.browser.qa.mjs", "test": "onboarding for a new customer: create workspace, save to Brand Brain" },
+      { "class": "MOCKED", "file": "qa/premium-studio.browser.qa.mjs", "test": "Brand tab, owner: edits are applied to the latest stored Brand Brain" } ] },
+    { "id": "campaign-creation", "journey": "Campaign creation", "specs": [
+      { "class": "LOCAL REAL", "file": "qa/real-backend/acceptance.rb.qa.mjs", "test": "F2 creative: price -> confirm", "standIns": ["sign-in/identity (bearer fixture)", "image and video providers (an H.264 stand-in; a real 1080x1080 PNG)"] },
+      { "class": "MOCKED", "file": "qa/premium-gates.gates.qa.mjs", "test": "campaign management: rename, then archive with a reason" } ] },
+    { "id": "quote-confirm", "journey": "Content generation quote and confirmation", "specs": [
+      { "class": "LOCAL REAL", "file": "qa/real-backend/acceptance.rb.qa.mjs", "test": "F2 creative: price -> confirm", "standIns": ["sign-in/identity (bearer fixture)", "image and video providers (an H.264 stand-in; a real 1080x1080 PNG)"] },
+      { "class": "MOCKED", "file": "qa/premium-gates.gates.qa.mjs", "test": "creative: add an image item, get a binding price, confirm" } ] },
+    { "id": "attach-preview", "journey": "Existing image attachment and authenticated preview", "specs": [
+      { "class": "LOCAL REAL", "file": "qa/real-backend/acceptance.rb.qa.mjs", "test": "the image is shown through authenticated, revision-scoped delivery", "standIns": ["sign-in/identity (bearer fixture)", "media inspector and storage"] } ] },
+    { "id": "failed-generation", "journey": "Failed generation and zero-charge messaging", "specs": [
+      { "class": "LOCAL REAL", "file": "qa/real-backend/acceptance.rb.qa.mjs", "test": "VIDEO rejected by media validation: reason shown, no charge", "standIns": ["sign-in/identity (bearer fixture)", "image and video providers (an H.264 stand-in; a real 1080x1080 PNG)"] } ] },
+    { "id": "review-approval", "journey": "Content review and approval", "specs": [
+      { "class": "LOCAL REAL", "file": "qa/real-backend/acceptance.rb.qa.mjs", "test": "VIDEO rehearsal (stand-in transport)", "standIns": ["sign-in/identity (bearer fixture)", "image and video providers (an H.264 stand-in; a real 1080x1080 PNG)"] },
+      { "class": "MOCKED", "file": "qa/premium-studio.browser.qa.mjs", "test": "onboarding for a new customer: create workspace, save to Brand Brain" } ] },
+    { "id": "calendar-scheduling", "journey": "Calendar and scheduling", "specs": [
+      { "class": "LOCAL REAL", "file": "qa/real-backend/acceptance.rb.qa.mjs", "test": "F3 calendar", "standIns": ["sign-in/identity (bearer fixture)", "no real platform data"] },
+      { "class": "MOCKED", "file": "qa/premium-journey.browser.qa.mjs", "test": "approved content can be given a planned time" } ] },
+    { "id": "accounts-capabilities", "journey": "Accounts and platform capability states", "specs": [
+      { "class": "MOCKED", "file": "qa/premium-gates.gates.qa.mjs", "test": "accounts and publishing: only what the server reports" },
+      { "class": "LOCAL REAL", "file": "qa/real-backend/acceptance.rb.qa.mjs", "test": "F1 accounts", "standIns": ["sign-in/identity (bearer fixture)", "no real platform data"] },
+      { "class": "LOCAL REAL", "file": "qa/real-backend/tiktok-draft.tt.qa.mjs", "test": "TikTok: connect -> a bound TikTok video", "standIns": ["sign-in/identity (bearer fixture)", "TikTok HTTP (stand-in)", "image and video providers (an H.264 stand-in; a real 1080x1080 PNG)"] } ] },
+    { "id": "credits-billing", "journey": "Credits and billing presentation", "specs": [
+      { "class": "MOCKED", "file": "qa/premium-billing-calendar.browser.qa.mjs", "test": "billing: an active entitlement shows the API plan" },
+      { "class": "MOCKED", "file": "qa/premium-gates.gates.qa.mjs", "test": "credit cost: a read-only price preview" } ] },
+    { "id": "session-expiry", "journey": "Session expiry and reauthentication", "specs": [
+      { "class": "MOCKED", "file": "qa/premium-session.browser.qa.mjs", "test": "session expired: the customer is told plainly and can sign in again" },
+      { "class": "MOCKED", "file": "qa/pages-headers.pages.qa.mjs", "test": "signed-in (mocked): the workspace and a session that has ended render under the policy" } ] },
+    { "id": "responsive", "journey": "Desktop and mobile responsiveness", "specs": [
+      { "class": "MOCKED", "file": "qa/premium-industries.browser.qa.mjs", "test": "every workspace section shows only this business, in its own language, with no overflow" } ] }
+  ]
+}

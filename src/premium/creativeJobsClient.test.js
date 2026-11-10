@@ -60,3 +60,12 @@ describe("requests", () => {
     await expect(fetchCreativeJob({ apiBaseUrl: "h", accessToken: "t", scope, jobId: "j", fetchImpl: lost })).rejects.toMatchObject({ kind: "network" });
   });
 });
+
+describe("failure reasons (BG-LAUNCH-003)", () => {
+  it("explains only the codes the backend settles with, never an unknown code", async () => {
+    const { failureReason } = await import("./creativeJobsClient");
+    expect(failureReason("VIDEO_OUTPUT_INVALID")).toMatch(/did not pass BizGenie's format and quality checks/);
+    expect(failureReason("VIDEO_PROVIDER_FAILED")).toMatch(/could not complete/);
+    for (const unknown of ["SOMETHING_ELSE", "", null, undefined, 42, "__proto__", "constructor"]) expect(failureReason(unknown)).toBe("");
+  });
+});

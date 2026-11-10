@@ -11,6 +11,10 @@ export const DELIVERY_LABEL = {
   uncertain: "Sent, but the outcome is not confirmed yet. It will not be sent again until checked",
   failed: "The platform refused it; nothing was published",
   cancelled: "Sending was cancelled; it will not be published automatically",
+  // TikTok drafts (BG-SOCIAL-001): BizGenie uploads a draft; the creator finishes and posts it in TikTok. None of these is a publication.
+  uploading: "Being uploaded to TikTok as a draft",
+  awaiting_creator_action: "Draft is in your TikTok inbox. Open TikTok to review and post it yourself; BizGenie has not published it",
+  creator_completed_visibility_unverified: "You finished this in TikTok. BizGenie cannot see whether or when it went live",
 };
 const same = (a, b) => Number.isFinite(Date.parse(a)) && Date.parse(a) === Date.parse(b);
 

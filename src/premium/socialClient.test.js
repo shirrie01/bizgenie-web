@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { SocialError, cancelDispatch, completeConnect, disconnect, enqueueDispatch, fetchConnections, fetchDispatches, fetchPublishingCalendar, isSocialApiEnabled, newPkce, normaliseCalendar, normaliseConnections, normaliseDispatches, startConnect } from "./socialClient";
+import { SocialError, cancelDispatch, completeConnect, connectableProviders, disconnect, enqueueDispatch, fetchConnections, fetchDispatches, fetchPublishingCalendar, isSocialApiEnabled, newPkce, normaliseCalendar, normaliseConnections, normaliseDispatches, startConnect } from "./socialClient";
 
 // FIXTURE tests of the adapter against the #218 /customer/social shapes; the same shapes are asserted against the real backend in qa/integration/backend218.
 const scope = { tenantId: "t1", projectId: "p1", brandId: "b1" };
@@ -42,6 +42,8 @@ describe("dispatches and calendar", () => {
     const f = reply(200, dsp({ state: "queued", publication_url: null, evidence_kind: null }));
     const d = await enqueueDispatch({ apiBaseUrl: "http://a", accessToken: "t", scope, connectionId: "c1", campaignId: "k1", variantId: "v1", scheduleId: "s1", expectedCampaignVersion: 3, fetchImpl: f });
     expect(d.state).toBe("queued"); expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ tenant_id: "t1", project_id: "p1", brand_id: "b1", connection_id: "c1", campaign_id: "k1", variant_id: "v1", schedule_id: "s1", expected_campaign_version: 3, publishing_confirmed: true });
+    const f2 = reply(200, dsp({ state: "queued", publication_url: null, evidence_kind: null })); await enqueueDispatch({ apiBaseUrl: "http://a", accessToken: "t", scope, campaignId: "k1", variantId: "v1", scheduleId: "s1", expectedCampaignVersion: 3, fetchImpl: f2 });
+    const sent = JSON.parse(f2.mock.calls[0][1].body); expect(sent).not.toHaveProperty("connection_id"); expect(sent).not.toHaveProperty("destination_key");
     await expect(cancelDispatch({ apiBaseUrl: "h", accessToken: "t", scope, dispatchId: "d1", fetchImpl: reply(200, dsp({ state: "queued", publication_url: null })) })).rejects.toMatchObject({ kind: "unconfirmed" });
     await expect(cancelDispatch({ apiBaseUrl: "h", accessToken: "t", scope, dispatchId: "d1", fetchImpl: reply(409, { error: { code: "PUBLICATION_ALREADY_STARTED" } }) })).rejects.toMatchObject({ kind: "conflict", code: "PUBLICATION_ALREADY_STARTED" });
   });
@@ -90,5 +92,78 @@ describe("connect", () => {
     await expect(disconnect({ apiBaseUrl: "h", accessToken: "t", scope, connectionId: "c1", fetchImpl: reply(200, conn()) })).rejects.toMatchObject({ kind: "unconfirmed" });
     const f = reply(200, conn({ status: "revoked" })); expect(await disconnect({ apiBaseUrl: "http://a", accessToken: "t", scope, connectionId: "c1", fetchImpl: f })).toEqual({ connectionId: "c1" });
     expect(f.mock.calls[0][0]).toBe("http://a/customer/social/connections/c1/disconnect");
+  });
+});
+
+describe("TikTok draft uploads (BG-SOCIAL-001): an uploaded draft is never a publication", () => {
+  const draft = (o = {}) => dsp({ dispatch_id: "dd", state: "uploaded", operation_kind: "draft_upload", creator_action_required: true, uploaded_at: "2026-11-01T10:05:00Z", publication_id: null, publication_url: null, published_at: null, evidence_kind: null, ...o });
+  it("is kept (not silently dropped) and described as a draft awaiting the creator", () => {
+    const r = normaliseDispatches({ dispatches: [draft()], next_cursor: null });
+    expect(r.items).toHaveLength(1); expect(r.skipped).toBe(0);
+    expect(r.items[0]).toMatchObject({ state: "uploaded", operationKind: "draft_upload", creatorActionRequired: true, platformVerified: false, postUrl: "", publishedAt: null, uploadedAt: "2026-11-01T10:05:00Z" });
+  });
+  it("can never be platform-verified, even if the server wrongly sends publication evidence with it", () => {
+    const [d] = normaliseDispatches({ dispatches: [draft({ publication_url: "https://tiktok.example/@x/video/1", evidence_kind: "platform_api", published_at: "2026-11-01T10:06:00Z" })], next_cursor: null }).items;
+    expect(d.platformVerified).toBe(false); expect(d.postUrl).toBe(""); expect(d.publishedAt).toBeNull();
+  });
+  it("only claims the creator still has to act when the server says so", () => {
+    expect(normaliseDispatches({ dispatches: [draft({ creator_action_required: false })] }).items[0].creatorActionRequired).toBe(false);
+    expect(normaliseDispatches({ dispatches: [draft({ operation_kind: "publish" })] }).items[0].creatorActionRequired).toBe(false);
+    expect(normaliseDispatches({ dispatches: [dsp({ state: "queued" })] }).items[0]).toMatchObject({ operationKind: "publish", creatorActionRequired: false, uploadedAt: null });
+  });
+});
+
+describe("TikTok authorize URL is checked against TikTok's own contract (BG-LAUNCH-006)", () => {
+  const REDIRECT = "https://getbizgenie.com/customer/social/oauth/callback/tiktok";
+  const intent = (url) => ({ contract_version: "social-oauth-intent.v1", intent_id: "i1", state: "s".repeat(43), expires_at: "2026-11-01T12:00:00Z", authorization_status: "ready", authorize_url: url, redirect_uri: REDIRECT });
+  const auth = (params) => `https://www.tiktok.com/v2/auth/authorize/?${new URLSearchParams({ client_key: "ck", response_type: "code", scope: "user.info.basic,video.upload", redirect_uri: REDIRECT, state: "s".repeat(43), ...params })}`;
+  const start = (url, provider = "tiktok") => startConnect({ apiBaseUrl: "https://api.test", accessToken: "t", scope: { tenantId: "t", projectId: "p", brandId: "b" }, provider, pkce: { verifier: "v".repeat(43), challenge: "c".repeat(43) }, fetchImpl: async () => ({ ok: true, status: 200, json: async () => intent(url), headers: { get: () => null } }) });
+  it("opens the exact TikTok authorize page with no PKCE parameters, keeping the verifier in the browser for BizGenie's own completion", async () => {
+    const r = await start(auth({})); expect(r.url).toContain("https://www.tiktok.com/v2/auth/authorize/"); expect(r.pending).toMatchObject({ provider: "tiktok", verifier: "v".repeat(43), redirectUri: REDIRECT });
+  });
+  it("refuses another host or path, a missing client key, a mismatched state or redirect, and any PKCE or client_id parameter", async () => {
+    for (const url of [auth({}).replace("www.tiktok.com", "evil.example"), auth({}).replace("/v2/auth/authorize/", "/other/"), auth({ client_key: "" }), auth({ state: "x".repeat(43) }), auth({ redirect_uri: "https://evil.example/cb" }), auth({ code_challenge: "c".repeat(43), code_challenge_method: "S256" }), auth({ client_id: "x" }), auth({ response_type: "token" })])
+      await expect(start(url)).rejects.toMatchObject({ code: "BAD_URL" });
+  });
+  it("every other platform still requires the S256 challenge of THIS attempt", async () => {
+    const fb = (extra) => `https://www.facebook.com/dialog/oauth?${new URLSearchParams({ client_id: "x", response_type: "code", redirect_uri: REDIRECT, state: "s".repeat(43), ...extra })}`;
+    await expect(start(fb({}), "facebook")).rejects.toMatchObject({ code: "BAD_URL" });
+    expect((await start(fb({ code_challenge: "c".repeat(43), code_challenge_method: "S256" }), "facebook")).url).toContain("code_challenge=");
+  });
+});
+
+describe("LinkedIn web sign-in and typed capabilities (BG-SOCIAL-002, BG-LAUNCH-010)", () => {
+  const REDIRECT = "https://getbizgenie.com/customer/social/oauth/callback/linkedin";
+  const intent = (url, extra = {}, redirect = REDIRECT) => ({ contract_version: "social-oauth-intent.v1", intent_id: "i1", state: "s".repeat(43), expires_at: "2026-11-01T12:00:00Z", authorization_status: "ready", authorize_url: url, redirect_uri: redirect, oauth_protocol: "linkedin_oidc_web", provider_pkce_required: false, ...extra });
+  const auth = (params = {}, base = "https://www.linkedin.com/oauth/v2/authorization") => `${base}?${new URLSearchParams({ response_type: "code", client_id: "li-client", redirect_uri: REDIRECT, state: "s".repeat(43), scope: "openid profile w_member_social", ...params })}`;
+  const start = (url, extra, redirect) => startConnect({ apiBaseUrl: "https://api.test", accessToken: "t", scope: { tenantId: "t", projectId: "p", brandId: "b" }, provider: "linkedin", pkce: { verifier: "v".repeat(43), challenge: "c".repeat(43) }, fetchImpl: async () => ({ ok: true, status: 200, json: async () => intent(url, extra, redirect), headers: { get: () => null } }) });
+  it("opens LinkedIn's exact authorize page with no PKCE parameters ONLY when the server states the reviewed protocol", async () => {
+    const r = await start(auth()); expect(r.url).toContain("https://www.linkedin.com/oauth/v2/authorization"); expect(r.pending).toMatchObject({ provider: "linkedin", verifier: "v".repeat(43), redirectUri: REDIRECT });
+  });
+  it("without that statement LinkedIn keeps the generic S256 requirement", async () => {
+    await expect(start(auth(), { oauth_protocol: undefined, provider_pkce_required: undefined })).rejects.toMatchObject({ code: "BAD_URL" });
+    expect((await start(auth({ code_challenge: "c".repeat(43), code_challenge_method: "S256" }), { oauth_protocol: undefined, provider_pkce_required: undefined })).url).toContain("code_challenge=");
+  });
+  it("refuses another host or path, duplicate or extra parameters, a wrong callback, a port, a fragment, and any PKCE parameter", async () => {
+    const bad = [auth({}, "https://evil.example/oauth/v2/authorization"), auth({}, "https://www.linkedin.com/other"), auth({}, "https://www.linkedin.com:8443/oauth/v2/authorization"), auth({ client_id: "" }), auth({ client_key: "x" }), auth({ state: "x".repeat(43) }), auth({ redirect_uri: "https://evil.example/cb" }), auth({ code_challenge: "c".repeat(43) }), auth({ response_type: "token" }), `${auth()}&state=${"s".repeat(43)}`, `${auth()}#frag`, `${auth()}&client_id=second`];
+    for (const url of bad) await expect(start(url)).rejects.toMatchObject({ code: "BAD_URL" });
+    await expect(start(auth({ redirect_uri: "https://getbizgenie.com/customer/social/oauth/callback/tiktok" }), {}, "https://getbizgenie.com/customer/social/oauth/callback/tiktok")).rejects.toMatchObject({ code: "BAD_URL" });
+    await expect(start(auth(), {}, "https://evil.example/customer/social/oauth/callback/linkedin")).rejects.toMatchObject({ code: "BAD_URL" });
+  });
+  it("TikTok may use the reviewed staging callback host, no other", async () => {
+    const tt = (redirect) => `https://www.tiktok.com/v2/auth/authorize/?${new URLSearchParams({ client_key: "ck", response_type: "code", scope: "user.info.basic,video.upload", redirect_uri: redirect, state: "s".repeat(43) })}`;
+    const go = (redirect) => startConnect({ apiBaseUrl: "https://api.test", accessToken: "t", scope: { tenantId: "t", projectId: "p", brandId: "b" }, provider: "tiktok", pkce: { verifier: "v".repeat(43), challenge: "c".repeat(43) }, fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ...intent(tt(redirect), { oauth_protocol: undefined, provider_pkce_required: undefined }, redirect) }), headers: { get: () => null } }) });
+    expect((await go("https://staging-api.getbizgenie.com/customer/social/oauth/callback/tiktok")).pending.provider).toBe("tiktok");
+    await expect(go("https://evil.example/customer/social/oauth/callback/tiktok")).rejects.toMatchObject({ code: "BAD_URL" });
+  });
+  it("capabilities: only known keys with a boolean `available`; the reason is plain text; unknown or malformed entries are dropped; absent stays null", () => {
+    const { connections: items } = normaliseConnections({ connections: [conn({ platform: "linkedin", capabilities: { member_login: { available: true }, member_text_post: { available: false, reason: "Not verified yet." }, unknown_thing: { available: true }, token_refresh: { available: "yes" }, post_analytics: { available: false, reason: "bad\u0001text" } } }), conn({ connection_id: "c2", platform: "tiktok" })], next_cursor: null });
+    expect(items[0].capabilities).toEqual({ member_login: { available: true, reason: null }, member_text_post: { available: false, reason: "Not verified yet." }, post_analytics: { available: false, reason: null } });
+    expect(items[1].capabilities).toBeNull();
+  });
+  it("the Connect buttons follow an optional build-time list; unset offers every known platform; unknown names are ignored", () => {
+    expect(connectableProviders(undefined)).toEqual(["instagram", "facebook", "linkedin", "tiktok", "youtube"]);
+    expect(connectableProviders("")).toEqual(["instagram", "facebook", "linkedin", "tiktok", "youtube"]);
+    expect(connectableProviders("TikTok, linkedin ,snapchat")).toEqual(["linkedin", "tiktok"]);
   });
 });

@@ -14,6 +14,7 @@ need("google", "GOOGLE_CLOUD_PROJECT", "an ISOLATED project with Vertex AI enabl
 need("google", "VIDEO_PROVIDER_OUTPUT_STORAGE_URI", "gs://<bucket>/<prefix>/ where Veo writes; the service account needs write on it and read for BizGenie");
 add("google", "Application Default Credentials / service account", Boolean(env.GOOGLE_APPLICATION_CREDENTIALS || env.GOOGLE_CLOUD_PROJECT && env.CLOUDSDK_AUTH_ACCESS_TOKEN), "GOOGLE_APPLICATION_CREDENTIALS (file) or workload identity; the account's roles: Vertex AI User, Storage Object Admin on the bucket");
 need("openai", "OPENAI_API_KEY", "image generation provider (src/image-generation/openaiProvider.js); a project key with a spend limit");
+need("approval", "RB_APPROVED_SPEND_USD", "the founder-approved spend cap in USD for the bounded run (one image + one 4 s video); the harness refuses to start real mode without it");
 need("database", "TEST_DATABASE_URL", "a DISPOSABLE PostgreSQL superuser URL (never a shared or production database)");
 need("auth", "SUPABASE_URL", "an ISOLATED Supabase project for customer sign-in (or the demo runs with the local test identity, which is NOT real sign-in)");
 need("billing", "STRIPE_SECRET_KEY", "TEST-mode key only (sk_test_...); live keys are not allowed in this demonstration");
