@@ -46,7 +46,8 @@ N=0
 # call <case> <path> <token>  -> records the verdict in RES[case]; prints one line; leaves the body in $T/body.<case>
 call(){
   local name="$1" path="$2" tok="$3" st label out v d
-  st="$(printf 'Authorization: Bearer %s\nOrigin: %s\n' "$tok" "$ORIGIN" | curl -sS --max-redirs 0 -X GET -D "$T/h.$name" -o "$T/body.$name" -w '%{http_code}' -H @- "http://127.0.0.1:$PORT$path" 2>/dev/null)" || st=000
+  # URL (it carries tenant/project identifiers) and headers go through a curl config on stdin, so neither the token nor the identifiers appear in the process list.
+  st="$(printf 'url = "%s"\nheader = "Authorization: Bearer %s"\nheader = "Origin: %s"\n' "http://127.0.0.1:$PORT$path" "$tok" "$ORIGIN" | curl -sS --max-redirs 0 -X GET -K - -D "$T/h.$name" -o "$T/body.$name" -w '%{http_code}' 2>/dev/null)" || st=000
   label="$(tr -d '\r' < "$T/h.$name" 2>/dev/null | awk -F': ' 'tolower($1)=="x-operator-proxy-response"{print $2}')"
   out="$(node scripts/staging/r2-verdicts.mjs case "$name" "$st" "$T/body.$name" "$label")"; v="${out%%$'\t'*}"; d="${out#*$'\t'}"
   RES[$name]="$v"; printf '%-8s %s: %s (revision %s)\n' "$v" "$name" "$d" "$TREV"
@@ -87,7 +88,7 @@ else
 fi
 
 echo "-- unauthenticated, DIRECT to the tag URL (no customer bearer; not through the proxy)"
-st="$(printf 'X-Serverless-Authorization: Bearer %s\n' "$ID_TOKEN" | curl -sS --proto '=https' --max-redirs 0 -X GET -o "$T/body.unauth" -w '%{http_code}' -H @- "$UP/customer/workspace/onboarding" 2>/dev/null)" || st=000
+st="$(printf 'url = "%s"\nheader = "X-Serverless-Authorization: Bearer %s"\n' "$UP/customer/workspace/onboarding" "$ID_TOKEN" | curl -sS --proto '=https' --max-redirs 0 -X GET -K - -o "$T/body.unauth" -w '%{http_code}' 2>/dev/null)" || st=000
 out="$(node scripts/staging/r2-verdicts.mjs case unauthenticated_direct "$st" "$T/body.unauth" "")"; RES[unauthenticated_direct]="${out%%$'\t'*}"; printf '%-8s unauthenticated_direct: %s (revision %s)\n' "${out%%$'\t'*}" "${out#*$'\t'}" "$TREV"
 
 echo; ARGS=(); for k in "${!RES[@]}"; do ARGS+=("$k=${RES[$k]}"); done
