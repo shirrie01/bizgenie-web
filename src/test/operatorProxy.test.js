@@ -46,3 +46,33 @@ describe("operator proxy for a private Cloud Run revision (BG-LAUNCH-013)", () =
     expect(logged.join(" ")).not.toMatch(/ID\.TOKEN/);
   });
 });
+
+describe("R2 acceptance safeguards (opt-in; BG-LAUNCH-ACCEPTANCE-03)", () => {
+  const tagUp = "https://f1fc2f51---bizgenie-api-staging-abc123-ew.a.run.app";
+  const r2 = { ...base, upstream: tagUp, pinTag: "f1fc2f51", readOnly: true };
+  it("pinTag refuses the untagged serving URL, another tag, and a malformed tag; accepts exactly the pinned tag", () => {
+    expect(() => createProxy({ ...r2, upstream: "https://bizgenie-api-staging-abc123-ew.a.run.app" })).toThrow(/untagged/);
+    expect(() => createProxy({ ...r2, upstream: "https://other---bizgenie-api-staging-abc123-ew.a.run.app" })).toThrow(/f1fc2f51---/);
+    expect(() => createProxy({ ...r2, upstream: "https://f1fc2f51---bizgenie-api-production-abc123-ew.a.run.app" })).toThrow();
+    expect(() => createProxy({ ...r2, pinTag: "F1FC/2F51" })).toThrow(/revision tag/);
+    expect(() => createProxy(r2)).not.toThrow();
+  });
+  it("without the options the previous behaviour is unchanged (untagged staging URL still allowed, POST still forwarded)", async () => {
+    let calls = 0; const s = createProxy({ ...base, upstream: "https://bizgenie-api-staging-abc123-ew.a.run.app", fetchImpl: async () => { calls += 1; return new Response("{}", { status: 200 }); } }); const port = await listen(s);
+    try { const r = await fetch(`http://127.0.0.1:${port}/customer/x`, { method: "POST", headers: { origin: base.studioOrigin, authorization: "Bearer a" }, body: "{}" }); expect(r.status).toBe(200); expect(calls).toBe(1); expect(r.headers.get("x-operator-proxy-response")).toBeNull(); } finally { s.close(); }
+  });
+  it("readOnly forwards only GET/HEAD/OPTIONS, never POST/PUT/PATCH/DELETE, and labels who produced each status", async () => {
+    let calls = 0; const s = createProxy({ ...r2, fetchImpl: async () => { calls += 1; return new Response('{"a":1}', { status: 200, headers: { "content-type": "application/json" } }); } }); const port = await listen(s);
+    const o = { origin: base.studioOrigin, authorization: "Bearer a" }; const u = (p) => `http://127.0.0.1:${port}${p}`;
+    try {
+      for (const method of ["POST", "PUT", "PATCH", "DELETE"]) { const r = await fetch(u("/customer/x"), { method, headers: o, body: method === "DELETE" ? undefined : "{}" }); expect(r.status).toBe(405); expect(r.headers.get("x-operator-proxy-response")).toBe("proxy"); }
+      expect(calls).toBe(0);
+      const miss = await fetch(u("/customer/x"), { headers: { origin: base.studioOrigin } });
+      expect(miss.status).toBe(401); expect(miss.headers.get("x-operator-proxy-response")).toBe("proxy"); expect(calls).toBe(0);
+      const ok = await fetch(u("/customer/x"), { headers: o });
+      expect(ok.status).toBe(200); expect(ok.headers.get("x-operator-proxy-response")).toBe("upstream"); expect(calls).toBe(1);
+      const head = await fetch(u("/customer/x"), { method: "HEAD", headers: o }); expect(head.status).toBe(200);
+      expect((await fetch(u("/customer/x"), { headers: { origin: "http://evil.example" } })).status).toBe(403);
+    } finally { s.close(); }
+  });
+});
