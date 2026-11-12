@@ -51,3 +51,17 @@ test('every .eyebrow label meets WCAG AA contrast against its actual background'
   });
   expect(failures).toEqual([]);
 });
+
+// BG-WEB-LEGAL-CLOSURE-13: the help/legal footer is a real landmark outside <main>, never overflows, and its links (if configured) are comfortable to tap.
+test('help and legal footer is a landmark outside main, fits the viewport and has tappable links', async ({ page }) => {
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  await page.goto('/');
+  const footer = page.locator('footer[aria-label="Help and legal"]');
+  await expect(footer).toBeVisible();
+  const m = await page.evaluate(() => {
+    const f = document.querySelector('footer[aria-label="Help and legal"]'); const vw = document.documentElement.clientWidth;
+    return { insideMain: Boolean(f.closest('main')), overflow: document.documentElement.scrollWidth > vw + 1, right: Math.round(f.getBoundingClientRect().right), vw,
+      smallLinks: [...f.querySelectorAll('a')].filter((a) => a.getBoundingClientRect().height < 24).length };
+  });
+  expect(m.insideMain).toBe(false); expect(m.overflow).toBe(false); expect(m.right).toBeLessThanOrEqual(m.vw + 1); expect(m.smallLinks).toBe(0);
+});

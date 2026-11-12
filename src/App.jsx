@@ -1462,15 +1462,15 @@ export default function App() {
       />
       </Lazy></PremiumErrorBoundary>
       )}
-      <SiteLinks />
     </main>
   ) : null;
 
   // Premium Studio (BG-STUDIO-008-FE) is behind a build-time flag that is off by default. With the flag off,
   // the markup below is exactly what it was before, in the same order.
-  if (premiumEnabled) return premiumView;
+  if (premiumEnabled) return (<>{premiumView}<SiteLinks /></>);
 
   return (
+    <>
     <main className="shell">
       {topbar}
       {(session.status === "signed-out" || session.status === "unconfigured") && (
@@ -1510,5 +1510,7 @@ export default function App() {
       {recommendationSection}
       {campaignSection}
     </main>
+    <SiteLinks />
+    </>
   );
 }

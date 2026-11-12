@@ -212,3 +212,20 @@ describe("paid beta checkout surface", () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("terms notice follows the configured Terms destination (BG-WEB-LEGAL-CLOSURE-13)", () => {
+  const sub = () => global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: "not_subscribed", subscription: null }) });
+  it("unset: the honest 'not published' notice is shown", async () => {
+    sub(); vi.unstubAllEnvs(); vi.stubEnv("VITE_TERMS_URL", "");
+    render(<BillingPanel session={readySession} pathname="/" />);
+    expect(await screen.findByText(/has not yet published customer support, cancellation and refund terms/i)).toBeInTheDocument();
+    vi.unstubAllEnvs();
+  });
+  it("a valid Terms link is configured: the notice no longer contradicts the footer link", async () => {
+    sub(); vi.stubEnv("VITE_TERMS_URL", "https://example.test/terms");
+    render(<BillingPanel session={readySession} pathname="/" />);
+    await screen.findByText(/your bizgenie plan/i);
+    expect(screen.queryByText(/has not yet published customer support, cancellation and refund terms/i)).toBeNull();
+    vi.unstubAllEnvs();
+  });
+});

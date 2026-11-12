@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { company, runtime, unresolved } from "./config.mjs";
 import { previews } from "./content.mjs";
-import { deletionPage, homePage, notFoundPage, privacyPage, termsPage } from "./templates.mjs";
+import { deletionPage, homePage, notFoundPage, privacyPage, supportPage, termsPage } from "./templates.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const out = path.resolve(here, "..", process.env.SITE_OUT || "site-dist");
@@ -39,13 +39,14 @@ write("index.html", homePage(ctx));
 write("privacy/index.html", privacyPage(ctx));
 write("terms/index.html", termsPage(ctx));
 write("data-deletion/index.html", deletionPage(ctx));
+write("support/index.html", supportPage(ctx));
 write("404.html", notFoundPage(ctx));
 for (const f of fs.readdirSync(path.join(here, "assets"))) copy(path.join(here, "assets", f), `assets/${f}`);
 for (const p of previews) copy(path.join(here, p.file), p.file);
 write("robots.txt", `User-agent: *\n${strict ? "Allow: /" : "Disallow: /"}\n${strict ? `Sitemap: ${company.siteUrl}/sitemap.xml\n` : ""}`);
 write(
   "sitemap.xml",
-  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${["/", "/privacy/", "/terms/", "/data-deletion/"].map((p) => `<url><loc>${company.siteUrl}${p}</loc></url>`).join("\n")}\n</urlset>\n`,
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${["/", "/privacy/", "/terms/", "/data-deletion/", "/support/"].map((p) => `<url><loc>${company.siteUrl}${p}</loc></url>`).join("\n")}\n</urlset>\n`,
 );
 // Reference security headers for whichever static host is chosen (see docs/website/BG_WEB_001_HOSTING_AND_CUTOVER.md). No inline script or style is used.
 const connect = ["'self'", runtime.apiBaseUrl].filter(Boolean).join(" ");

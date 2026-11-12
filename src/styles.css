@@ -367,7 +367,9 @@ button.link:focus-visible { outline: 3px solid #0b4943; outline-offset: 2px; bor
 /* BG-LAUNCH-015: help and legal links (unresolved ones are plain text) */
 .ps-sitelinks { padding: 16px clamp(24px, 6vw, 96px) 32px; color: #4b564f; font-size: .88rem; }
 .ps-sitelinks ul { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; }
-.ps-sitelinks a { color: inherit; text-decoration: underline; }
+.ps-sitelinks a { color: inherit; text-decoration: underline; display: inline-block; padding: 12px 0; min-height: 24px; }
+.ps-sitelinks a:focus-visible { outline: 3px solid #16211d; outline-offset: 2px; }
+.ps-sitelinks-note { margin: 4px 0 0; max-width: 62ch; }
 
 /* BG-LAUNCH-019: sign-in and account creation (previously unstyled). Existing palette only: charcoal on white and the warm greys already used. */
 .auth-panel { max-width: 440px; margin: 0 auto; padding: 28px clamp(20px, 5vw, 32px) 32px; background: #fff; border: 1px solid #d9dbd3; border-radius: 14px; display: grid; gap: 16px; }
