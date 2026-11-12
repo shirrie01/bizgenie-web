@@ -1455,7 +1455,7 @@ export default function App() {
           campaign: campaignSection,
           brand: brandSection,
           media: <Lazy><PremiumMedia enabled={isMediaIntakeApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
-          connections: <Lazy><PremiumConnections enabled={isSocialApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
+          connections: <Lazy><PremiumConnections enabled={isSocialApiEnabled()} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} roleKnown={roleState.status === "ready"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
           insights: <Lazy><PremiumInsights enabled={isAnalyticsApiEnabled()} api={insightsApi} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} campaignId={campaignState.campaign ? campaignState.campaign.campaign_id : ""} campaignName={campaignState.campaign ? campaignState.campaign.name : ""} isOwner={roleState.role === "owner"} onSessionEnded={() => setSessionEnded(true)} /></Lazy>,
           account: <Lazy><PremiumBilling session={session} isOwner={roleState.role === "owner"} /></Lazy>,
         }}

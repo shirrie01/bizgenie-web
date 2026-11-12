@@ -1,3 +1,4 @@
+import { looksLikeOAuthReturn } from "./oauthReturn";
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 const GrowthCentre = lazy(() => import("./GrowthCentre"));
 import PremiumOnboarding, { STAGES } from "./PremiumOnboarding";
@@ -143,6 +144,8 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
       if (workspaceState.status === "ready" && (workspaceState.selectionRequired || workspaceState.notice)) { setView("workspaces"); return; }
       setView("onboarding"); setStage(0); return;
     }
+    // Returning from a social platform (Studio-hosted callback or the legacy relay): open the accounts view so the return is handled at once, before the attempt expires.
+    if (typeof window !== "undefined" && looksLikeOAuthReturn(window.location.pathname, window.location.search)) { setView("connections"); return; }
     if (!ready || !prefilled) return;
     if (brainState.status === "error" || onboardingState.status !== "ready") { setView("overview"); return; }
     if (model.profile.complete) { setView("overview"); return; }

@@ -1,0 +1,40 @@
+# Staging social OAuth callback — architecture decision and contract (BG-LAUNCH-CLOSURE-10, 12 Nov 2026)
+
+**Status: SOURCE ONLY. Nothing is deployed, registered with a provider, or made public. No provider console, DNS, IAM, deployment or traffic change is made or authorised by this document.**
+
+## 1. Problem (verified in source)
+The API's staging redirect URIs are pinned to `https://staging-api.getbizgenie.com/customer/social/oauth/callback/{linkedin,tiktok}` (`src/social-connectors/linkedin.js`, `tiktok.js`). That host is the **private, IAM-protected** Cloud Run API; a browser redirect from LinkedIn/TikTok carries no Google identity and cannot satisfy IAM, and the public bridge's allowlist does not carry `GET /customer/social/oauth/callback/:platform`. Codex's own handover says never to make private Cloud Run public to deliver an OAuth callback.
+
+## 2. What the existing design actually needs from a callback (read from `social-publishing/{router,service}.js`)
+The API callback route is **relay-only**: it validates `code` (1–4096) and `state` (32–256), looks up the unconsumed, unexpired intent by `state` hash, and answers `303` to the fixed `browser_return_uri` with `code` and `state`. It performs **no token exchange** and stores nothing. The real work happens in `POST /customer/social/oauth-complete`, which the **signed-in owner's browser** sends through the bridge with `intent_id`, `state`, `code`, and the PKCE `code_verifier` (kept in `sessionStorage`; it never leaves the browser until then). That call re-validates the state hash, single use, expiry, tenant/project/actor binding, redirect URI, authorization-configuration hash and the verifier, then exchanges the code. The redirect target is not caller-controlled (fixed configuration). Providers differ only in their authorize URL shape (TikTok Web Login Kit: `client_key`, no PKCE parameters; LinkedIn OIDC web: `client_id`, no PKCE parameters, `oauth_protocol=linkedin_oidc_web`); both return `code` + `state` (or `error`).
+
+## 3. Options evaluated
+| | A. Public WEB gateway relaying to the private API | B. Dedicated public callback service | C. Extend the existing bridge | **D. Studio-hosted callback (selected)** |
+|---|---|---|---|---|
+| Public attack surface | new public route + server-to-server auth | new public service | widens the reviewed bridge allowlist | **none new**: a static SPA path |
+| State/CSRF/replay | relay can only pre-check; real check is in `oauth-complete` | same | same | enforced where it matters: browser state + server intent (single use, 5 min) |
+| Token confidentiality | code passes through a new hop and its logs | same | same | `code` stays in the browser; removed from the address bar at once; `Referrer-Policy: no-referrer`, CSP `script-src 'self'` |
+| Tenant/project binding | needs the server to know the actor (it does not; no bearer on the callback) | same | same | bound at `oauth-intents`/`oauth-complete` (owner bearer); the Studio also refuses a return started in another workspace |
+| Service-to-service auth | required (new secret/identity) | required | uses bridge identity | **not needed** |
+| Redirect integrity | fixed target | fixed target | fixed target | never navigates from the query; no redirect exists |
+| Operational complexity / approvals | new function + secret + deploy + IAM | new service + deploy + IAM | bridge release (BG-017C-07 gate) | DNS custom domain for the Studio + provider-console registration + one API config constant |
+**Decision: D.** It needs no new public server, no server-to-server credential and no change to Cloud Run exposure. The API relay route stays for the legacy/production URL.
+
+## 4. What is implemented here (WEB only)
+- `src/premium/oauthReturn.js`: strict, pure parsing of the return (shapes: `/customer/social/oauth/callback/<provider>?code&state` and the legacy `/?code&state`): single parameters, `state` 32–256 base64url, `code` 1–4096 printable, provider allowlist, path provider must equal the stored attempt's provider, expiry, workspace (tenant/project/brand) equals the one the attempt started in, provider `error` without a code → fixed "not connected" message; never builds a URL, never echoes a value.
+- `PremiumConnections.jsx`: handles the return once, clears the verifier and cleans the address bar (back to `/`) on **every** outcome, sends exactly one `oauth-complete` only for a checked return, waits for the membership role (never decides from a guess), reports non-owner/disabled with fixed text and no network call.
+- `PremiumStudio.jsx`: opens **Accounts and publishing** by itself when the browser returns from a platform (before this change the return landed on the overview and the 5-minute attempt could expire unseen).
+- `socialClient.js`: the reviewed callback origins now include `https://staging-app.getbizgenie.com` (exact; the bare `*.pages.dev` host is deliberately excluded because it cannot be domain-verified with TikTok); the existing checks (exact path per provider, no port/credentials/query/fragment, same `redirect_uri` in the authorize URL) are unchanged.
+
+## 5. Mandatory negative cases → tests
+`src/premium/oauthReturn.test.js` (unit, 29) and `src/test/App.oauthReturn.test.jsx` (integration through the real App with mocked network, 20): 1 missing state ✔ · 2 invalid state ✔ · 3 expired ✔ · 4 replayed (no stored attempt; reload after a handled return sends nothing) ✔ · 5 wrong provider (path vs stored attempt; unknown provider) ✔ · 6 wrong tenant ✔ · 7 wrong project (and brand) ✔ · 8 malformed (length, characters, duplicates) ✔ · 9 unexpected redirect target (`redirect/next/return_to` parameters ignored; no navigation) ✔ · 10 missing code ✔ · 11 backend authentication failure (401) and refusal (409), no auto-retry ✔ · 12 token leakage (console spies; page text; the code, state and verifier never appear) ✔ · 13 sensitive parameters in process arguments — **not applicable to the Studio** (no process; the R2 script keeps identifiers off argv) · 14 open redirect (HTML/`javascript:`/external URLs in parameters are never navigated or rendered) ✔ · 15 cross-provider confusion ✔ · 16 provider error callbacks (description never shown) ✔ · 17 retries ✔ · 18 disabled integration (nothing sent, query removed, stored attempt cleared) ✔. Also: `socialClient.test.js` proves the Studio callback origin is accepted only exactly and refuses look-alikes, Pages host, other paths, ports, credentials, query and fragment for both providers.
+No live OAuth handshake was performed or simulated as hosted.
+
+## 6. Exact contract for Codex (API; not implemented here)
+1. For `BIZGENIE_ENVIRONMENT=staging` only, add one exact redirect constant per provider: `https://staging-app.getbizgenie.com/customer/social/oauth/callback/linkedin` and `…/tiktok`, selectable by the existing explicit env settings (`LINKEDIN_REDIRECT_URI`, `TIKTOK_REDIRECT_URI`) with the same strict exact-match validation and tests as the existing staging constants (lookalike host, port, query, fragment, credentials, other path, other environment). Production defaults unchanged.
+2. `oauth-intents` must return that `redirect_uri` and use it in the authorize URL; the intent row and authorization-configuration hash bind it; `oauth-complete` must exchange the code with the **same** `redirect_uri`.
+3. The API relay route and `browser_return_uri` are not used in this mode; keep them for the legacy URL.
+4. No change to bridge allowlists, Cloud Run exposure or IAM is needed.
+
+## 7. Approvals still required before any live use (none is given by this PR)
+(a) Founder: DNS/Pages custom domain `staging-app.getbizgenie.com` for the Studio (the current deployment is the bare Pages host); (b) founder: provider-console registration of the exact redirect URI and, for TikTok, URL-prefix/domain verification, with each app's review status; (c) Codex API change in §6 reviewed and merged; (d) a separately approved staging Studio release and API revision carrying both; (e) a controlled test with a founder-owned LinkedIn/TikTok account (no paid or publishing action).

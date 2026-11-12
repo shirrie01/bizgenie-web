@@ -145,7 +145,9 @@ export async function startConnect({ apiBaseUrl, accessToken, scope, provider, p
   //  - TikTok (Web Login Kit, BG-SOCIAL-001): exact host and path, client_key.
   //  - LinkedIn (OpenID Connect, BG-SOCIAL-002): exact host and path, client_id, and ONLY when the server states oauth_protocol "linkedin_oidc_web" with provider_pkce_required false.
   // Every other platform, and a LinkedIn response without that statement, keeps the S256 check. Callback pages are exactly the reviewed ones (production or staging API host).
-  const CALLBACK_ORIGINS = ["https://getbizgenie.com", "https://staging-api.getbizgenie.com"];
+  // The Studio-hosted staging callback (https://staging-app.getbizgenie.com/customer/social/oauth/callback/<platform>) needs NO server: the Studio reads the return itself (see oauthReturn.js).
+  // The bare Pages host (*.pages.dev) is deliberately not listed: it cannot be domain-verified with the platforms.
+  const CALLBACK_ORIGINS = ["https://getbizgenie.com", "https://staging-api.getbizgenie.com", "https://staging-app.getbizgenie.com"];
   const web = { tiktok: { origin: "https://www.tiktok.com", path: "/v2/auth/authorize/", client: "client_key", other: "client_id", needsStatement: false }, linkedin: { origin: "https://www.linkedin.com", path: "/oauth/v2/authorization", client: "client_id", other: "client_key", needsStatement: true } }[provider];
   const statedWeb = Boolean(web) && (!web.needsStatement || (j.oauth_protocol === "linkedin_oidc_web" && j.provider_pkce_required === false));
   const noPkceOk = statedWeb && target.origin === web.origin && target.pathname === web.path && str(sp.get(web.client)) && sp.getAll(web.client).length === 1 && !sp.has(web.other) && !sp.has("code_challenge") && !sp.has("code_challenge_method") && !sp.has("code_verifier")

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { looksLikeOAuthReturn, readOAuthReturn, RETURN_MESSAGE } from "./oauthReturn";
 import { CAPABILITY_LABEL, PROVIDER_LABEL, connectableProviders, cancelDispatch as realCancel, completeConnect as realComplete, disconnect as realDisconnect, fetchConnections as realFetchConnections, fetchDispatches as realFetchDispatches, startConnect as realConnect } from "./socialClient";
 
 // Connected social accounts and publishing status (BG-STUDIO-024-FE, real contract of bizgenie-api #218 /customer/social/*). With the build gate off this page
@@ -14,9 +15,10 @@ const redirectDefault = (url) => window.location.assign(url);
 const store = () => { try { return window.sessionStorage; } catch { return null; } };
 const readPending = () => { try { return JSON.parse(store()?.getItem(PENDING_KEY) || "null"); } catch { return null; } };
 const writePending = (v) => { try { v ? store()?.setItem(PENDING_KEY, JSON.stringify(v)) : store()?.removeItem(PENDING_KEY); } catch { /* storage unavailable: the callback then reports a mismatch instead of connecting */ } };
-const stripQuery = () => { try { window.history.replaceState(null, "", window.location.pathname + window.location.hash); } catch { /* ignore */ } };
+// The platform's code and state are removed from the address bar immediately; a Studio-hosted callback path is replaced by the Studio root. Nothing is ever read back from the URL later.
+const stripQuery = () => { try { window.history.replaceState(null, "", "/" + window.location.hash); } catch { /* ignore */ } };
 
-export default function PremiumConnections({ enabled, session, scope, isOwner, api = {}, onSessionEnded, onRedirect = redirectDefault, search = typeof window === "undefined" ? "" : window.location.search }) {
+export default function PremiumConnections({ enabled, session, scope, isOwner, roleKnown = true, api = {}, onSessionEnded, onRedirect = redirectDefault, search = typeof window === "undefined" ? "" : window.location.search }) {
   const [conns, setConns] = useState({ status: "idle", connections: [], skipped: 0, error: "" });
   const [list, setList] = useState({ status: "idle", items: [], skipped: 0, error: "" });
   const [busy, setBusy] = useState(""); const [msg, setMsg] = useState({ kind: "", text: "" }); const [confirming, setConfirming] = useState("");
@@ -31,18 +33,24 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, a
   }, [scope.tenantId, scope.projectId, scope.brandId, session.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (enabled && conns.status === "idle") load(); }, [enabled, conns.status, load]);
   useEffect(() => { setConns({ status: "idle", connections: [], skipped: 0, error: "" }); setList({ status: "idle", items: [], skipped: 0, error: "" }); }, [scope.tenantId, scope.projectId, scope.brandId]);
-  // Returning from the platform: ?code=...&state=... is accepted only against the attempt this browser started.
+  // Returning from the platform (Studio-hosted callback path or the legacy relay): checked here against the attempt this browser started, BEFORE anything is sent.
   useEffect(() => {
-    if (!enabled || !isOwner || handled.current) return;
-    const p = new URLSearchParams(search || ""); const code = p.get("code"); const state = p.get("state");
-    if (p.get("error") && !code) { // consent refused or cancelled on the platform: no code exists, so nothing can be connected; the unused intent expires on its own
-      handled.current = true; writePending(null); stripQuery(); setMsg({ kind: "warn", text: "Permission was not given on the platform, so nothing was connected." }); return;
+    if (handled.current) return;
+    if (!enabled) { // integration off: nothing is sent anywhere; a stray platform return is simply removed from the address bar
+      if (looksLikeOAuthReturn(typeof window === "undefined" ? "" : window.location.pathname, search)) { handled.current = true; writePending(null); stripQuery(); }
+      return;
     }
-    if (!code || !state) return;
-    handled.current = true; const pending = readPending(); writePending(null); stripQuery();
+    if (!isOwner && !roleKnown) return; // the membership role is still loading: wait for it, never decide from a guess
+    const ret = readOAuthReturn({ pathname: typeof window === "undefined" ? "/" : window.location.pathname, search, pending: readPending(), scope, now: Date.now() });
+    if (ret.kind === "none") return;
+    handled.current = true;
+    const pending = readPending(); writePending(null); stripQuery(); // the verifier and the code are never kept longer than this one handling, whatever the outcome
+    if (!isOwner) { setMsg({ kind: "warn", text: RETURN_MESSAGE.NOT_OWNER }); return; }
+    if (ret.kind === "provider_error") { setMsg({ kind: "warn", text: RETURN_MESSAGE.provider_error }); return; }
+    if (ret.kind === "invalid") { setMsg({ kind: "warn", text: RETURN_MESSAGE[ret.reason] || RETURN_MESSAGE.MALFORMED }); return; }
     setBusy("complete");
-    (api.completeConnect || realComplete)({ ...base, pending, code, state }).then(() => { if (live.current) { setMsg({ kind: "ok", text: `${PROVIDER_LABEL[pending.provider]} is connected.` }); load(); } }).catch((e) => { fail(e); if (live.current) setMsg({ kind: e.kind === "unconfirmed" ? "warn" : "error", text: e.message }); }).finally(() => { if (live.current) setBusy(""); });
-  }, [enabled, isOwner, search]); // eslint-disable-line react-hooks/exhaustive-deps
+    (api.completeConnect || realComplete)({ ...base, pending, code: ret.code, state: ret.state }).then(() => { if (live.current) { setMsg({ kind: "ok", text: `${PROVIDER_LABEL[pending.provider]} is connected.` }); load(); } }).catch((e) => { fail(e); if (live.current) setMsg({ kind: e.kind === "unconfirmed" ? "warn" : "error", text: e.message }); }).finally(() => { if (live.current) setBusy(""); });
+  }, [enabled, isOwner, roleKnown, search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!enabled) {
     return (
@@ -54,7 +62,7 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, a
     );
   }
   const run = async (name, work) => { if (busy) return; setBusy(name); setMsg({ kind: "", text: "" }); try { await work(); } catch (e) { fail(e); if (live.current) setMsg({ kind: e.kind === "unconfirmed" ? "warn" : "error", text: e.message }); } finally { if (live.current) setBusy(""); } };
-  const connect = (provider) => run(`c:${provider}`, async () => { const r = await (api.startConnect || realConnect)({ ...base, provider }); writePending(r.pending); setMsg({ kind: "ok", text: `Taking you to ${PROVIDER_LABEL[provider]} to give permission. The account shows as connected only after ${PROVIDER_LABEL[provider]} confirms it to BizGenie.` }); onRedirect(r.url); });
+  const connect = (provider) => run(`c:${provider}`, async () => { const r = await (api.startConnect || realConnect)({ ...base, provider }); writePending({ ...r.pending, scope: { tenantId: scope.tenantId, projectId: scope.projectId, brandId: scope.brandId } }); setMsg({ kind: "ok", text: `Taking you to ${PROVIDER_LABEL[provider]} to give permission. The account shows as connected only after ${PROVIDER_LABEL[provider]} confirms it to BizGenie.` }); onRedirect(r.url); });
   const remove = (a) => run(`d:${a.id}`, async () => { await (api.disconnect || realDisconnect)({ ...base, connectionId: a.id }); setConfirming(""); setMsg({ kind: "ok", text: `${PROVIDER_LABEL[a.provider]} · ${a.name} was disconnected. Anything already published stays on the platform.` }); load(); });
   const cancel = (d) => run(`x:${d.id}`, async () => { await (api.cancelDispatch || realCancel)({ ...base, dispatchId: d.id }); setMsg({ kind: "ok", text: "That post was cancelled and will not be sent." }); load(); });
   const connectedProviders = new Set(conns.connections.filter((a) => a.status === "connected").map((a) => a.provider));

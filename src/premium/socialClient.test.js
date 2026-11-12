@@ -167,3 +167,24 @@ describe("LinkedIn web sign-in and typed capabilities (BG-SOCIAL-002, BG-LAUNCH-
     expect(connectableProviders("TikTok, linkedin ,snapchat")).toEqual(["linkedin", "tiktok"]);
   });
 });
+
+describe("Studio-hosted staging callback is accepted only on the reviewed origin and path (BG-LAUNCH-CLOSURE-10)", () => {
+  const STUDIO = "https://staging-app.getbizgenie.com";
+  const redirectFor = (provider, base = STUDIO) => `${base}/customer/social/oauth/callback/${provider}`;
+  const intent = (provider, url, redirect) => ({ contract_version: "social-oauth-intent.v1", intent_id: "i1", state: "s".repeat(43), expires_at: "2026-11-01T12:00:00Z", authorization_status: "ready", authorize_url: url, redirect_uri: redirect, ...(provider === "linkedin" ? { oauth_protocol: "linkedin_oidc_web", provider_pkce_required: false } : {}) });
+  const authUrl = (provider, redirect, extra = {}) => provider === "tiktok"
+    ? `https://www.tiktok.com/v2/auth/authorize/?${new URLSearchParams({ client_key: "ck", response_type: "code", scope: "user.info.basic,video.upload", redirect_uri: redirect, state: "s".repeat(43), ...extra })}`
+    : `https://www.linkedin.com/oauth/v2/authorization?${new URLSearchParams({ client_id: "cid", response_type: "code", scope: "openid profile w_member_social", redirect_uri: redirect, state: "s".repeat(43), ...extra })}`;
+  const start = (provider, redirect, url = authUrl(provider, redirect)) => startConnect({ apiBaseUrl: "https://api.test", accessToken: "t", scope: { tenantId: "t", projectId: "p", brandId: "b" }, provider, pkce: { verifier: "v".repeat(43), challenge: "c".repeat(43) }, fetchImpl: async () => ({ ok: true, status: 200, json: async () => intent(provider, url, redirect), headers: { get: () => null } }) });
+  for (const provider of ["tiktok", "linkedin"]) {
+    it(`${provider}: the exact Studio callback on staging-app.getbizgenie.com is accepted and the attempt records it`, async () => {
+      const r = await start(provider, redirectFor(provider)); expect(r.pending).toMatchObject({ provider, redirectUri: redirectFor(provider) });
+    });
+    it(`${provider}: look-alike hosts, the bare Pages host, another path, the other provider's path, http, ports, credentials, query and fragment are all refused`, async () => {
+      const bad = [redirectFor(provider, "https://staging-app.getbizgenie.com.evil.example"), redirectFor(provider, "https://bizgenie-studio-staging.pages.dev"), redirectFor(provider, "https://evil-staging-app.getbizgenie.com"),
+        `${STUDIO}/customer/social/oauth/callback/${provider === "tiktok" ? "linkedin" : "tiktok"}`, `${STUDIO}/customer/social/oauth/callback/${provider}/x`, `${STUDIO}/other`, redirectFor(provider, "http://staging-app.getbizgenie.com"),
+        redirectFor(provider, "https://staging-app.getbizgenie.com:8443"), redirectFor(provider, "https://user@staging-app.getbizgenie.com"), `${redirectFor(provider)}?x=1`, `${redirectFor(provider)}#x`];
+      for (const redirect of bad) await expect(start(provider, redirect), redirect).rejects.toMatchObject({ code: "BAD_URL" });
+    });
+  }
+});
