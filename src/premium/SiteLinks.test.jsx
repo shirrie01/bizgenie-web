@@ -18,7 +18,7 @@ describe("SiteLinks (BG-LAUNCH-015)", () => {
   });
   it.each([["http://example.test/x"], ["javascript:alert(1)"], ["https://user:pw@example.test/"], ["https://localhost/"], ["//example.test"], ["  "], [undefined], [5]])("%s is refused", (v) => expect(resolveLink(v, { allowMail: true })).toBeNull());
   // BG-WEB-LEGAL-CLOSURE-13
-  it.each([["https://127.0.0.1/terms"], ["https://192.168.1.10/"], ["https://[::1]/"], ["mailto:a@example.test,b@example.test"], ["mailto:a@example.test?subject=x"], ["http://example.test"], ["ftp://example.test/x"], ["data:text/html,hi"]])("%s is refused", (v) => expect(resolveLink(v, { allowMail: true })).toBeNull());
+  it.each([["https://127.0.0.1/terms"], ["https://192.168.1.10/"], ["https://[::1]/"], ["mailto:a@example.test,b@example.test"], ["https://wiki.internal/terms"], ["https://printer.local/"], ["https://intranet.corp/x"], ["mailto:a@example.test?subject=x"], ["http://example.test"], ["ftp://example.test/x"], ["data:text/html,hi"]])("%s is refused", (v) => expect(resolveLink(v, { allowMail: true })).toBeNull());
   it("a mailto: address is never offered for Terms or Privacy", () => {
     expect(resolveLink("mailto:help@example.test")).toBeNull();
     expect(resolveLink("mailto:help@example.test", { allowMail: true })).toBe("mailto:help@example.test");
@@ -51,5 +51,11 @@ describe("SiteLinks (BG-LAUNCH-015)", () => {
     expect(screen.getByRole("link", { name: /Contact support/ })).toHaveAttribute("href", "https://example.test/support");
     rerender(<p><SupportNote env={{ VITE_SUPPORT_URL: "http://example.test/support" }} /></p>);
     expect(container.textContent).toBe("A support contact has not been published yet.");
+  });
+  it("an upper-case MAILTO: is normalised and rendered as a mail link, not a new-tab link", () => {
+    expect(resolveLink("MAILTO:help@example.test", { allowMail: true })).toBe("mailto:help@example.test");
+    render(<SiteLinks env={{ VITE_SUPPORT_URL: "MAILTO:help@example.test" }} />);
+    const a = screen.getByRole("link", { name: "Help and support" });
+    expect(a).not.toHaveAttribute("target"); expect(a.textContent).not.toMatch(/new tab/);
   });
 });

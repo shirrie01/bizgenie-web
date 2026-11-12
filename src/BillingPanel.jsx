@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { readCustomerBillingState, startStandardCheckout } from "./billingClient";
 import { limitedNotice, routeLimited } from "./bridgeLimits";
+import { resolveLink } from "./premium/SiteLinks";
 
 const SUCCESS_PATH = "/billing/checkout/success";
 const CANCEL_PATH = "/billing/checkout/cancel";
@@ -176,7 +177,7 @@ export default function BillingPanel({ session, pathname = window.location.pathn
         </button>
       ) : null}
       {checkout.status === "error" && <p className="error" role="alert">{checkout.error}</p>}
-      {showTermsNotice && <p className="notice"><strong>Terms:</strong> BizGenie has not yet published customer support, cancellation and refund terms in the app, so none are shown here.</p>}
+      {showTermsNotice && !resolveLink(import.meta.env.VITE_TERMS_URL) && <p className="notice"><strong>Terms:</strong> BizGenie has not yet published customer support, cancellation and refund terms in the app, so none are shown here.</p>}
     </section>
   );
 }

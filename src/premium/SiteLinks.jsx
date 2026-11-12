@@ -1,7 +1,7 @@
 import React from "react";
 
 // Support and legal destinations come only from build-time settings. None is invented: an address that is not set, or is not a plain
-// https link (support may also be mailto:), is shown as "not set up yet" instead of a link (BG-LAUNCH-015). Legal text is not written here.
+// https link (support may also be mailto:), is shown as "not set up yet" instead of a link (BG-LAUNCH-015). Legal policy text is not written here; the single AI-content sentence in the footer is a factual product statement, DRAFT wording pending adviser review.
 // BG-WEB-LEGAL-CLOSURE-13: also refuses an IP-address host, tells assistive technology that a link opens a new tab, shows the same footer in every
 // Studio view, and lets billing screens point at the configured support destination instead of saying none exists.
 const ITEMS = [
@@ -10,16 +10,17 @@ const ITEMS = [
   { key: "VITE_PRIVACY_URL", label: "Privacy" },
 ];
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+const INTERNAL_HOST = /\.(local|localhost|internal|lan|corp|home|intranet)\.?$/i; // a destination customers can reach lives on a public name
 
 export function resolveLink(raw, { allowMail = false } = {}) {
   if (typeof raw !== "string") return null;
   const value = raw.trim();
   if (!value) return null;
-  if (allowMail && /^mailto:[^\s@?#,;]+@[^\s@?#,;]+\.[^\s@?#,;]+$/i.test(value)) return value;
+  if (allowMail && /^mailto:[^\s@?#,;]+@[^\s@?#,;]+\.[^\s@?#,;]+$/i.test(value)) return `mailto:${value.slice(7)}`; // scheme normalised so callers can test it exactly
   try {
     const u = new URL(value);
     if (u.protocol !== "https:" || u.username || u.password || !u.hostname.includes(".")) return null;
-    if (IPV4.test(u.hostname) || u.hostname.startsWith("[")) return null; // a legal or support page lives on a named host, never a bare address
+    if (IPV4.test(u.hostname) || u.hostname.startsWith("[") || INTERNAL_HOST.test(u.hostname)) return null; // a legal or support page lives on a named host, never a bare address
     return u.href;
   } catch { return null; }
 }

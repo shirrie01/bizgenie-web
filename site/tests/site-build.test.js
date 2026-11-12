@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { JSDOM } from "jsdom";
+import { company, unresolved } from "../config.mjs";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
@@ -117,18 +118,20 @@ describe("support page (BG-WEB-LEGAL-CLOSURE-13)", () => {
     for (const rel of PAGES.filter((p) => p !== "404.html")) expect(dom(rel).querySelector('footer a[href="/support/"]'), rel).toBeTruthy();
     expect(fs.readFileSync(path.join(dist, "sitemap.xml"), "utf8")).toContain("/support/");
   });
-  it("invents no contact: with no verified address it shows no mailto link and says the address is to be confirmed", () => {
-    expect(sup().querySelectorAll('a[href^="mailto:"]')).toHaveLength(0);
-    expect(txt()).toMatch(/to be confirmed before publication/);
-    expect(txt()).not.toMatch(/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/);
+  it("invents no contact: the only address shown is the configured one; with none configured there is no mailto link and the page says it is to be confirmed", () => {
+    const mails = [...sup().querySelectorAll('a[href^="mailto:"]')].map((a) => a.getAttribute("href"));
+    const typed = (txt().match(/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/g) || []);
+    if (company.contactEmail) { expect(mails).toContain(`mailto:${company.contactEmail}`); expect(new Set(typed)).toEqual(new Set([company.contactEmail])); }
+    else { expect(mails).toHaveLength(0); expect(typed).toHaveLength(0); expect(txt()).toMatch(/to be confirmed before publication/); }
   });
   it("promises no response time, price or availability, and tells people never to send secrets", () => {
-    expect(txt()).not.toMatch(/\d|within|hours|days|24\/7|guarantee|£/i);
+    expect(txt().replace(/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/g, "")).not.toMatch(/\d|within|hours|days|24\/7|guarantee|£/i);
     expect(txt()).toMatch(/Never send us a password, a social media access token, or card details/);
   });
   it("is clearly a draft until the build is strict", () => { expect(sup().querySelector(".draft, [role=note], .notice") || /Draft for legal review/.test(txt())).toBeTruthy(); });
-  it("the strict build refuses to publish while the support address is unset", () => {
+  it("the strict build refuses to publish while any required fact (including the support address) is unset, and may succeed only when none is", () => {
     const r = spawnSync("node", ["site/build.mjs", "--strict"], { cwd: root, env: { ...process.env, SITE_OUT: OUT + "-strict" }, encoding: "utf8" });
-    expect(r.status).toBe(2); expect(r.stderr).toContain("contactEmail");
+    if (unresolved().length) { expect(r.status).toBe(2); expect(r.stderr).toContain(unresolved()[0]); if (!company.contactEmail) expect(r.stderr).toContain("contactEmail"); }
+    else expect(r.status).toBe(0);
   });
 });

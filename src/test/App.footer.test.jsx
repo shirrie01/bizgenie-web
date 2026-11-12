@@ -22,6 +22,7 @@ describe.each([["Premium Studio on", "true"], ["Premium Studio off (original vie
     expect(footer).toHaveTextContent("Terms: not set up yet");
     expect(footer).toHaveTextContent("Privacy: not set up yet");
     expect(footer.querySelectorAll("a")).toHaveLength(0);
+    expect(footer.closest("main")).toBeNull(); // outside <main>, so it is a real contentinfo landmark
   });
   it("configured destinations are links with safe attributes", async () => {
     vi.stubEnv("VITE_PREMIUM_STUDIO_ENABLED", flag);
