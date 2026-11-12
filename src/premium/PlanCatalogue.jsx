@@ -1,5 +1,6 @@
 import React from "react";
 import { formatMoney } from "./planCatalogueClient";
+import { SupportNote } from "./SiteLinks";
 
 // Approved plans, prices and terms, exactly as the server sent them (BG-STUDIO-019/020-FE). Nothing here is a constant: every price, credit
 // allowance, tax statement and term link is read from the validated `commercial-catalog.v1` response. The contract does not carry a trial, an
@@ -10,7 +11,7 @@ const date = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric"
 const credits = (n) => `${n} credit${n === 1 ? "" : "s"}`;
 const NOT_PUBLISHED = "Not published yet";
 
-export default function PlanCatalogue({ catalogue, currentPlanCode = "", canChoose = false, onChoose, choosing = "", notice = "" }) {
+export default function PlanCatalogue({ catalogue, currentPlanCode = "", canChoose = false, onChoose, choosing = "", notice = "", env = import.meta.env }) {
   const { plans } = catalogue;
   return (
     <section className="ps-plans" aria-labelledby="ppl-h">
@@ -34,7 +35,7 @@ export default function PlanCatalogue({ catalogue, currentPlanCode = "", canChoo
           </tbody>
         </table>
       </div>
-      <p className="ps-hint">A support contact for plans and billing has not been published yet.</p>
+      <p className="ps-hint"><SupportNote env={env} fallback="A support contact for plans and billing has not been published yet." /></p>
     </section>
   );
 }

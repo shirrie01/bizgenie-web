@@ -73,6 +73,7 @@ function footer(strict) {
         <li><a href="/privacy/">Privacy notice</a></li>
         <li><a href="/terms/">Website terms</a></li>
         <li><a href="/data-deletion/">Data deletion</a></li>
+        <li><a href="/support/">Help and support</a></li>
       </ul>
     </nav>
     <div class="fine">
@@ -327,6 +328,27 @@ export function deletionPage({ strict }) {
   <p>More: <a href="/privacy/">privacy notice</a>.</p>
 </article>`;
   return layout({ title: "Data deletion — BizGenie", description: "How to ask BizGenie to delete your data.", path: "/data-deletion/", body, strict });
+}
+
+// Help and support (BG-WEB-LEGAL-CLOSURE-13). A static page, no form, no backend, no third-party service. The only contact it shows is
+// `company.contactEmail`, which stays unset until the founder supplies a verified address; until then it says so. No response time is promised.
+export function supportPage({ strict }) {
+  const mail = company.contactEmail ? `<a href="mailto:${esc(company.contactEmail)}">${esc(company.contactEmail)}</a>` : tbc(null, strict);
+  const body = `<article class="wrap narrow prose">
+  <h1>Help and support</h1>
+  ${draftNotice(strict)}
+  <p>BizGenie is not yet open to the public. If you have a question about registering your interest, or about your details, contact us.</p>
+  <h2>How to contact us</h2>
+  <p>Email ${mail}. Please include the email address you registered with and a short description of what you need.</p>
+  <h2>Please do not send</h2>
+  <p>Never send us a password, a social media access token, or card details. We will never ask for them.</p>
+  <h2>Other requests</h2>
+  <ul>
+    <li>To have your details removed, see <a href="/data-deletion/">data deletion</a>.</li>
+    <li>To understand how your details are used, read the <a href="/privacy/">privacy notice</a>.</li>
+  </ul>
+</article>`;
+  return layout({ title: "Help and support — BizGenie", description: "How to contact BizGenie for help and support.", path: "/support/", body, strict });
 }
 
 export function notFoundPage({ strict }) {

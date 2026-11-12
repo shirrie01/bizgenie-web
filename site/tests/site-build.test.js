@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 const root = path.resolve(import.meta.dirname, "..", "..");
 const OUT = "site-dist-vitest";
 const dist = path.join(root, OUT);
-const PAGES = ["index.html", "privacy/index.html", "terms/index.html", "data-deletion/index.html", "404.html"];
+const PAGES = ["index.html", "privacy/index.html", "terms/index.html", "data-deletion/index.html", "support/index.html", "404.html"];
 const dom = (rel) => new JSDOM(fs.readFileSync(path.join(dist, rel), "utf8")).window.document;
 let home;
 beforeAll(() => { execFileSync("node", ["site/build.mjs"], { cwd: root, env: { ...process.env, SITE_OUT: OUT, SITE_API_URL: "" }, stdio: "pipe" }); home = dom("index.html"); });
@@ -95,7 +95,7 @@ describe("registration form", () => {
 describe("company and legal information for reviewers", () => {
   it("names the company and links the privacy notice, terms and data deletion from the footer", () => {
     const t = home.body.textContent; expect(t).toContain("BizGenie Technologies Limited");
-    for (const href of ["/privacy/", "/terms/", "/data-deletion/"]) expect(home.querySelector(`footer a[href="${href}"]`)).toBeTruthy();
+    for (const href of ["/privacy/", "/terms/", "/data-deletion/", "/support/"]) expect(home.querySelector(`footer a[href="${href}"]`)).toBeTruthy();
   });
   it("the privacy notice covers purposes, basis, measurement, retention, rights and the ICO; it asks for no social credentials", () => {
     const t = dom("privacy/index.html").body.textContent.replace(/\s+/g, " ");
@@ -107,5 +107,28 @@ describe("company and legal information for reviewers", () => {
   it("a strict (publication) build refuses to run while founder-only facts are unresolved", () => {
     const r = spawnSync("node", ["site/build.mjs", "--strict"], { cwd: root, env: { ...process.env, SITE_OUT: OUT + "-strict" }, encoding: "utf8" });
     expect(r.status).toBe(2); expect(r.stderr).toMatch(/companyNumber/); expect(r.stderr).toMatch(/legalReviewed/); expect(fs.existsSync(path.join(root, OUT + "-strict"))).toBe(false);
+  });
+});
+
+describe("support page (BG-WEB-LEGAL-CLOSURE-13)", () => {
+  const sup = () => dom("support/index.html");
+  const txt = () => sup().body.textContent.replace(/\s+/g, " ");
+  it("is linked from every page footer and listed in the sitemap", () => {
+    for (const rel of PAGES.filter((p) => p !== "404.html")) expect(dom(rel).querySelector('footer a[href="/support/"]'), rel).toBeTruthy();
+    expect(fs.readFileSync(path.join(dist, "sitemap.xml"), "utf8")).toContain("/support/");
+  });
+  it("invents no contact: with no verified address it shows no mailto link and says the address is to be confirmed", () => {
+    expect(sup().querySelectorAll('a[href^="mailto:"]')).toHaveLength(0);
+    expect(txt()).toMatch(/to be confirmed before publication/);
+    expect(txt()).not.toMatch(/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/);
+  });
+  it("promises no response time, price or availability, and tells people never to send secrets", () => {
+    expect(txt()).not.toMatch(/\d|within|hours|days|24\/7|guarantee|£/i);
+    expect(txt()).toMatch(/Never send us a password, a social media access token, or card details/);
+  });
+  it("is clearly a draft until the build is strict", () => { expect(sup().querySelector(".draft, [role=note], .notice") || /Draft for legal review/.test(txt())).toBeTruthy(); });
+  it("the strict build refuses to publish while the support address is unset", () => {
+    const r = spawnSync("node", ["site/build.mjs", "--strict"], { cwd: root, env: { ...process.env, SITE_OUT: OUT + "-strict" }, encoding: "utf8" });
+    expect(r.status).toBe(2); expect(r.stderr).toContain("contactEmail");
   });
 });

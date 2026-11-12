@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { fetchInvoices as realFetchInvoices, openBillingPortal as realOpenPortal, requestCancellation as realCancel, requestId, requestPlanChange as realChange } from "./billingManagementClient";
 import { formatMoney } from "./planCatalogueClient";
+import { SupportNote } from "./SiteLinks";
 
 // Subscription management (BG-STUDIO-019/020-FE, workstream B2), matching the backend DRAFT in bizgenie-api PR #216 (unmounted there).
 // Every action opens a Stripe-HOSTED page where the customer confirms; BizGenie never changes a plan or cancels from this screen, and nothing is
@@ -8,9 +9,8 @@ import { formatMoney } from "./planCatalogueClient";
 // when the backend offers the route (build gate) and the caller is the workspace owner; otherwise the page says plainly what is not available.
 // Invoices come from the draft owner-only invoice route (billing-invoices.v1, unmounted); receipts are in Stripe's portal.
 const redirectDefault = (url) => window.location.assign(url);
-const SUPPORT = "A support contact has not been published yet.";
 
-export default function BillingManagement({ enabled, isOwner, session, subscription, catalogue, onRecheck, api = {}, onRedirect = redirectDefault }) {
+export default function BillingManagement({ enabled, isOwner, session, subscription, catalogue, onRecheck, api = {}, onRedirect = redirectDefault, env = import.meta.env }) {
   const invoicesApi = api.fetchInvoices || realFetchInvoices; const openPortal = api.openBillingPortal || realOpenPortal; const change = api.requestPlanChange || realChange; const cancel = api.requestCancellation || realCancel;
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState({ kind: "", text: "" });
@@ -28,7 +28,7 @@ export default function BillingManagement({ enabled, isOwner, session, subscript
     return (
       <section className="ps-manage" aria-labelledby="pbm-h">
         <h3 id="pbm-h">Manage your subscription</h3>
-        <p>Changing plan, cancelling, updating payment details and viewing invoices are not available in BizGenie yet. {SUPPORT}</p>
+        <p>Changing plan, cancelling, updating payment details and viewing invoices are not available in BizGenie yet. <SupportNote env={env} /></p>
       </section>
     );
   }
@@ -36,7 +36,7 @@ export default function BillingManagement({ enabled, isOwner, session, subscript
     return (
       <section className="ps-manage" aria-labelledby="pbm-h">
         <h3 id="pbm-h">Manage your subscription</h3>
-        <p>Only the workspace owner can change the plan, cancel, update payment details or see invoices. {SUPPORT}</p>
+        <p>Only the workspace owner can change the plan, cancel, update payment details or see invoices. <SupportNote env={env} /></p>
       </section>
     );
   }
@@ -90,7 +90,7 @@ export default function BillingManagement({ enabled, isOwner, session, subscript
         </div>
       )}
       {onRecheck && <p><button type="button" className="secondary" onClick={onRecheck}>Check my subscription</button></p>}
-      <p className="ps-hint">{SUPPORT}</p>
+      <p className="ps-hint"><SupportNote env={env} /></p>
     </section>
   );
 }

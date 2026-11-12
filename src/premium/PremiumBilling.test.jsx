@@ -128,4 +128,14 @@ describe("BillingManagement (opens Stripe-hosted pages; never reports a change a
     setup({ fetchInvoices: f }); fireEvent.click(screen.getByRole("button", { name: "Show invoices" })); expect(await screen.findByRole("alert")).toHaveTextContent(/Only the workspace owner/);
     fireEvent.click(screen.getByRole("button", { name: "Show invoices" })); expect(await screen.findByText(/no invoices yet/i)).toBeInTheDocument();
   });
+  it("support destination: a configured address replaces the 'not published' sentence in billing; an invalid one does not (BG-WEB-LEGAL-CLOSURE-13)", async () => {
+    mockBilling(null);
+    const { unmount } = render(<PremiumBilling session={session} isOwner env={{ ...on, VITE_SUPPORT_URL: "https://example.test/support" }} api={{ fetchPlanCatalogue: async () => catalogue }} />);
+    expect((await screen.findAllByRole("link", { name: /Contact support/ }))[0]).toHaveAttribute("href", "https://example.test/support");
+    expect(screen.queryByText(/support contact .* has not been published/i)).toBeNull();
+    unmount();
+    render(<PremiumBilling session={session} isOwner env={{ ...on, VITE_SUPPORT_URL: "http://example.test/support" }} api={{ fetchPlanCatalogue: async () => catalogue }} />);
+    expect((await screen.findAllByText(/support contact .* has not been published/i)).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: /Contact support/ })).toBeNull();
+  });
 });
