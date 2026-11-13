@@ -5,7 +5,6 @@ import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const md = fs.readFileSync("docs/studio/BG_WEB_LAUNCH_CLOSURE_15_ACCEPTANCE_PACK.md", "utf8");
-const table = (title) => { const i = md.indexOf(title); const rows = md.slice(i).split("\n").slice(1).filter((l) => l.startsWith("|")); return rows.slice(2).map((l) => l.split("|").slice(1, -1).map((c) => c.trim())); };
 const scenarios = md.split("## 2. ")[1].split("## 3. ")[0].split("\n").filter((l) => /^\| \d+ \|/.test(l)).map((l) => l.split("|").slice(1, -1).map((c) => c.trim()));
 
 describe("acceptance pack honesty", () => {

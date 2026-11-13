@@ -157,3 +157,16 @@ describe("addContentItem destination key (BG-LAUNCH-006)", () => {
     for (const bad of ["not-an-id", "", "../../x", "0b0e5b8e"]) await expect(addContentItem({ ...base, destinationKey: bad, fetchImpl })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 });
+
+describe("isUnscheduleApiEnabled (BG-WEB-LAUNCH-CLOSURE-15)", () => {
+  it("is off by default and on accepted-main builds; on only for an explicit flag or the integrated-stack (workspace calendar) flag", async () => {
+    const { isUnscheduleApiEnabled } = await import("./campaignManagementClient");
+    expect(isUnscheduleApiEnabled({})).toBe(false);
+    expect(isUnscheduleApiEnabled(undefined)).toBe(false);
+    expect(isUnscheduleApiEnabled({ VITE_UNSCHEDULE_API: "true" })).toBe(true);
+    expect(isUnscheduleApiEnabled({ VITE_UNSCHEDULE_API: " TRUE " })).toBe(true);
+    expect(isUnscheduleApiEnabled({ VITE_WORKSPACE_CALENDAR_API: "true" })).toBe(true);
+    expect(isUnscheduleApiEnabled({ VITE_WORKSPACE_CALENDAR_API: "true", VITE_UNSCHEDULE_API: "false" })).toBe(false); // an explicit setting wins
+    expect(isUnscheduleApiEnabled({ VITE_WORKSPACE_CALENDAR_API: "yes" })).toBe(false);
+  });
+});

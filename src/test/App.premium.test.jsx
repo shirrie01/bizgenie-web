@@ -1885,6 +1885,7 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
   });
 
   it("removes a planned time with the exact schedule id; approval is kept and nothing is described as published", async () => {
+    vi.stubEnv("VITE_UNSCHEDULE_API", "true");
     handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => ok({ result: { campaign_id: CID }, campaign: scheduledDoc("2099-01-15T10:00:00.000Z") });
     handlers["POST /customer/campaigns/*/variants/*/unschedule"] = () => ok({ result: { campaign_id: CID }, campaign: campaignDoc(8, 1, "approved") });
     await toApproved();
@@ -1898,9 +1899,22 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
     expect(screen.getByText("Approved")).toBeInTheDocument(); expect(screen.queryByText(/scheduled for/i)).toBeNull();
   });
 
+  it("on a build whose API is accepted main (no unschedule route): a scheduled plan is shown and can be changed, but no removal button is offered and no unschedule request is ever sent (BG-WEB-LAUNCH-CLOSURE-15)", async () => {
+    handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => ok({ result: { campaign_id: CID, created_ids: { schedule_ids: ["schedule-real-1"] } }, campaign: scheduledDoc("2099-01-15T10:00:00.000Z") });
+    await toApproved();
+    fireEvent.change(await screen.findByLabelText(/plan when to publish/i), { target: { value: "2099-01-15T10:00" } });
+    fireEvent.click(button(/save planned time/i));
+    expect(await screen.findByText(/scheduled for .*15 january 2099/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove the planned time/i })).toBeNull();
+    expect(screen.getByText(/removing a planned time is not available in this version yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /change planned time/i })).toBeInTheDocument();
+    expect(calls.some((c) => /\/unschedule$/.test(c.path))).toBe(false);
+  });
+
   // The REAL customer campaign detail (bizgenie-api safeCampaign) omits active_schedule_id, schedules, pending_attempt_id, publication_id and publications.
   const realShape = (doc) => { const d = JSON.parse(JSON.stringify(doc)); delete d.schedules; delete d.publications; for (const i of d.items) for (const v of i.variants) { delete v.active_schedule_id; delete v.pending_attempt_id; delete v.publication_id; delete v.active_approval_id; } return d; };
   it("against the REAL detail shape (no schedule id or time in it), the plan is remembered from the command's answer, shown, and removable by its exact id", async () => {
+    vi.stubEnv("VITE_UNSCHEDULE_API", "true");
     handlers["POST /customer/campaigns/*/variants/*/schedule"] = () => ok({ result: { campaign_id: CID, created_ids: { schedule_ids: ["schedule-real-1"] } }, campaign: realShape(scheduledDoc("2099-01-15T10:00:00.000Z")) });
     handlers["POST /customer/campaigns/*/variants/*/unschedule"] = () => ok({ result: { campaign_id: CID }, campaign: realShape(campaignDoc(8, 1, "approved")) });
     await toApproved();

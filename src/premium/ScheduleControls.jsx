@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { activeSchedule, describeSchedule, scheduleFromLocal } from "./scheduleModel";
 
 // Record when approved content is planned to go out (BG-STUDIO-018-FE). Premium Studio only. It records a plan; it publishes nothing.
-export default function ScheduleControls({ campaign, variant, schedule = null, state, onSchedule, now = new Date() }) {
+export default function ScheduleControls({ campaign, variant, schedule = null, state, onSchedule, now = new Date(), canUnschedule = false }) {
   const scheduled = variant.workflow === "scheduled";
   const current = scheduled ? (schedule || activeSchedule(campaign, variant)) : null;
   const tz = (current && current.timezone) || campaign.display_timezone || "";
@@ -30,7 +30,8 @@ export default function ScheduleControls({ campaign, variant, schedule = null, s
       {mine && state.status === "saved" && <p role="status">Planned time saved.</p>}
       {mine && state.status === "removed" && <p role="status">The planned time was removed. Your approval is kept.</p>}
       <button className="secondary" type="button" onClick={submit} disabled={busy || !tz || !value}>{busy ? "Saving…" : scheduled ? "Change planned time" : "Save planned time"}</button>
-      {scheduled && current && current.schedule_id && <button className="secondary" type="button" onClick={() => onSchedule(variant, {}, "unschedule")} disabled={busy}>Remove the planned time</button>}
+      {scheduled && current && current.schedule_id && !canUnschedule && <p className="ps-hint">Removing a planned time is not available in this version yet. You can change it instead.</p>}
+      {scheduled && current && current.schedule_id && canUnschedule && <button className="secondary" type="button" onClick={() => onSchedule(variant, {}, "unschedule")} disabled={busy}>Remove the planned time</button>}
     </div>
   );
 }
