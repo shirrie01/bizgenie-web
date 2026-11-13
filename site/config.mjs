@@ -16,6 +16,10 @@ export const company = {
   legalReviewed: false,
   // Retention of registration records is unresolved in the backend contract; the privacy notice says so until the founder decides.
   retentionDecision: null,
+  // Privacy and terms content the strict build must not publish blank (BG-WEB-LAUNCH-CLOSURE-14). All FOUNDER/ADVISER INPUT REQUIRED:
+  processors: null,                                    // e.g. [{ name: "…", purpose: "…" }] — every provider that processes registration data
+  internationalTransfers: null,                        // plain-language statement of transfers outside the UK and the safeguard, or that there are none
+  governingLaw: null,                                  // e.g. the governing law and courts sentence the adviser approves
 };
 
 // Where the browser sends registrations and aggregate measurements. EMPTY by default: with no URL the form says registration is not open on this
@@ -32,6 +36,9 @@ export function unresolved() {
   for (const k of ["companyNumber", "registeredOffice", "contactEmail", "privacyContactEmail"]) if (!company[k]) out.push(k);
   if (!company.legalReviewed) out.push("legalReviewed (privacy notice, terms and consent wording need legal review)");
   if (!company.retentionDecision) out.push("retentionDecision (how long registration records are kept)");
+  if (!Array.isArray(company.processors) || company.processors.length === 0 || !company.processors.every((p) => p && p.name && p.purpose)) out.push("processors (list of providers that process registration data, each with a purpose)");
+  if (!company.internationalTransfers) out.push("internationalTransfers (statement on transfers outside the UK)");
+  if (!company.governingLaw) out.push("governingLaw (governing law and courts for the website terms)");
   if (!runtime.apiBaseUrl) out.push("SITE_API_URL (no lead endpoint configured; the form will not submit)");
   return out;
 }

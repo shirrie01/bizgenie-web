@@ -67,3 +67,18 @@ describe("staging release workflow guards (BG-LAUNCH-013)", () => {
     expect(run("true", "https://b.example.test", "https://b.example.test")).toBe("ok");
   });
 });
+
+// BG-WEB-LAUNCH-CLOSURE-14: the Studio footer destinations reach the staging build ONLY from repository variables the founder sets once the pages are approved.
+describe("staging legal and support destinations", () => {
+  it("maps each footer setting from its own STAGING_* repository variable, with no literal URL, and nowhere else", () => {
+    for (const [vite, v] of [["VITE_SUPPORT_URL", "STAGING_SUPPORT_URL"], ["VITE_TERMS_URL", "STAGING_TERMS_URL"], ["VITE_PRIVACY_URL", "STAGING_PRIVACY_URL"]]) {
+      const m = wf.match(new RegExp(`^\\s+${vite}: (.+)$`, "m")); expect(m, vite).toBeTruthy();
+      expect(m[1].trim()).toBe("${{ vars." + v + " }}");
+      expect((wf.match(new RegExp(vite, "g")) || []).length, `${vite} appears once`).toBe(1);
+    }
+  });
+  it("these settings are optional by design: the build does not fail when they are unset (the footer then says 'not set up yet')", () => {
+    const step = wf.slice(wf.indexOf("Build for staging"), wf.indexOf("Verify headers"));
+    expect(step).not.toMatch(/test -n "\$VITE_(SUPPORT|TERMS|PRIVACY)_URL"/);
+  });
+});

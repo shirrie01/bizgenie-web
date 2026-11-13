@@ -10,6 +10,7 @@
     "test": "vitest run",
     "site:build": "node site/build.mjs",
     "site:build:strict": "node site/build.mjs --strict",
+    "site:check": "node site/check.mjs",
     "site:serve": "node site/dev/serve.mjs",
     "site:test": "vitest run site",
     "site:browser": "playwright test --config site/browser/playwright.config.mjs",
