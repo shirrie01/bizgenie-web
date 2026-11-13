@@ -108,6 +108,15 @@ export async function submitForReview({ apiBaseUrl, accessToken, scope, campaign
   return send(fetchImpl, `${apiBaseUrl}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/review`, { method: "POST", headers: headers(accessToken), body: JSON.stringify({ ...scopeOf(scope), idempotency_key: await campaignKey(campaign, "submit-review", `${variant.variant_id}:${revisionId}`), expected_campaign_version: campaign.version, revision_id: revisionId }) }, "Sending for review");
 }
 
+// `POST …/unschedule` is NOT on accepted API main (BG-WEB-LAUNCH-CLOSURE-15); it exists in the integrated backend stack. The Studio offers "Remove the planned time" only when
+// VITE_UNSCHEDULE_API is "true", or, when that is unset, when the build is pointed at the integrated stack (VITE_WORKSPACE_CALENDAR_API is "true"). Otherwise the customer would be
+// offered a button whose request cannot succeed.
+export const isUnscheduleApiEnabled = (env = import.meta.env) => {
+  const flag = (v) => typeof v === "string" && v.trim().toLowerCase() === "true";
+  if (env && typeof env.VITE_UNSCHEDULE_API === "string" && env.VITE_UNSCHEDULE_API.trim() !== "") return flag(env.VITE_UNSCHEDULE_API);
+  return Boolean(env) && flag(env.VITE_WORKSPACE_CALENDAR_API);
+};
+
 // Remove the planned time of a scheduled variant. The route is the existing `unschedule` command exposed over HTTP in the backend draft (PR #216,
 // docs/studio/BG_STUDIO_019_CAMPAIGN_MANAGEMENT.md). The ACTIVE schedule id (variant.active_schedule_id, or schedule_id from the workspace calendar) makes
 // a lost-response retry exact. Approval and history are kept by the server; nothing is published or un-published.

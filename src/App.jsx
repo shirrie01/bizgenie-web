@@ -25,7 +25,7 @@ import { requestCostCheck } from "./premium/costCheck";
 import { describeGenerateRefusal } from "./premium/generationQuoteClient";
 import { activeSchedule } from "./premium/scheduleModel";
 import { forget, recall, remember } from "./premium/rememberedFacts";
-import { addContentItem, fetchCampaignDetail, recordManualPublication, renameCampaign, setCampaignArchived, unscheduleVariant } from "./premium/campaignManagementClient";
+import { addContentItem, fetchCampaignDetail, isUnscheduleApiEnabled, recordManualPublication, renameCampaign, setCampaignArchived, unscheduleVariant } from "./premium/campaignManagementClient";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import ApprovedCreative from "./ApprovedCreative";
@@ -1051,7 +1051,7 @@ export default function App() {
                     ))}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
                     {premiumEnabled && isSocialApiEnabled() && variant.platform === "tiktok" && variant.workflow === "scheduled" && <Lazy><SendDraftToTikTok campaign={campaignState.campaign} variant={variant} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} apiBaseUrl={API_BASE_URL} /></Lazy>}
-                    {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <Lazy><ScheduleControls campaign={campaignState.campaign} variant={variant} schedule={scheduleFor(variant)} state={scheduleState} onSchedule={runSchedule} /></Lazy>}
+                    {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <Lazy><ScheduleControls campaign={campaignState.campaign} variant={variant} schedule={scheduleFor(variant)} canUnschedule={isUnscheduleApiEnabled()} state={scheduleState} onSchedule={runSchedule} /></Lazy>}
                     {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && (routeLimited("manualPublication") ? <p className="ps-hint" role="note">{limitedNotice("manualPublication")}</p> : <Lazy><ManualPublicationPanel campaign={campaignState.campaign} variant={variant} pendingAttemptId={pendingAttemptFor(variant)} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} /></Lazy>)}
                     {!premiumEnabled && variant.workflow === "approved" && <div>
                       <p>Manual publication required. BizGenie will not claim this was published until you confirm it.</p>
