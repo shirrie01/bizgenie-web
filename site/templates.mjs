@@ -250,6 +250,10 @@ export function homePage({ strict }) {
   });
 }
 
+// Providers: a sentence, then (once confirmed) the list as a sibling element. Never "see below" without a list.
+const providersList = () => (Array.isArray(company.processors) ? company.processors.filter((p) => p && p.name && p.purpose) : []);
+const providersIntro = (strict) => (providersList().length ? "The providers are listed below." : `The full list of providers: ${tbc(null, strict)}.`);
+const providersHtml = () => (providersList().length ? `<ul>${providersList().map((p) => `<li><strong>${esc(p.name)}</strong>: ${esc(p.purpose)}</li>`).join("")}</ul>` : "");
 const draftNotice = (strict) => (company.legalReviewed ? "" : `<p class="notice" role="note"><strong>Draft for legal review.</strong> This text describes how BizGenie is designed to work. It must be checked against the live system and approved before this site is published.</p>`);
 
 export function privacyPage({ strict }) {
@@ -275,13 +279,14 @@ export function privacyPage({ strict }) {
   <h2>Measuring the website</h2>
   <p>We count visits and form steps (for example, that someone started the form, or which field had an error) so we can improve the site. This does not use cookies or local storage, does not record what you type, and is not shared with advertising companies. If your browser sends Do Not Track or Global Privacy Control, we do not send these counts at all.</p>
   <h2>Who receives your data</h2>
-  <p>Our hosting and infrastructure providers process data for us to run the site and store registrations. We do not sell your data. The full list of providers: ${company.legalReviewed ? "see below" : tbc(null, strict)}.</p>
+  <p>Our hosting and infrastructure providers process data for us to run the site and store registrations. We do not sell your data. ${providersIntro(strict)}</p>
+  ${providersHtml()}
   <h2>How long we keep it</h2>
   <p>${company.retentionDecision ? esc(company.retentionDecision) : tbc(null, strict)}</p>
   <h2>Your rights</h2>
   <p>You can ask to see, correct or delete your data, to object to or restrict its use, and to withdraw consent at any time, including for product news (every message will have an unsubscribe link). To do this, contact us using the details above or use the <a href="/data-deletion/">data-deletion page</a>. You can complain to the Information Commissioner's Office (ico.org.uk) if you are unhappy with how we handle your data.</p>
   <h2>Transfers outside the UK</h2>
-  <p>${tbc(null, strict)}</p>
+  <p>${tbc(company.internationalTransfers, strict)}</p>
   <h2>Changes</h2>
   <p>If we change this notice we will update this page. If we ever connect social media accounts to BizGenie, we will explain exactly what is collected and why before you connect anything.</p>
 </article>`;
@@ -304,7 +309,7 @@ export function termsPage({ strict }) {
   <h2>Liability</h2>
   <p>Nothing here limits liability that cannot lawfully be limited. Otherwise the site is provided as is, and we are not responsible for decisions made in reliance on it. ${tbc(null, strict)}</p>
   <h2>Governing law</h2>
-  <p>${tbc(null, strict)}</p>
+  <p>${tbc(company.governingLaw, strict)}</p>
   <h2>Contact</h2>
   <p>${company.contactEmail ? `<a href="mailto:${esc(company.contactEmail)}">${esc(company.contactEmail)}</a>` : tbc(null, strict)}</p>
 </article>`;
