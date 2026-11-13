@@ -103,7 +103,7 @@ async function call(fetchImpl, url, options, { paid = false } = {}) {
   const code = (json && json.error && json.error.code) || "";
   if (response.ok) return json;
   const bridge = bridgeRefusal(code);
-  if (looksNotDeployed(response.status, json) && !bridge) throw new QuoteError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
+  if (looksNotDeployed(response.status, json)) throw new QuoteError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
   const by = CODE_TEXT[code] || (bridge && [bridge.kind, bridge.text]) || TEXT[response.status];
   if (by) throw new QuoteError(by[1], { kind: by[0], status: response.status, code });
   if (response.status === 400) throw new QuoteError("Some of the details were not accepted. Nothing was started or charged.", { kind: "invalid", status: 400, code });

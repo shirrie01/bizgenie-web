@@ -1,5 +1,6 @@
 // BG-WEB-LAUNCH-CLOSURE-18: a build flag alone must never show a control that needs a backend capability. Fixture revisions below are test data, never real deployments.
 import React from "react";
+import fs from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { CAPABILITIES, FEATURES, featureAvailability, isMockApiHost, validEntries, verifiedSocialProviders } from "./featureGate";
@@ -15,6 +16,7 @@ import { isPlanCatalogueApiEnabled } from "./planCatalogueClient";
 import { isCreditPreviewApiEnabled } from "./creditPreviewClient";
 import { isBillingManagementApiEnabled } from "./billingManagementClient";
 import PremiumBilling from "./PremiumBilling";
+import { isProfessionalSectorPersisted } from "./flag";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const SHA = "a".repeat(40), OTHER = "b".repeat(40), REV = "fixture-revision-00001";
@@ -34,9 +36,9 @@ describe("the shipped manifest", () => {
   });
   it("every exported flag function is off with its flag true, a declared revision and the shipped manifest (enforced)", () => {
     const e = env({ VITE_GENERATION_QUOTE_API: "true", VITE_CUSTOMER_MEDIA_API: "true", VITE_WORKSPACE_CALENDAR_API: "true", VITE_UNSCHEDULE_API: "true", VITE_CUSTOMER_MEDIA_INTAKE_API: "true", VITE_CUSTOMER_MEDIA_DELETE_API: "true",
-      VITE_SOCIAL_ACCOUNTS_API: "true", VITE_ANALYTICS_API: "true", VITE_PLAN_CATALOGUE_API: "true", VITE_CREDIT_PREVIEW_API: "true", VITE_BILLING_MANAGEMENT_API: "true", VITE_API_SOURCE_SHA: SHA, VITE_API_SERVING_REVISION: REV });
+      VITE_SOCIAL_ACCOUNTS_API: "true", VITE_ANALYTICS_API: "true", VITE_PLAN_CATALOGUE_API: "true", VITE_CREDIT_PREVIEW_API: "true", VITE_BILLING_MANAGEMENT_API: "true", VITE_PROFESSIONAL_SECTOR_PERSISTED: "true", VITE_API_SOURCE_SHA: SHA, VITE_API_SERVING_REVISION: REV });
     for (const fn of [isGenerationQuoteApiEnabled, isCustomerMediaApiEnabled, isWorkspaceCalendarApiEnabled, isUnscheduleApiEnabled, isMediaIntakeApiEnabled, isMediaDeleteApiEnabled, isSocialApiEnabled, isAnalyticsApiEnabled,
-      isPlanCatalogueApiEnabled, isCreditPreviewApiEnabled, isBillingManagementApiEnabled]) expect(fn(e), fn.name).toBe(false);
+      isPlanCatalogueApiEnabled, isCreditPreviewApiEnabled, isBillingManagementApiEnabled, isProfessionalSectorPersisted]) expect(fn(e), fn.name).toBe(false);
   });
   it("every capability a feature needs is a known capability", () => { for (const f of Object.values(FEATURES)) expect(CAPABILITIES).toContain(f.capability); });
 });
@@ -57,6 +59,11 @@ describe("gate decisions with an injected manifest", () => {
     expect(featureAvailability(f, on(), { manifest: manifest(entry()), ...prod })).toMatchObject({ enabled: true, state: "verified" });
     expect(featureAvailability("customerMedia", on({ VITE_CUSTOMER_MEDIA_API: "true" }), { manifest: manifest(entry()), ...prod }).enabled).toBe(true); // same capability
     expect(featureAvailability("workspaceCalendar", on({ VITE_WORKSPACE_CALENDAR_API: "true" }), { manifest: manifest(entry()), ...prod }).enabled).toBe(true);
+  });
+  it("verified social without named providers is an invalid entry (it would otherwise offer nothing, silently)", () => {
+    expect(validEntries(manifest(entry({ capabilities: { social: true } }))).good).toHaveLength(0);
+    expect(validEntries(manifest(entry({ capabilities: { social: true }, socialProviders: [] }))).good).toHaveLength(0);
+    expect(validEntries(manifest(entry({ capabilities: { social: true }, socialProviders: ["tiktok"] }))).good).toHaveLength(1);
   });
   it("a malformed manifest entry is ignored entirely, never partly trusted", () => {
     const bad = [entry({ sourceSha: "short" }), entry({ evidence: "http://example.test/x" }), entry({ evidence: "https://u:p@example.test/x" }), entry({ servingRevision: "" }), entry({ verifiedAt: "yesterday" }),
@@ -86,6 +93,11 @@ describe("where the gate does not apply, and where it cannot be bypassed", () =>
     expect(featureAvailability("generationQuote", { VITE_GENERATION_QUOTE_API: "true", VITE_BIZGENIE_API_URL: REAL }, { mode: "test" })).toMatchObject({ enabled: true, state: "not_applicable_test_mode" });
     expect(featureAvailability("generationQuote", { VITE_GENERATION_QUOTE_API: "true", VITE_BIZGENIE_API_URL: REAL, VITE_API_COMPAT_MODE: "enforce" }, { mode: "test" }).enabled).toBe(false);
   });
+  it("`vite build --mode test` is still a release build: test mode is detected from the test runner, not from MODE", () => {
+    // runtimeMode() ignores import.meta.env.MODE; only the runner's VITEST marker (never present in a bundle) selects lenient behaviour.
+    const src = fs.readFileSync("src/premium/featureGate.js", "utf8");
+    expect(src).toMatch(/import\.meta\.env\.VITEST/); expect(src).not.toMatch(/import\.meta\.env\.MODE/);
+  });
   it("in a release build no setting turns enforcement off (VITE_API_COMPAT_MODE is ignored outside test mode)", () => {
     for (const v of ["off", "false", "lenient", "test", "", undefined]) expect(featureAvailability("generationQuote", { VITE_GENERATION_QUOTE_API: "true", VITE_BIZGENIE_API_URL: REAL, VITE_API_COMPAT_MODE: v }, prod).enabled, String(v)).toBe(false);
   });
@@ -100,7 +112,7 @@ describe("where the gate does not apply, and where it cannot be bypassed", () =>
 describe("customer-visible effect", () => {
   it("plans/billing controls stay off when only the flags are set, and nothing is requested from the API", async () => {
     const fetchSpy = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ subscription: null, available_credits: 0 }) })); vi.stubGlobal("fetch", fetchSpy);
-    render(<PremiumBilling session={{ status: "ready", accessToken: "t", tenantId: "t1" }} isOwner env={env({ VITE_PLAN_CATALOGUE_API: "true", VITE_BILLING_MANAGEMENT_API: "true", VITE_API_SOURCE_SHA: SHA, VITE_API_SERVING_REVISION: REV })} />);
+    render(<PremiumBilling session={{ status: "ready", accessToken: "t", tenantId: "t1" }} isOwner env={env({ VITE_PLAN_CATALOGUE_API: "true", VITE_BILLING_MANAGEMENT_API: "true", VITE_PROFESSIONAL_SECTOR_PERSISTED: "true", VITE_API_SOURCE_SHA: SHA, VITE_API_SERVING_REVISION: REV })} />);
     expect(await screen.findByText(/has not published plans, prices and terms/i)).toBeInTheDocument();
     expect(screen.getByText(/not available in BizGenie yet/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /cancel subscription|change plan|choose/i })).toBeNull();

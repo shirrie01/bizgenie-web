@@ -3,7 +3,7 @@
 // verified in the manifest for the capability. Missing, malformed or unlisted evidence means OFF.
 import { API_COMPATIBILITY } from "./apiCompatibility";
 
-export const CAPABILITIES = Object.freeze(["quotedGeneration", "workspaceCalendar", "mediaIntake", "social", "learning", "commercialCatalogue", "creditPreview", "billingManagement"]);
+export const CAPABILITIES = Object.freeze(["quotedGeneration", "workspaceCalendar", "mediaIntake", "social", "learning", "commercialCatalogue", "creditPreview", "billingManagement", "professionalSector"]);
 const PROVIDERS = ["instagram", "facebook", "linkedin", "tiktok", "youtube"];
 // Each customer-facing feature: its build flag and the backend capability it depends on.
 export const FEATURES = Object.freeze({
@@ -18,6 +18,7 @@ export const FEATURES = Object.freeze({
   planCatalogue: { flag: "VITE_PLAN_CATALOGUE_API", capability: "commercialCatalogue" },
   creditPreview: { flag: "VITE_CREDIT_PREVIEW_API", capability: "creditPreview" },
   billingManagement: { flag: "VITE_BILLING_MANAGEMENT_API", capability: "billingManagement" },
+  professionalSector: { flag: "VITE_PROFESSIONAL_SECTOR_PERSISTED", capability: "professionalSector" },
 });
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -34,7 +35,8 @@ export function validEntries(manifest = API_COMPATIBILITY) {
     const ok = e && typeof e === "object" && typeof e.sourceSha === "string" && SHA.test(e.sourceSha) && text(e.servingRevision) && text(e.verifiedAt, 40) && Number.isFinite(Date.parse(e.verifiedAt))
       && typeof e.evidence === "string" && https(e.evidence) && caps && typeof caps === "object" && Object.keys(caps).length > 0
       && Object.entries(caps).every(([k, v]) => CAPABILITIES.includes(k) && v === true)
-      && (e.socialProviders === undefined || (Array.isArray(e.socialProviders) && e.socialProviders.every((p) => PROVIDERS.includes(p))));
+      && (e.socialProviders === undefined || (Array.isArray(e.socialProviders) && e.socialProviders.every((p) => PROVIDERS.includes(p))))
+      && (caps.social !== true || (Array.isArray(e.socialProviders) && e.socialProviders.length > 0)); // verified social must say which providers, otherwise none would ever be offered
     if (ok) good.push(e); else problems.push(`entry ${i}`);
   });
   return { good, problems };
@@ -46,8 +48,9 @@ export function isMockApiHost(apiUrl) {
   const h = hostOf(apiUrl);
   return h === "localhost" || h === "127.0.0.1" || h === "[::1]" || /\.(test|example|invalid|localhost)$/.test(h);
 }
-// Unit tests run lenient unless a test asks for enforcement; no release build runs in test mode.
-const runtimeMode = () => (typeof import.meta !== "undefined" && import.meta.env ? import.meta.env.MODE : "production");
+// Unit tests run lenient unless a test asks for enforcement; no release build (whatever its --mode) runs in test mode.
+// import.meta.env.VITEST exists only while vitest runs; it is not a VITE_-prefixed value, so a build can neither set nor expose it, and `vite build --mode test` is still a release build.
+const runtimeMode = () => (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITEST ? "test" : "production");
 
 // → { enabled, state }. state: flag_off | not_applicable_mock_api | not_applicable_test_mode | api_revision_undeclared | api_revision_malformed | revision_not_in_manifest | capability_not_verified | verified
 export function featureAvailability(feature, env = import.meta.env, { manifest = API_COMPATIBILITY, mode = runtimeMode(), flagOverride } = {}) {
