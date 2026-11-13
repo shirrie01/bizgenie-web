@@ -82,3 +82,29 @@ describe("staging legal and support destinations", () => {
     expect(step).not.toMatch(/test -n "\$VITE_(SUPPORT|TERMS|PRIVACY)_URL"/);
   });
 });
+
+// BG-WEB-LAUNCH-CLOSURE-18: what the staging release build actually exposes. The workflow turns several feature flags on; the compatibility gate (src/premium/featureGate.js)
+// then decides, from the declared API revision and the reviewed manifest, whether each control is shown. No revision is declared and the manifest is empty, so none is.
+import { featureAvailability, FEATURES } from "../premium/featureGate";
+import { API_COMPATIBILITY } from "../premium/apiCompatibility";
+describe("staging release: feature exposure under the compatibility gate", () => {
+  const build = wf.slice(wf.indexOf("Build for staging"), wf.indexOf("Verify headers"));
+  const env = Object.fromEntries([...build.matchAll(/^\s+(VITE_[A-Z_]+): (.+)$/gm)].map((m) => [m[1], m[2].replace(/^'|'$/g, "").trim()]));
+  env.VITE_BIZGENIE_API_URL = (wf.match(/STAGING_API_ORIGIN: (\S+)/) || [])[1]; // the real staging origin, not a test double
+  it("turns on the flags it turns on, and declares no API revision (nothing to verify against)", () => {
+    expect(Object.keys(env).filter((k) => /_API$/.test(k) && env[k] === "true").sort()).toEqual(["VITE_CUSTOMER_MEDIA_API", "VITE_GENERATION_QUOTE_API", "VITE_SOCIAL_ACCOUNTS_API", "VITE_WORKSPACE_CALENDAR_API"]);
+    expect(wf).not.toMatch(/VITE_API_SOURCE_SHA|VITE_API_SERVING_REVISION|VITE_API_COMPAT_MODE/);
+  });
+  it("with the shipped (empty) manifest every flagged feature is OFF in the built bundle, so no control can reach an unverified backend", () => {
+    expect(API_COMPATIBILITY.revisions).toHaveLength(0);
+    for (const [feature, f] of Object.entries(FEATURES)) {
+      const a = featureAvailability(feature, env, { mode: "production" });
+      expect(a.enabled, `${feature} (${f.flag}=${env[f.flag]})`).toBe(false);
+      expect(a.state, feature).toBe(env[f.flag] === "true" ? "api_revision_undeclared" : "flag_off");
+    }
+  });
+  it("if a later workflow edit does declare an API revision, the manifest must already verify it", () => {
+    const sha = (wf.match(/VITE_API_SOURCE_SHA: (\S+)/) || [])[1]; if (!sha) return;
+    expect(API_COMPATIBILITY.revisions.some((e) => e.sourceSha === sha.replace(/['"]/g, ""))).toBe(true);
+  });
+});

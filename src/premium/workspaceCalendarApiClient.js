@@ -1,3 +1,5 @@
+import { featureEnabled } from "./featureGate";
+import { NOT_DEPLOYED_CODE, NOT_DEPLOYED_TEXT, looksNotDeployed, readJsonSafe } from "./routeAbsent";
 // Adapter for GET /customer/calendar, contract `workspace-calendar.v1`, as implemented in the backend DRAFT (bizgenie-api PR #216, head f8d81bf,
 // src/campaigns/workspaceCalendar.js, docs/studio/BG_STUDIO_019_WORKSPACE_CALENDAR.md; BG-STUDIO-020-FE reconciled this file against it).
 // The route is NOT deployed anywhere, so this stays OFF until `VITE_WORKSPACE_CALENDAR_API=true`. Backend rules honoured here: explicit ISO
@@ -12,13 +14,10 @@
 //         destination_label, workflow } ], next_cursor: string | null }
 // `from` inclusive, `to` exclusive. Pages are followed until `next_cursor` is null, so nothing is ever left unloaded.
 
-export const isWorkspaceCalendarApiEnabled = (env = import.meta.env) => {
-  const raw = env && env.VITE_WORKSPACE_CALENDAR_API;
-  return typeof raw === "string" && raw.trim().toLowerCase() === "true";
-};
+export const isWorkspaceCalendarApiEnabled = (env = import.meta.env) => featureEnabled("workspaceCalendar", env);
 
 export class WorkspaceCalendarApiError extends Error {
-  constructor(message, { kind = "error", status = 0 } = {}) { super(message); this.name = "WorkspaceCalendarApiError"; this.kind = kind; this.status = status; }
+  constructor(message, { kind = "error", status = 0, code = "" } = {}) { super(message); this.name = "WorkspaceCalendarApiError"; this.kind = kind; this.status = status; this.code = code; }
 }
 
 const text = (v) => (typeof v === "string" ? v : "");
@@ -72,6 +71,7 @@ export async function fetchWorkspaceCalendarFromApi({ apiBaseUrl, accessToken, s
       catch (error) { if (error && error.name === "AbortError") return empty; throw new WorkspaceCalendarApiError("The calendar could not be reached.", { kind: "network" }); }
       if (response.status === 401) throw new WorkspaceCalendarApiError("Your session has ended. Sign in again to continue.", { kind: "auth", status: 401 });
       if (response.status === 400) throw new WorkspaceCalendarApiError("That period could not be loaded. Choose a different period.", { kind: "invalid", status: 400 });
+      if (response.status === 404 && looksNotDeployed(404, await readJsonSafe(response))) throw new WorkspaceCalendarApiError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
       if (response.status === 403 || response.status === 404) throw new WorkspaceCalendarApiError("This workspace's calendar is not available to you.", { kind: "unavailable", status: response.status });
       if (response.status === 503) throw new WorkspaceCalendarApiError("The calendar is temporarily unavailable. Nothing was lost; try again shortly.", { kind: "unavailable", status: 503 });
       if (!response.ok) throw new WorkspaceCalendarApiError("The calendar could not be loaded yet.", { kind: "error", status: response.status });

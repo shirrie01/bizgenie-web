@@ -9,11 +9,10 @@
 // therefore labels it "current price" and never offers a "confirm this exact cost" action from it. A binding quote needs the durable quote/confirm
 // backend (generationQuoteClient.js stays off until that exists). Off unless `VITE_CREDIT_PREVIEW_API=true`.
 import { BILLING_UNAVAILABLE_TEXT, EXECUTION_CLASSES } from "./generationQuoteClient";
+import { NOT_DEPLOYED_CODE, NOT_DEPLOYED_TEXT, looksNotDeployed, readJsonSafe } from "./routeAbsent";
+import { featureEnabled } from "./featureGate";
 
-export const isCreditPreviewApiEnabled = (env = import.meta.env) => {
-  const raw = env && env.VITE_CREDIT_PREVIEW_API;
-  return typeof raw === "string" && raw.trim().toLowerCase() === "true";
-};
+export const isCreditPreviewApiEnabled = (env = import.meta.env) => featureEnabled("creditPreview", env);
 export const CONTRACT_VERSION = "execution-cost-preview.v1";
 const AFFORDABILITY = ["within_limit", "spend_cap_exceeded", "insufficient_credits"];
 const count = (v) => Number.isInteger(v) && v >= 0;
@@ -48,6 +47,7 @@ export async function requestCreditPreview({ apiBaseUrl, accessToken, scope, exe
   let json = null; try { json = await response.json(); } catch { json = null; }
   const code = json && json.error && json.error.code;
   if (response.status === 401) throw new PreviewError("Your session has ended. Sign in again to continue. Nothing was started or charged.", { kind: "auth", status: 401, code: code || "AUTHENTICATION_REQUIRED" });
+  if (looksNotDeployed(response.status, json)) throw new PreviewError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
   if (response.status === 404) throw new PreviewError("This workspace is not available to you any more. Nothing was started or charged.", { kind: "unavailable", status: 404, code });
   if (response.status === 503) throw new PreviewError(BILLING_UNAVAILABLE_TEXT, { kind: "unavailable", status: 503, code: code || "CREDIT_PREVIEW_UNAVAILABLE" });
   if (!response.ok) throw new PreviewError("The credit cost could not be checked yet. Nothing was started or charged.", { kind: "error", status: response.status, code });

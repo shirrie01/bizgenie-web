@@ -6,10 +6,10 @@
 // item whose format is image or video (the quote refuses anything else with OPERATION_UNSUPPORTED).
 // `VITE_CUSTOMER_MEDIA_API` means "the backend operator has activated customer image/video"; it stays off by default and needs `VITE_GENERATION_QUOTE_API`.
 import { isGenerationQuoteApiEnabled } from "./generationQuoteClient";
+import { featureEnabled } from "./featureGate";
 
 export const isCustomerMediaApiEnabled = (env = import.meta.env) => {
-  const raw = env && env.VITE_CUSTOMER_MEDIA_API;
-  return typeof raw === "string" && raw.trim().toLowerCase() === "true" && isGenerationQuoteApiEnabled(env);
+  return featureEnabled("customerMedia", env) && isGenerationQuoteApiEnabled(env);
 };
 export const KIND_LABEL = { image: "Image", video: "Video" };
 export const VIDEO_QUALITIES = ["normal", "premium"];

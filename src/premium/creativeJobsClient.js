@@ -1,3 +1,4 @@
+import { NOT_DEPLOYED_CODE, NOT_DEPLOYED_TEXT, looksNotDeployed, readJsonSafe } from "./routeAbsent";
 // Creative jobs (BG-STUDIO-025-FE): the read, attach and cancel side of a confirmed generation, on the REAL routes of bizgenie-api #218 (9346055)
 // src/generation-quotes/{jobsRouter,jobs}.js, extended compatibly by draft #219 (44f849c: strategy_plan outputs, STAGE_NOT_ATTACHABLE, content_dna).
 // Off with the rest of customer creative (`isCustomerMediaApiEnabled`). The backend answers 503 CREATIVE_JOBS_UNAVAILABLE when the mount is not configured.
@@ -77,6 +78,7 @@ async function call(fetchImpl, url, options, what) {
   const code = json && json.error && typeof json.error.code === "string" ? json.error.code : "";
   if (res.status === 401) throw new JobError("Your session has ended. Sign in again to continue.", { kind: "auth", status: 401, code });
   if (CODES[code]) throw new JobError(CODES[code][1], { kind: CODES[code][0], status: res.status, code });
+  if (looksNotDeployed(res.status, json)) throw new JobError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
   if (res.status === 404) throw new JobError("That is not available to you.", { kind: "unavailable", status: 404, code });
   if (res.status === 503) throw new JobError(`${what} is not switched on for this workspace yet.`, { kind: "unavailable", status: 503, code });
   if (res.status === 409) throw new JobError("That changed in the meantime. Reload and try again. Nothing was changed.", { kind: "conflict", status: 409, code });

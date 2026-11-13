@@ -1,3 +1,5 @@
+import { featureEnabled } from "./featureGate";
+import { NOT_DEPLOYED_CODE, NOT_DEPLOYED_TEXT, looksNotDeployed, readJsonSafe } from "./routeAbsent";
 // Customer media intake (BG-STUDIO-025-FE): add your own photos and short videos, with proof of rights, on the REAL routes of bizgenie-api #218 (9346055)
 // src/media-intake/{router,service}.js (unchanged in contract by draft #219). Off unless `VITE_CUSTOMER_MEDIA_INTAKE_API=true`; the backend answers 503
 // MEDIA_INTAKE_UNAVAILABLE until storage, inspection and a rights policy are configured by an operator. Uploads, completion, revoke and delete are OWNER-only (404 for a member).
@@ -13,15 +15,9 @@
 // Accepted: image/png, image/jpeg, image/webp, video/mp4; up to 32 MiB. A file is usable only when its state is "ready". Rights are the customer's own attestation, labelled as such.
 // OPEN CONTRACT GAP: the backend stores its own rights statement and policy version but gives the browser no endpoint to read the statement it will record, so the screen
 // shows its own plain confirmation wording and the server's `rights_policy_version` only after the upload (see docs/studio/BG_STUDIO_025_FE_CREATIVE_JOBS.md).
-export const isMediaIntakeApiEnabled = (env = import.meta.env) => {
-  const raw = env && env.VITE_CUSTOMER_MEDIA_INTAKE_API;
-  return typeof raw === "string" && raw.trim().toLowerCase() === "true";
-};
+export const isMediaIntakeApiEnabled = (env = import.meta.env) => featureEnabled("mediaIntake", env);
 // BG-LAUNCH-015: permanent removal uses HTTP DELETE, which the API's CORS policy does not allow from a browser (it answers 403 to the preflight; allowed methods are GET, POST, PUT, PATCH, OPTIONS). "Withdraw" (POST) is unaffected. The Delete button is therefore hidden unless this separate gate is on, to be turned on only after the API allows DELETE for this route and a hosted preflight check passes.
-export const isMediaDeleteApiEnabled = (env = import.meta.env) => {
-  const raw = env && env.VITE_CUSTOMER_MEDIA_DELETE_API;
-  return typeof raw === "string" && raw.trim().toLowerCase() === "true";
-};
+export const isMediaDeleteApiEnabled = (env = import.meta.env) => featureEnabled("mediaDelete", env);
 export const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "video/mp4"];
 export const MAX_BYTES = 32 * 1024 * 1024;
 export const STATES = ["initiated", "quarantined", "ready", "rejected", "revoked", "deleted"];
@@ -72,6 +68,7 @@ async function call(fetchImpl, url, options, what, parse = true) {
   const code = json && json.error && typeof json.error.code === "string" ? json.error.code : "";
   if (res.status === 401) throw new MediaError("Your session has ended. Sign in again to continue.", { kind: "auth", status: 401, code });
   if (CODES[code]) throw new MediaError(CODES[code][1], { kind: CODES[code][0], status: res.status, code });
+  if (looksNotDeployed(res.status, json)) throw new MediaError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
   if (res.status === 404) throw new MediaError("That is not available to you. Only the workspace owner can add or remove media.", { kind: "forbidden", status: 404, code });
   if (res.status === 413) throw new MediaError("That file is larger than 32 MB.", { kind: "invalid_file", status: 413, code });
   if (res.status === 429) throw new MediaError("Too many uploads are waiting. Try again in a few minutes.", { kind: "busy", status: 429, code });

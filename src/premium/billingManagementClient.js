@@ -1,3 +1,5 @@
+import { featureEnabled } from "./featureGate";
+import { NOT_DEPLOYED_CODE, NOT_DEPLOYED_TEXT, looksNotDeployed, readJsonSafe } from "./routeAbsent";
 // Subscription management through the backend (BG-STUDIO-019-FE B2, reconciled in BG-STUDIO-020-FE with the backend DRAFT: bizgenie-api PR #216
 // head f8d81bf, src/billing/stripe/managementDraft.js, docs/studio/BG_STUDIO_019_COMMERCIAL_CONTRACTS.md). That router is UNMOUNTED and disabled
 // by default and only exercised with mock Stripe clients, so this client stays off until `VITE_BILLING_MANAGEMENT_API=true`, set only after the
@@ -13,10 +15,7 @@
 // STRIPE_BILLING_RESOURCE_NOT_AVAILABLE (no Stripe mapping), 409 STRIPE_BILLING_CONFLICT, 503 STRIPE_BILLING_NOT_CONFIGURED / BILLING_MANAGEMENT_UNAVAILABLE.
 // There is NO invoices endpoint: invoices and receipts live in Stripe's hosted portal. A confirmation redirect is not a payment, cancellation,
 // refund or entitlement change; only the webhook-confirmed subscription (GET /customer/billing/subscription) is.
-export const isBillingManagementApiEnabled = (env = import.meta.env) => {
-  const raw = env && env.VITE_BILLING_MANAGEMENT_API;
-  return typeof raw === "string" && raw.trim().toLowerCase() === "true";
-};
+export const isBillingManagementApiEnabled = (env = import.meta.env) => featureEnabled("billingManagement", env);
 
 export class BillingManagementError extends Error {
   constructor(message, { kind = "error", status = 0, code = "" } = {}) { super(message); this.name = "BillingManagementError"; this.kind = kind; this.status = status; this.code = code; }
@@ -32,6 +31,7 @@ async function call(fetchImpl, apiBaseUrl, path, tenantId, accessToken, payload,
   let json = null; try { json = await response.json(); } catch { json = null; }
   const code = (json && json.error && json.error.code) || "";
   if (response.status === 401) throw new BillingManagementError("Your session has ended. Sign in again to continue. Nothing was changed.", { kind: "auth", status: 401, code: code || "AUTHENTICATION_REQUIRED" });
+  if (looksNotDeployed(response.status, json)) throw new BillingManagementError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
   if (response.status === 404) throw new BillingManagementError(code === "STRIPE_BILLING_RESOURCE_NOT_AVAILABLE" ? "There is no billing account to manage yet. Nothing was changed." : "Only the workspace owner can manage this subscription. Nothing was changed.", { kind: code === "STRIPE_BILLING_RESOURCE_NOT_AVAILABLE" ? "unavailable" : "forbidden", status: 404, code });
   if (response.status === 403) throw new BillingManagementError("Only the workspace owner can manage this subscription. Nothing was changed.", { kind: "forbidden", status: 403, code });
   if (response.status === 400) throw new BillingManagementError(`${action} could not be started with those choices. Nothing was changed.`, { kind: "invalid", status: 400, code });
@@ -64,7 +64,7 @@ export async function fetchInvoices({ apiBaseUrl, accessToken, tenantId, cursor 
   try { response = await fetchImpl(`${apiBaseUrl}/customer/billing/invoices?${q}`, { headers: { authorization: `Bearer ${accessToken}` } }); }
   catch { throw new BillingManagementError("Invoices could not be loaded because the connection failed.", { kind: "network", code: "NETWORK" }); }
   if (response.status === 401) throw new BillingManagementError("Your session has ended. Sign in again to continue.", { kind: "auth", status: 401 });
-  if (response.status === 404) throw new BillingManagementError("Only the workspace owner can see invoices.", { kind: "forbidden", status: 404 });
+  if (response.status === 404) { const j = await readJsonSafe(response); throw looksNotDeployed(404, j) ? new BillingManagementError("Invoices are not available in this version yet.", { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE }) : new BillingManagementError("Only the workspace owner can see invoices.", { kind: "forbidden", status: 404 }); }
   if (response.status === 503) throw new BillingManagementError("Invoices are temporarily unavailable. Try again shortly.", { kind: "unavailable", status: 503 });
   if (!response.ok) throw new BillingManagementError("Invoices could not be loaded yet.", { kind: "error", status: response.status });
   let json = null; try { json = await response.json(); } catch { json = null; }

@@ -87,7 +87,7 @@ describe("connect", () => {
     expect(f.mock.calls[0][0]).toBe("http://a/customer/social/oauth-complete");
   });
   it("disconnect: owner-only 404, lost response and wrong status are explained honestly", async () => {
-    await expect(disconnect({ apiBaseUrl: "h", accessToken: "t", scope, connectionId: "c1", fetchImpl: reply(404, {}) })).rejects.toMatchObject({ kind: "forbidden" });
+    await expect(disconnect({ apiBaseUrl: "h", accessToken: "t", scope, connectionId: "c1", fetchImpl: reply(404, { error: { code: "RESOURCE_NOT_AVAILABLE" } }) })).rejects.toMatchObject({ kind: "forbidden" });
     await expect(disconnect({ apiBaseUrl: "h", accessToken: "t", scope, connectionId: "c1", fetchImpl: vi.fn().mockRejectedValue(new Error("x")) })).rejects.toMatchObject({ kind: "unconfirmed" });
     await expect(disconnect({ apiBaseUrl: "h", accessToken: "t", scope, connectionId: "c1", fetchImpl: reply(200, conn()) })).rejects.toMatchObject({ kind: "unconfirmed" });
     const f = reply(200, conn({ status: "revoked" })); expect(await disconnect({ apiBaseUrl: "http://a", accessToken: "t", scope, connectionId: "c1", fetchImpl: f })).toEqual({ connectionId: "c1" });
