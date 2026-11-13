@@ -83,6 +83,18 @@ describe("gate decisions with an injected manifest", () => {
   });
 });
 
+describe("the staging bridge does not forward every route", () => {
+  const m = manifest(entry({ capabilities: { learning: true, billingManagement: true, quotedGeneration: true } }));
+  const e = (extra) => env({ VITE_API_SOURCE_SHA: SHA, VITE_API_SERVING_REVISION: REV, VITE_ANALYTICS_API: "true", VITE_BILLING_MANAGEMENT_API: "true", VITE_GENERATION_QUOTE_API: "true", ...extra });
+  it("behind bridge-v1, insights and billing management stay off even for a verified revision; carried features are unaffected", () => {
+    const b = e({ VITE_API_ROUTE_LIMITS: "bridge-v1" });
+    expect(featureAvailability("analytics", b, { manifest: m, ...prod })).toMatchObject({ enabled: false, state: "not_carried_by_bridge" });
+    expect(featureAvailability("billingManagement", b, { manifest: m, ...prod })).toMatchObject({ enabled: false, state: "not_carried_by_bridge" });
+    expect(featureAvailability("generationQuote", b, { manifest: m, ...prod }).enabled).toBe(true);
+  });
+  it("without bridge limits the verified revision decides", () => expect(featureAvailability("analytics", e({}), { manifest: m, ...prod }).enabled).toBe(true));
+});
+
 describe("where the gate does not apply, and where it cannot be bypassed", () => {
   it("browser test doubles (.test, loopback) are exempt; real hosts are not", () => {
     for (const u of ["http://api.test", "http://localhost:8080", "http://127.0.0.1:4000", "https://x.example", "http://api.invalid"]) expect(isMockApiHost(u), u).toBe(true);

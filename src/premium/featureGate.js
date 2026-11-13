@@ -21,6 +21,9 @@ export const FEATURES = Object.freeze({
   professionalSector: { flag: "VITE_PROFESSIONAL_SECTOR_PERSISTED", capability: "professionalSector" },
 });
 
+// Features the staging Studio bridge does not forward (API main src/studio-bridge/service.js allow-list: no /customer/insights*, no /customer/billing/management*, no /customer/billing/invoices).
+// Behind that bridge (VITE_API_ROUTE_LIMITS=bridge-v1) they cannot work whatever the API revision supports, so they stay off.
+export const BRIDGE_V1_NOT_CARRIED = Object.freeze(["analytics", "billingManagement"]);
 const SHA = /^[0-9a-f]{40}$/;
 const truthy = (v) => typeof v === "string" && v.trim().toLowerCase() === "true";
 const https = (v) => { try { const u = new URL(v); return u.protocol === "https:" && !u.username && !u.password; } catch { return false; } };
@@ -60,6 +63,7 @@ export function featureAvailability(feature, env = import.meta.env, { manifest =
   if (!flag) return { enabled: false, state: "flag_off" };
   if (mode === "test" && !(env && env.VITE_API_COMPAT_MODE === "enforce")) return { enabled: true, state: "not_applicable_test_mode" };
   if (env && isMockApiHost(env.VITE_BIZGENIE_API_URL)) return { enabled: true, state: "not_applicable_mock_api" };
+  if (env && env.VITE_API_ROUTE_LIMITS === "bridge-v1" && BRIDGE_V1_NOT_CARRIED.includes(feature)) return { enabled: false, state: "not_carried_by_bridge" };
   const sha = env && typeof env.VITE_API_SOURCE_SHA === "string" ? env.VITE_API_SOURCE_SHA.trim().toLowerCase() : "";
   const rev = env && typeof env.VITE_API_SERVING_REVISION === "string" ? env.VITE_API_SERVING_REVISION.trim() : "";
   if (!sha && !rev) return { enabled: false, state: "api_revision_undeclared" };
