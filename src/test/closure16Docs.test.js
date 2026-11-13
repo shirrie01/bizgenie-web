@@ -19,7 +19,7 @@ describe("closure-16 documents", () => {
     expect(rows.length).toBeGreaterThanOrEqual(14);
     const primary = (r) => r[8];
     for (const r of rows) expect(CLASSES.some((c) => primary(r).replace(/\*/g, "").includes(c)), `row ${r[0]}: ${primary(r)}`).toBe(true);
-    for (const r of rows) expect(primary(r)).not.toMatch(/\*\*VERIFIED WORKING\*\*|^VERIFIED WORKING/);
+    for (const r of rows) expect(primary(r), `row ${r[0]}`).not.toMatch(/VERIFIED WORKING/); // no hosted run exists, so no row may claim it anywhere in its state cell
   });
   it("the hosted guide claims no PASS: every scenario status is NOT RUN or BLOCKED", () => {
     const sc = guide.split("\n").filter((l) => /^\| (\d+|R2) \|/.test(l) && l.split("|").length >= 8).map((l) => l.split("|").slice(1, -1).map((c) => c.trim()));
@@ -29,7 +29,7 @@ describe("closure-16 documents", () => {
   });
   it("the decision pack keeps approved targets and states nothing as approved that is not", () => {
     const d = read("BG_WEB_LAUNCH_CLOSURE_16_DECISIONS_AND_LEGAL.md").replace(/\*/g, "");
-    expect(d).toMatch(/£99\/month/); expect(d).toMatch(/60 monthly credits/); expect(d).toMatch(/£100 per calendar month/); expect(d).not.toMatch(/£3\.33/);
+    expect(d).toMatch(/£99\/month/); expect(d).toMatch(/60 monthly credits/); expect(d).toMatch(/£100 per calendar month/); expect(d).not.toMatch(/£3\.33/); expect(d).toMatch(/not queried/);
     expect(d).toMatch(/not assumed to be the entity/); expect(d).toMatch(/never set without it/);
   });
 });
