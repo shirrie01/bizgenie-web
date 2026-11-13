@@ -1,12 +1,15 @@
 # BG-WEB-LAUNCH-CLOSURE-16 — hosted customer acceptance execution guide (prepared, NOT RUN)
 
+> **SOURCE BASELINE UPDATE (13 Nov 2026):** The prerequisite table below is an execution plan drafted against API `d3ec6c37`, not evidence that a staging deployment occurred. API source has since advanced to `5cd1d774`. Reconcile actual staging migration history and exact serving revision before authorising any operation; the previously cited 15 migrations are a historical estimate, not a verified current unapplied count. See [BG_WEB_LAUNCH_CLOSURE_17_API_SOURCE_CORRECTION.md](BG_WEB_LAUNCH_CLOSURE_17_API_SOURCE_CORRECTION.md). All hosted scenarios remain NOT RUN/BLOCKED.
+
+
 13 Nov 2026. A repeatable guide for the controlled ten-customer pilot. **Every stage below is NOT RUN or BLOCKED**; nothing was executed, deployed or created while preparing it. Statuses may change only when an approved run supplies evidence (screenshots and logs named below). Local tests, mocks and generic CI never turn a stage into PASS. Companion documents: `BG_WEB_LAUNCH_CLOSURE_15_ACCEPTANCE_PACK.md` (15-scenario matrix), `BG_WEB_LAUNCH_CLOSURE_16_CONTRACT_MATRIX.md` (what the revision must contain), `BG_WEB_LAUNCH_CLOSURE_16_STRIPE_TEST_MODE.md`.
 
 ## 1. Before any run (gates; all must be recorded in #191)
 | Gate | Evidence | State |
 |---|---|---|
 | Staging API revision built from `d3ec6c37` or later, image digest and source commit recorded (metadata collector) | collector output | NOT RUN (collector inaccessible from this session) |
-| 15 migrations applied (including professional-services) | founder-approved migration record | NOT APPLIED |
+| Approved staging schema/migration reconciliation, applied-history evidence and any genuinely missing versions (including professional-services) | Founder-approved revision, backup/restore and migration record | NOT VERIFIED — NO MIGRATION EXECUTED HERE |
 | Quote path, catalogue and policy composed (Codex handover items 1, 6) | startup log line, no 503 | NOT DONE |
 | Studio staging build with flags matching the revision (`VITE_*` per matrix) | release workflow summary (commit SHA, dist hash) | NOT DONE |
 | Studio host and DNS `staging-app.getbizgenie.com` (Pages project `bizgenie-studio-staging`) | HTTPS 200, headers smoke | NOT CONFIRMED |
