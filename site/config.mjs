@@ -31,14 +31,18 @@ export const runtime = {
   measurement: process.env.SITE_MEASUREMENT === "1",   // off unless explicitly enabled AND an API URL is set
 };
 
-export function unresolved() {
+// Structured so the checklist groups on an explicit owner, not on message wording.
+export function unresolvedItems() {
   const out = [];
-  for (const k of ["companyNumber", "registeredOffice", "contactEmail", "privacyContactEmail"]) if (!company[k]) out.push(k);
-  if (!company.legalReviewed) out.push("legalReviewed (privacy notice, terms and consent wording need legal review)");
-  if (!company.retentionDecision) out.push("retentionDecision (how long registration records are kept)");
-  if (!Array.isArray(company.processors) || company.processors.length === 0 || !company.processors.every((p) => p && p.name && p.purpose)) out.push("processors (list of providers that process registration data, each with a purpose)");
-  if (!company.internationalTransfers) out.push("internationalTransfers (statement on transfers outside the UK)");
-  if (!company.governingLaw) out.push("governingLaw (governing law and courts for the website terms)");
-  if (!runtime.apiBaseUrl) out.push("SITE_API_URL (no lead endpoint configured; the form will not submit)");
+  const add = (field, owner, message) => out.push({ field, owner, message });
+  for (const k of ["companyNumber", "registeredOffice"]) if (!company[k]) add(k, "company", k);
+  for (const k of ["contactEmail", "privacyContactEmail"]) if (!company[k]) add(k, "contact", k);
+  if (!company.retentionDecision) add("retentionDecision", "privacy", "retentionDecision (how long registration records are kept)");
+  if (!Array.isArray(company.processors) || company.processors.length === 0 || !company.processors.every((p) => p && p.name && p.purpose)) add("processors", "privacy", "processors (list of providers that process registration data, each with a purpose)");
+  if (!company.internationalTransfers) add("internationalTransfers", "privacy", "internationalTransfers (statement on transfers outside the UK)");
+  if (!company.governingLaw) add("governingLaw", "terms", "governingLaw (governing law and courts for the website terms)");
+  if (!company.legalReviewed) add("legalReviewed", "approval", "legalReviewed (privacy notice, terms and consent wording need legal review)");
+  if (!runtime.apiBaseUrl) add("SITE_API_URL", "build", "SITE_API_URL (no lead endpoint configured; the form will not submit)");
   return out;
 }
+export const unresolved = () => unresolvedItems().map((i) => i.message);

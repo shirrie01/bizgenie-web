@@ -30,6 +30,8 @@ describe("what is missing", () => {
     const r = spawnSync("node", ["site/check.mjs"], { cwd: root, encoding: "utf8" });
     expect(r.status).toBe(2); expect(r.stdout).toMatch(/Company facts \(founder\)[\s\S]*companyNumber/); expect(r.stdout).toMatch(/Terms \(adviser\)[\s\S]*governingLaw/);
     const j = JSON.parse(spawnSync("node", ["site/check.mjs", "--json"], { cwd: root, encoding: "utf8" }).stdout);
+    const withApi = spawnSync("node", ["site/check.mjs", "--json"], { cwd: root, encoding: "utf8", env: { ...process.env, SITE_API_URL: "https://api.example.test" } });
+    expect(JSON.parse(withApi.stdout).report.flatMap((g) => g.items).join("|")).not.toContain("SITE_API_URL");
     expect(j.ready).toBe(false); expect(j.outstanding).toBeGreaterThan(5); expect(j.report.every((g) => g.items.length > 0)).toBe(true);
   });
 });
@@ -44,7 +46,9 @@ describe("a fully supplied strict build publishes no blank or dangling section",
     }
     const priv = text(pages.privacy);
     expect(priv).toContain("Fixture Host Ltd"); expect(priv).toContain("email delivery"); expect(priv).toContain("Fixture transfers sentence."); expect(priv).toContain("Fixture retention sentence.");
-    expect(priv).not.toMatch(/see below/); expect(text(pages.terms)).toContain("Fixture governing law sentence.");
+    expect(priv).not.toMatch(/see below|End of providers list/);
+    expect(pages.privacy).toMatch(/<\/p>\s*<ul><li><strong>Fixture Host Ltd<\/strong>/); // the list is a sibling of the sentence, not spliced into it
+    expect((pages.privacy.match(/<p[ >]/g) || []).length).toBe((pages.privacy.match(/<\/p>/g) || []).length); expect(text(pages.terms)).toContain("Fixture governing law sentence.");
     expect(pages.support).toContain('href="mailto:help@example.test"'); expect(pages.deletion).toContain('href="mailto:privacy@example.test"');
   });
   it("escapes supplied text (a provider name cannot inject markup)", () => {

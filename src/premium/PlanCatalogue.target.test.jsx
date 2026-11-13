@@ -41,7 +41,7 @@ describe("plan screen with the £99 / 60-credit target as server data", () => {
     const dir = path.resolve(import.meta.dirname, "..");
     const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
     for (const f of walk(dir).filter((f) => /\.(jsx?|css)$/.test(f) && !/\.test\./.test(f))) {
-      const s = fs.readFileSync(f, "utf8");
+      const s = fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1"); // comments may mention the target; rendered code and strings may not
       expect(s, f).not.toMatch(/£\s?(99|59|79|149|199)\b|\b60 credits\b|£\s?100\b|3\.33/);
     }
   });

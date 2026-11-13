@@ -250,12 +250,10 @@ export function homePage({ strict }) {
   });
 }
 
-// The providers sentence and, once confirmed, the list itself (never "see below" without a list).
+// Providers: a sentence, then (once confirmed) the list as a sibling element. Never "see below" without a list.
 const providersList = () => (Array.isArray(company.processors) ? company.processors.filter((p) => p && p.name && p.purpose) : []);
-function providersBlock(strict) {
-  const l = providersList();
-  return l.length ? `The providers are listed here:</p><ul>${l.map((p) => `<li><strong>${esc(p.name)}</strong>: ${esc(p.purpose)}</li>`).join("")}</ul><p class="visually-hidden">End of providers list.` : `The full list of providers: ${tbc(null, strict)}.`;
-}
+const providersIntro = (strict) => (providersList().length ? "The providers are listed below." : `The full list of providers: ${tbc(null, strict)}.`);
+const providersHtml = () => (providersList().length ? `<ul>${providersList().map((p) => `<li><strong>${esc(p.name)}</strong>: ${esc(p.purpose)}</li>`).join("")}</ul>` : "");
 const draftNotice = (strict) => (company.legalReviewed ? "" : `<p class="notice" role="note"><strong>Draft for legal review.</strong> This text describes how BizGenie is designed to work. It must be checked against the live system and approved before this site is published.</p>`);
 
 export function privacyPage({ strict }) {
@@ -281,7 +279,8 @@ export function privacyPage({ strict }) {
   <h2>Measuring the website</h2>
   <p>We count visits and form steps (for example, that someone started the form, or which field had an error) so we can improve the site. This does not use cookies or local storage, does not record what you type, and is not shared with advertising companies. If your browser sends Do Not Track or Global Privacy Control, we do not send these counts at all.</p>
   <h2>Who receives your data</h2>
-  <p>Our hosting and infrastructure providers process data for us to run the site and store registrations. We do not sell your data. ${providersBlock(strict)}</p>
+  <p>Our hosting and infrastructure providers process data for us to run the site and store registrations. We do not sell your data. ${providersIntro(strict)}</p>
+  ${providersHtml()}
   <h2>How long we keep it</h2>
   <p>${company.retentionDecision ? esc(company.retentionDecision) : tbc(null, strict)}</p>
   <h2>Your rights</h2>
