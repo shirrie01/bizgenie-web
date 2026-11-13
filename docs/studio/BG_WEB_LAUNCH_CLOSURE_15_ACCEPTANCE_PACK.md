@@ -2,6 +2,8 @@
 
 13 Nov 2026. Authority: **accepted API main `16f363e93425e204d744ec5cb6d38391295f2346`** (not any unmerged proposal) and WEB main `dfc69836613ea364720370a9d9c2b7742cf3dcc6`. Source-level only: nothing here is hosted acceptance, legal approval or a price decision. Staging and launch remain NO-GO. Status words: PASS / FAIL / BLOCKED / NOT RUN; local tests and mocks are never counted as hosted or real-provider results.
 
+> **SUPERSEDED (13 Nov 2026): section 1 below was written against the obsolete API main `16f363e9`.** Current-main compatibility, with the seven-state classification, is `BG_WEB_LAUNCH_CLOSURE_16_CONTRACT_MATRIX.md` (API main `d3ec6c37`). Sections 2–6 stand.
+
 ## 1. WEB ↔ API-main contract (route families the Studio calls)
 API main mounts: `/customer/workspace` (+ `/bootstrap`, `/select`, `/brands`, `/brand-brain`), `/customer/workspace/onboarding`, `/customer/campaigns` (list/get/create/patch, `/content-items`, `/calendar`, `/measurements`, variant `generate`, `approval`, `review`, `schedule`, `reschedule`, `preview-renders`, `preview-acknowledgements`, `manual-publication`, `creative-preview`, `assets/:assetId/preview`), `/customer/campaign-recommendations`, `/customer/billing/subscription`, `/billing/stripe/checkout`, and the provider-spend module. **Not on API main** (in the unmerged stack, Codex-owned): the rows marked GAP below. Every GAP feature is behind a WEB build flag that is off by default, **except unschedule**, which was offered whenever a schedule id was remembered and is now gated (see its row).
 | WEB feature (flag) | API routes it calls | On API main? | Truthful behaviour today | Owner of gap |
