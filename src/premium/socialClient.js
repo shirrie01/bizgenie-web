@@ -1,3 +1,5 @@
+import { featureEnabled, verifiedSocialProviders } from "./featureGate";
+import { NOT_DEPLOYED_CODE, NOT_DEPLOYED_TEXT, looksNotDeployed, readJsonSafe } from "./routeAbsent";
 // Social account connection and publishing (BG-STUDIO-024-FE). Adapter for the REAL backend contract in bizgenie-api PR #218 (9346055):
 // router src/social-publishing/router.js mounted at /customer/social, service src/social-publishing/service.js. It replaces the earlier PROPOSED
 // /customer/social-accounts and /customer/publishing-queue routes, which the backend never had (qa/integration/backend218 asserts they 404).
@@ -21,19 +23,18 @@
 //   as status "expired" by the server. Errors: OAUTH_STATE_INVALID / OAUTH_CONFIGURATION_CHANGED -> start again; PLATFORM_PERMISSION_REQUIRED / PLATFORM_APP_REVIEW_REQUIRED /
 //   OAUTH_ACCESS_DENIED -> not connected; SOCIAL_NOT_CONFIGURED / OAUTH_CONFIGURATION_UNAVAILABLE -> do not navigate; OAUTH_PROVIDER_UNAVAILABLE -> attempt consumed, check accounts first.
 // A post counts as platform-verified only when state is "published", evidence_kind is "platform_api" and publication_url is https.
-export const isSocialApiEnabled = (env = import.meta.env) => {
-  const raw = env && env.VITE_SOCIAL_ACCOUNTS_API;
-  return typeof raw === "string" && raw.trim().toLowerCase() === "true";
-};
+export const isSocialApiEnabled = (env = import.meta.env) => featureEnabled("social", env);
 export class SocialError extends Error {
   constructor(message, { kind = "error", status = 0, code = "" } = {}) { super(message); this.name = "SocialError"; this.kind = kind; this.status = status; this.code = code; }
 }
 export const PROVIDERS = ["instagram", "facebook", "linkedin", "tiktok", "youtube"];
 // Which platforms the Connect buttons offer. Optional build-time list (VITE_SOCIAL_PROVIDERS, comma separated); unset = every platform this client knows. A staging or launch build can offer only what is actually set up.
 export function connectableProviders(list = (typeof import.meta !== "undefined" && import.meta.env ? import.meta.env.VITE_SOCIAL_PROVIDERS : undefined)) {
-  if (typeof list !== "string" || list.trim() === "") return PROVIDERS;
+  const verified = verifiedSocialProviders();
+  const offered = (all) => (verified === null ? all : all.filter((p) => verified.includes(p))); // only what the verified API revision supports (BG-WEB-LAUNCH-CLOSURE-18)
+  if (typeof list !== "string" || list.trim() === "") return offered(PROVIDERS);
   const wanted = list.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
-  return PROVIDERS.filter((p) => wanted.includes(p));
+  return offered(PROVIDERS.filter((p) => wanted.includes(p)));
 }
 export const PROVIDER_LABEL = { instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube" };
 const CONNECTION_STATUS = { active: "connected", revoked: "revoked", expired: "needs_reauth" };
@@ -91,7 +92,7 @@ const code = async (res) => { try { const j = await res.json(); return j && j.er
 async function get(fetchImpl, url, token, what) {
   let res; try { res = await fetchImpl(url, { headers: { authorization: `Bearer ${token}` } }); } catch { throw new SocialError(`${what} could not be loaded because the connection failed.`, { kind: "network" }); }
   if (res.status === 401) throw new SocialError("Your session has ended. Sign in again to continue.", { kind: "auth", status: 401 });
-  if (res.status === 404) throw new SocialError(`${what} is not available to you.`, { kind: "unavailable", status: 404 });
+  if (res.status === 404) { const j = await readJsonSafe(res); throw looksNotDeployed(404, j) ? new SocialError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE }) : new SocialError(`${what} is not available to you.`, { kind: "unavailable", status: 404 }); }
   if (res.status === 503) throw new SocialError(`${what} is not switched on for this workspace yet.`, { kind: "unavailable", status: 503 });
   if (!res.ok) throw new SocialError(`${what} could not be loaded yet.`, { kind: "error", status: res.status });
   try { return await res.json(); } catch { throw bad(); }
@@ -114,6 +115,7 @@ async function post(fetchImpl, url, token, payload, what) {
   if (res.ok) { try { return await res.json(); } catch { throw bad(); } }
   const c = await code(res);
   if (CODES[c]) throw new SocialError(CODES[c][1], { kind: CODES[c][0], status: res.status, code: c });
+  if (res.status === 404 && !c) throw new SocialError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
   if (res.status === 404) throw new SocialError("Only the workspace owner can do that, or it is no longer available. Nothing was changed.", { kind: "forbidden", status: 404, code: c });
   if (res.status === 409 || res.status === 422) throw new SocialError("That changed in the meantime or needs a permission from the platform. Check your accounts and try again.", { kind: "conflict", status: res.status, code: c });
   // Any other 5xx on a write may have taken effect: never say "nothing was changed".

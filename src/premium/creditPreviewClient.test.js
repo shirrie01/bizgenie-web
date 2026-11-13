@@ -29,6 +29,6 @@ describe("normalisation is honest that this is not a quote", () => {
   it("refuses one that has already expired", () => { expect(() => normalisePreview(body({ expires_at: "2026-10-26T11:59:00Z" }), { executionClass: "text.standard", ...scope }, NOW)).toThrow(/out of date/); });
 });
 describe("errors", () => {
-  it.each([[401, "auth", /session has ended/], [404, "unavailable", /not available to you/], [503, "unavailable", /Credits cannot be checked/], [500, "error", /could not be checked yet/]])("%s", async (s, kind, text) => { await expect(run(reply(s, {}))).rejects.toMatchObject({ kind, message: expect.stringMatching(text) }); });
+  it.each([[401, "auth", /session has ended/], [404, "unavailable", /not available to you/], [503, "unavailable", /Credits cannot be checked/], [500, "error", /could not be checked yet/]])("%s", async (s, kind, text) => { await expect(run(reply(s, s === 404 ? { error: { code: "RESOURCE_NOT_AVAILABLE" } } : {}))).rejects.toMatchObject({ kind, message: expect.stringMatching(text) }); });
   it("a dropped connection says nothing was started", async () => { await expect(run(vi.fn().mockRejectedValue(new Error("x")))).rejects.toThrow(/Nothing was started or charged/); });
 });

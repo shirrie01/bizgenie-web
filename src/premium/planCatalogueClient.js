@@ -1,3 +1,5 @@
+import { featureEnabled } from "./featureGate";
+import { NOT_DEPLOYED_CODE, NOT_DEPLOYED_TEXT, looksNotDeployed, readJsonSafe } from "./routeAbsent";
 // Server-owned plan catalogue (BG-STUDIO-019-FE A, reconciled in BG-STUDIO-020-FE with the backend DRAFT: bizgenie-api PR #216 head f8d81bf,
 // src/billing/commercialCatalog.js + src/billing/customerRouter.js, docs/studio/BG_STUDIO_019_COMMERCIAL_CONTRACTS.md). The route is NOT
 // deployed and the backend serves 503 COMMERCIAL_CATALOG_UNAVAILABLE until a founder-approved catalogue is injected; no approved pricing source
@@ -11,10 +13,7 @@
 //         approval: { decision, source(https), approved_at } } ] }
 // The contract has NO plan display name, support contact, trial, additional-usage price, renewal wording or "current plan" marker. The app shows
 // those as "not published", derives the label from plan_code, and marks the current plan from the subscription it already reads.
-export const isPlanCatalogueApiEnabled = (env = import.meta.env) => {
-  const raw = env && env.VITE_PLAN_CATALOGUE_API;
-  return typeof raw === "string" && raw.trim().toLowerCase() === "true";
-};
+export const isPlanCatalogueApiEnabled = (env = import.meta.env) => featureEnabled("planCatalogue", env);
 
 export class CatalogueError extends Error {
   constructor(message, { kind = "error", status = 0, code = "" } = {}) { super(message); this.name = "CatalogueError"; this.kind = kind; this.status = status; this.code = code; }
@@ -68,6 +67,7 @@ export async function fetchPlanCatalogue({ apiBaseUrl, accessToken, tenantId, fe
   try { response = await fetchImpl(`${apiBaseUrl}/customer/billing/plans?${new URLSearchParams({ tenant_id: tenantId })}`, { headers: { authorization: `Bearer ${accessToken}` } }); }
   catch { throw new CatalogueError("Prices and terms could not be loaded because the connection failed. Nothing is charged.", { kind: "network", code: "NETWORK" }); }
   if (response.status === 401) throw new CatalogueError("Your session has ended. Sign in again to continue.", { kind: "auth", status: 401, code: "AUTHENTICATION_REQUIRED" });
+  if (response.status === 404 && looksNotDeployed(404, await readJsonSafe(response))) throw new CatalogueError("Plans and prices are not available in this version yet, so none are shown. Nothing is charged.", { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
   if (response.status === 403 || response.status === 404) throw new CatalogueError("Plans are not available for this workspace.", { kind: "unavailable", status: response.status });
   if (response.status === 503) throw new CatalogueError("Approved plans and prices have not been published yet, so none are shown. Nothing is charged.", { kind: "unavailable", status: 503, code: "COMMERCIAL_CATALOG_UNAVAILABLE" });
   if (!response.ok) throw new CatalogueError("Prices and terms could not be loaded yet. Nothing is charged.", { kind: "error", status: response.status });

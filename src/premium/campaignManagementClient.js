@@ -7,6 +7,7 @@
 // Responses carry the whole campaign document. Nothing here talks to a social platform: a "confirm" is the customer's own attestation.
 // Archive/restore are refused (409 INVALID_TRANSITION) while any item is scheduled or awaiting a manual-publication answer.
 import { bridgeRefusal } from "../bridgeErrors";
+import { featureEnabled } from "./featureGate";
 
 export class CampaignApiError extends Error {
   constructor(message, { kind = "error", status = 0, code = "" } = {}) { super(message); this.name = "CampaignApiError"; this.kind = kind; this.status = status; this.code = code; }
@@ -113,8 +114,9 @@ export async function submitForReview({ apiBaseUrl, accessToken, scope, campaign
 // offered a button whose request cannot succeed.
 export const isUnscheduleApiEnabled = (env = import.meta.env) => {
   const flag = (v) => typeof v === "string" && v.trim().toLowerCase() === "true";
-  if (env && typeof env.VITE_UNSCHEDULE_API === "string" && env.VITE_UNSCHEDULE_API.trim() !== "") return flag(env.VITE_UNSCHEDULE_API);
-  return Boolean(env) && flag(env.VITE_WORKSPACE_CALENDAR_API);
+  const explicit = env && typeof env.VITE_UNSCHEDULE_API === "string" && env.VITE_UNSCHEDULE_API.trim() !== "";
+  const wanted = explicit ? flag(env.VITE_UNSCHEDULE_API) : Boolean(env) && flag(env.VITE_WORKSPACE_CALENDAR_API);
+  return featureEnabled("unschedule", env, { flagOverride: wanted });
 };
 
 // Remove the planned time of a scheduled variant. The route is the existing `unschedule` command exposed over HTTP in the backend draft (PR #216,

@@ -1,3 +1,5 @@
+import { featureEnabled } from "./featureGate";
+import { NOT_DEPLOYED_CODE, NOT_DEPLOYED_TEXT, looksNotDeployed, readJsonSafe } from "./routeAbsent";
 // Performance evidence and the Learning Brain (BG-STUDIO-027-FE, F5): the REAL routes of bizgenie-api #220 (application e653ed346c41887261ff6861342e3861995edcc0;
 // docs/studio/BG_STUDIO_025_BACKEND_HANDOFF.md F5; unchanged route set since #218). Off unless `VITE_ANALYTICS_API=true`; the backend answers 503 LEARNING_UNAVAILABLE
 // until an operator composes the service. There is NO public ingestion route and NO route that reads the latest snapshot, so:
@@ -9,10 +11,7 @@
 // Observation rows are canonical (`performance-observation.v1`) for new snapshots; older persisted snapshots may lack the row version and are accepted as history
 // (src/intel/performanceEvidence.js). Evidence is a point-in-time read: current NOW does not mean current at a later write, so every write can still answer 409.
 // Recommendations are observed changes only (causal_claim false). Nothing here invents analytics or calls a platform.
-export const isAnalyticsApiEnabled = (env = import.meta.env) => {
-  const raw = env && env.VITE_ANALYTICS_API;
-  return typeof raw === "string" && raw.trim().toLowerCase() === "true";
-};
+export const isAnalyticsApiEnabled = (env = import.meta.env) => featureEnabled("analytics", env);
 export class InsightsError extends Error {
   constructor(message, { kind = "error", status = 0, code = "" } = {}) { super(message); this.name = "InsightsError"; this.kind = kind; this.status = status; this.code = code; }
 }
@@ -31,6 +30,7 @@ async function call(fetchImpl, url, options, what, write) {
   let code = ""; try { const j = await res.json(); code = j && j.error && typeof j.error.code === "string" ? j.error.code : ""; } catch { /* none */ }
   if (res.status === 401) throw new InsightsError("Your session has ended. Sign in again to continue.", { kind: "auth", status: 401, code });
   if (CODES[code]) throw new InsightsError(CODES[code][1], { kind: CODES[code][0], status: res.status, code });
+  if (res.status === 404 && !code) throw new InsightsError(NOT_DEPLOYED_TEXT, { kind: "unavailable", status: 404, code: NOT_DEPLOYED_CODE });
   if (res.status === 404) throw new InsightsError("Only the workspace owner can do that, or it is no longer available.", { kind: "forbidden", status: 404, code });
   if (res.status === 503) throw new InsightsError(write ? "The service could not complete that, and it may not have been recorded. Reload before trying again." : "Results are temporarily unavailable. Try again shortly.", { kind: write ? "unconfirmed" : "unavailable", status: 503, code });
   if (res.status >= 500 && write) throw new InsightsError("The service had a problem and it may not have been recorded. Reload before trying again.", { kind: "unconfirmed", status: res.status, code });

@@ -61,7 +61,7 @@ describe("invoices (billing-invoices.v1 draft, unmounted)", () => {
     const r = await fetchInvoices({ ...base, fetchImpl: page([inv({ number: null, hosted_invoice_url: null }), inv({ invoice_id: "in_abc2", hosted_invoice_url: "https://evil.test/i" }), inv({ invoice_id: "in_abc3", status: "weird" }), inv({ invoice_id: "x" })]) });
     expect(r.invoices.map((i) => [i.id, i.number, i.url])).toEqual([["in_abc1", "", ""], ["in_abc2", "FX-0001", ""]]); expect(r.skipped).toBe(2);
   });
-  it.each([[401, "auth"], [404, "forbidden"], [503, "unavailable"], [500, "error"]])("status %s", async (s, kind) => { await expect(fetchInvoices({ ...base, fetchImpl: reply(s, {}) })).rejects.toMatchObject({ kind }); });
+  it.each([[401, "auth"], [404, "forbidden"], [503, "unavailable"], [500, "error"]])("status %s", async (s, kind) => { await expect(fetchInvoices({ ...base, fetchImpl: reply(s, s === 404 ? { error: { code: "RESOURCE_NOT_AVAILABLE" } } : {}) })).rejects.toMatchObject({ kind }); });
   it("a wrong contract or a dropped connection is an error, not an empty list", async () => {
     await expect(fetchInvoices({ ...base, fetchImpl: reply(200, { invoices: [] }) })).rejects.toMatchObject({ kind: "invalid" });
     await expect(fetchInvoices({ ...base, fetchImpl: vi.fn().mockRejectedValue(new Error("x")) })).rejects.toMatchObject({ kind: "network" });
