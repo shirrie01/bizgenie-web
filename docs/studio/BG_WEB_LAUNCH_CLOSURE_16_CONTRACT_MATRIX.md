@@ -1,5 +1,8 @@
 # BG-WEB-LAUNCH-CLOSURE-16 — WEB ↔ API current-main compatibility, video and social readiness
 
+> **HISTORICAL API SNAPSHOT — SUPERSEDED FOR CURRENT SOURCE (13 Nov 2026).** The matrix below describes API `d3ec6c37` and remains as dated evidence. The subsequently merged API #240–#244 source at `5cd1d774` mounts creative jobs, social, media intake and insights conditionally; its zero-open-PR disposition and runtime-gated state are documented in [BG_WEB_LAUNCH_CLOSURE_17_API_SOURCE_CORRECTION.md](BG_WEB_LAUNCH_CLOSURE_17_API_SOURCE_CORRECTION.md). Do not use the older route-absent claims as new Codex tasks. No staging/customer acceptance is inferred.
+
+
 13 Nov 2026. **Authority: accepted API main `d3ec6c375ab14b4d3180e05e784361d0bf155046`** (includes #237 calendar/catalogue/product, #238 provider-spend admission, #239 quotes/worker/recovery); WEB main `3d1af7a81af79ec4a5a84f64bf33621a170ec6ce`. This **supersedes section 1 of the Closure-15 pack, which was written against the obsolete API main `16f363e9`** and wrongly listed quotes, calendar, unschedule, catalogue and credit preview as absent. 15 API PRs remain open (Codex-owned); nothing below depends on them. Source verification only: no staging revision, hosted environment or provider was exercised. Staging and launch remain NO-GO.
 
 ## Classification (exactly one primary state per feature; further states listed where they also apply)
