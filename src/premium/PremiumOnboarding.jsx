@@ -4,7 +4,9 @@ import { SOURCE_LABEL } from "./workspaceModel";
 import ProvenanceLegend from "./ProvenanceLegend";
 import { CHANNEL_LABELS, MISSING_GUIDANCE, confirmationReadiness, effectiveSector, isNotADescription, isSeededDescription } from "./onboardingModel";
 import { roleLabel } from "./membershipClient";
-import { changedBrainFields, describeBrainFailure } from "./brainClient";
+import { changedBrainFields, describeBrainFailure, extendedFormValues } from "./brainClient";
+import { BRAND_CARDS, LOGO_NOTE, OBJECTIVES, PANELS, applyObjective, brandCardSummary, channelConnection, nextStage, objectiveForGoal, panelIndexOfStage, partOfPanel, prevStage } from "./onboardingPanels";
+import { connectableProviders, isSocialApiEnabled } from "./socialClient";
 
 // Production onboarding (BG-STUDIO-008-FE, persistent since BG-STUDIO-010-FE). Each step says exactly what it saves and where:
 //  - Business identity: created through POST /customer/workspace/bootstrap (only when no workspace exists yet).
@@ -38,7 +40,7 @@ function Field({ id, label, hint, children }) {
 
 function Truth({ children }) { return <p className="ps-truth">{children}</p>; }
 
-export default function PremiumOnboarding({ stage, setStage, draft, setField, channels, toggleChannel, session, brainState, onLoadBrain, onSave, onBootstrap, onRecommend, recommendationState, onFinish, onOpenStudio, onboardingState, onLoadOnboarding, onSaveProgress, dirty = false, readOnly = false, membershipRole = null, onGoToStep, getBrainBaseline, onChooseWorkspace = null }) {
+export default function PremiumOnboarding({ stage, setStage, draft, setField, channels, toggleChannel, session, brainState, onLoadBrain, onSave, onBootstrap, onRecommend, recommendationState, onFinish, onOpenStudio, onOpenBrand = null, onOpenAccounts = null, onboardingState, onLoadOnboarding, onSaveProgress, dirty = false, readOnly = false, membershipRole = null, onGoToStep, getBrainBaseline, onChooseWorkspace = null }) {
   const headingRef = useRef(null);
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -78,8 +80,9 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
     return Object.keys(found).length === 0;
   }
 
-  const next = () => setStage((current) => Math.min(STAGES.length - 1, current + 1));
-  const back = () => setStage((current) => Math.max(0, current - 1));
+  // The stored stage indexes never change (see onboardingPanels.js); only the walking order does.
+  const next = () => setStage((current) => nextStage(current));
+  const back = () => setStage((current) => prevStage(current));
 
   async function createWorkspace() {
     if (!draft.businessName.trim()) { setErrors({ businessName: "Enter your business name to continue." }); return; }
@@ -128,7 +131,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   }
 
   async function recommend() {
-    if (!draft.goal.trim()) { setErrors({ goal: "Tell us your goal first. You can add it on the Customers and goal step." }); return; }
+    if (!draft.goal.trim()) { setErrors({ goal: "Tell us your goal first. You can add it on the Your goals panel." }); return; }
     if (!validate([["goal", "Goal"]])) return;
     await guarded(async () => { await onRecommend(draft.goal.trim()); });
   }
@@ -139,8 +142,17 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   let body = null;
   if (current.id === "welcome") {
     body = (<>
-      {heading("Let’s set up your workspace")}
-      <p className="ps-lede">A few short steps so BizGenie works from your own words, not a template.</p>
+      <div className="ps-hero" data-testid="ps-hero">
+        <span className="ps-hero-shape ps-hero-shape-a" aria-hidden="true" /><span className="ps-hero-shape ps-hero-shape-b" aria-hidden="true" />
+        <p className="eyebrow">BizGenie · marketing, made with you</p>
+        {heading("Let’s set up your workspace")}
+      </div>
+      <p className="ps-lede">Six short panels so BizGenie works from your own words, not a template. You can save and come back at any time.</p>
+      <ul className="ps-assure" aria-label="What BizGenie promises">
+        <li><strong>You stay in control</strong><span>You review and approve everything before it goes anywhere.</span></li>
+        <li><strong>Nothing posts by itself</strong><span>BizGenie never publishes, schedules or connects an account on its own.</span></li>
+        <li><strong>Your details stay yours</strong><span>You choose what is saved, and you can edit it later.</span></li>
+      </ul>
       <div className="ps-saved" role="group" aria-label="What is saved and what is not">
         <div><h3>Saved to your account</h3><ul><li>Your business name, and a website or challenge if you add them.</li><li>What your business does, who it serves and what customers should do next, when you press Save to Brand Brain.</li><li>Your sector, channels, the step you are on and any unsaved answers, when you press Save progress or Save and exit.</li></ul></div>
         <div><h3>Not saved until you act</h3><ul><li>Anything you type stays on this screen until you save it.</li><li>Your goal becomes a campaign only when you create one.</li></ul></div>
@@ -155,6 +167,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         {errors.businessName && <p className="error" id="ps-name-error" role="alert">{errors.businessName}</p>}
       </Field>
       {scopeMissing && (<>
+        <p className="ps-hint" role="note" data-testid="ps-import-note">Importing details from your website isn’t available yet. Add them yourself: it only takes a minute, and nothing is read from your site.</p>
         <Field id="ps-site" label="Website or social profile (optional)" hint="We store the address you type. We do not read or import anything from it.">
           <input id="ps-site" value={draft.website} onChange={(e) => setField("website", e.target.value)} inputMode="url" autoComplete="url" placeholder="https://" />
           {errors.website && <p className="error" role="alert">{errors.website}</p>}
@@ -198,7 +211,13 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
         <textarea id="ps-audience" rows={3} value={draft.audience} onChange={(e) => setField("audience", e.target.value)} />
         {errors.audience && <p className="error" role="alert">{errors.audience}</p>}
       </Field>
-      <Field id="ps-goal" label="What do you want a campaign to achieve?" hint="Used for your first recommendation. It is saved only when you create a campaign.">
+      <div className="ps-objectives" role="group" aria-label="Pick an objective">
+        {OBJECTIVES.map((o) => { const on = objectiveForGoal(draft.goal) === o; return (
+          <button key={o.id} type="button" className={`ps-objective${on ? " on" : ""}`} aria-pressed={on} onClick={() => setField("goal", applyObjective(draft.goal, o))}>
+            <span>{o.label}</span><small>{on ? "Your objective" : "Use this objective"}</small>
+          </button>); })}
+      </div>
+      <Field id="ps-goal" label="What do you want a campaign to achieve?" hint="Used for your first recommendation. Picking an objective above starts this sentence; add your own detail after it. It is saved only when you create a campaign.">
         <textarea id="ps-goal" rows={3} value={draft.goal} maxLength={LIMITS.goal + 50} onChange={(e) => setField("goal", e.target.value)} aria-invalid={errors.goal ? "true" : undefined} placeholder="e.g. Get more enquiries from small businesses" />
         {errors.goal && <p className="error" role="alert">{errors.goal}</p>}
       </Field>
@@ -210,16 +229,27 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
       <div className="ps-channels" role="group" aria-label="Channels you are planning for">
         {CHANNELS.map((name) => {
           const on = channels.has(name);
-          return (<button key={name} type="button" className={`ps-channel${on ? " on" : ""}`} aria-pressed={on} onClick={() => toggleChannel(name)}>
-            <span>{name}</span><small>{on ? "Planning for this" : "Not selected"} · Not connected</small>
-          </button>);
+          const link = channelConnection(name, { socialEnabled: isSocialApiEnabled(), providers: connectableProviders() });
+          return (<div key={name} className="ps-channel-wrap">
+            <button type="button" className={`ps-channel${on ? " on" : ""}`} aria-pressed={on} onClick={() => toggleChannel(name)}>
+              <span>{name}</span><small>{on ? "Planning for this" : "Not selected"}</small>
+            </button>
+            <p className="ps-channel-note">{link.text}</p>
+            {link.offered && onOpenAccounts && <button type="button" className="secondary" onClick={onOpenAccounts} aria-label={`Open Accounts and publishing to connect ${name}`}>Connect</button>}
+          </div>);
         })}
       </div>
-      <Truth>Planning only. Saved with your setup progress when you press Save progress or Save and exit. Connecting accounts is not available yet, and BizGenie never publishes without your approval.</Truth>
+      <Truth>Planning only. Saved with your setup progress when you press Save progress or Save and exit. A Connect button appears only for a platform this version can actually connect, and BizGenie never publishes without your approval.</Truth>
     </>);
   } else if (current.id === "brain") {
     body = (<>
-      {heading("Your Brand Brain")}
+      {heading("Set up your brand")}
+      <p className="ps-lede">This is your Brand Brain: what BizGenie reads before it writes anything for you. It is yours to edit, and it stays a draft until you approve it.</p>
+      <div className="ps-brandcards" role="group" aria-label="Brand setup">
+        {BRAND_CARDS.map((c) => (<div key={c.id} className="ps-brandcard"><h3>{c.label}</h3><p>{brainState.status === "ready" && brainState.brain ? brandCardSummary(c, extendedFormValues(brainState.brain)) : "Available once your Brand Brain has loaded"}</p>
+          {onOpenBrand && brainReady && <button type="button" className="secondary" onClick={onOpenBrand} aria-label={`Edit ${c.label} in the Brand Brain editor`}>Edit</button>}</div>))}
+        <div className="ps-brandcard ps-brandcard-off"><h3>Logo</h3><p>{LOGO_NOTE}</p></div>
+      </div>
       {brainState.status === "loading" && <p role="status">Loading your Brand Brain…</p>}
       {brainState.status === "error" && <p className="error" role="alert">{brainState.error || "Your Brand Brain could not be loaded yet."} Nothing has been changed.</p>}
       {brainReady && (<dl className="ps-facts" aria-label="Saved Brand Brain">
@@ -250,8 +280,19 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   } else {
     const rec = recommendationState.recommendation;
     body = (<>
-      {heading("Your first recommendation")}
-      <p className="ps-lede">{draft.goal.trim() ? <>Goal you entered: <strong>{draft.goal.trim()}</strong></> : "Add a goal on the Customers and goal step to get a recommendation."}</p>
+      {heading("Review your campaign proposal")}
+      <section className="ps-review" aria-label="What BizGenie will plan from">
+        <h3>What BizGenie will plan from</h3>
+        <dl className="ps-facts">
+          <div><dt>Business</dt><dd>{(brainReady && brainState.brain.name) || draft.businessName.trim() || "Not provided yet"} <button type="button" className="link" onClick={() => onGoToStep && onGoToStep(1)}>Edit</button></dd></div>
+          <div><dt>Sector</dt><dd>{SECTORS[sector.key].label}</dd></div>
+          <div><dt>Objective</dt><dd>{draft.goal.trim() ? (objectiveForGoal(draft.goal) ? objectiveForGoal(draft.goal).label : "Your own goal") : "Not chosen yet"} <button type="button" className="link" onClick={() => onGoToStep && onGoToStep(3)}>Edit</button></dd></div>
+          <div><dt>Customers</dt><dd>{draft.audience.trim() || "Not provided yet"}</dd></div>
+          <div><dt>Channels you are planning for</dt><dd>{channels.size ? CHANNELS.filter((c) => channels.has(c)).join(", ") : "None chosen yet"} <button type="button" className="link" onClick={() => onGoToStep && onGoToStep(4)}>Edit</button></dd></div>
+        </dl>
+        <ol className="ps-next-list" aria-label="What happens next"><li>BizGenie drafts a plan from the details above.</li><li>You review and change it.</li><li>Nothing is generated, scheduled or published until you approve it and separately authorise it.</li></ol>
+      </section>
+      <p className="ps-lede">{draft.goal.trim() ? <>Goal you entered: <strong>{draft.goal.trim()}</strong></> : "Add a goal on the Your goals panel to get a recommendation."}</p>
       <button type="button" className="ps-primary" onClick={recommend} disabled={busy || recommendationState.status === "loading" || !draft.goal.trim()}>{recommendationState.status === "loading" ? "Thinking…" : rec ? "Get a new recommendation" : "Get my recommendation"}</button>
       {errors.goal && <p className="error" role="alert">{errors.goal}</p>}
       {recommendationState.status === "error" && <p className="error" role="alert">{recommendationState.error}</p>}
@@ -270,8 +311,9 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   const last = stage === STAGES.length - 1;
   return (
     <section className="ps-onboarding" aria-label="Set up your workspace">
+      <p className="ps-panel-count" role="status" aria-live="polite">Step {panelIndexOfStage(stage) + 1} of {PANELS.length}: {PANELS[panelIndexOfStage(stage)].label}{partOfPanel(stage) ? ` (part ${partOfPanel(stage).index} of ${partOfPanel(stage).of})` : ""}</p>
       <ol className="ps-progress" aria-label="Setup progress">
-        {STAGES.map((s, i) => (<li key={s.id} aria-current={i === stage ? "step" : undefined} className={i < stage ? "done" : i === stage ? "current" : ""}><span className="ps-step-n">{i + 1}</span><span className="ps-step-l">{s.label}</span></li>))}
+        {PANELS.map((pn, i) => { const at = panelIndexOfStage(stage); return (<li key={pn.id} aria-current={i === at ? "step" : undefined} className={i < at ? "done" : i === at ? "current" : ""}><span className="ps-step-n">{i + 1}</span><span className="ps-step-l">{pn.label}</span></li>); })}
       </ol>
       <div className="ps-stage">
         <ProvenanceLegend />

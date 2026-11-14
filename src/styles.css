@@ -386,3 +386,36 @@ button.link:focus-visible { outline: 3px solid #0b4943; outline-offset: 2px; bor
 .auth-notice p { margin: 0; }
 .auth-notice.auth-link-expired, .auth-notice.auth-link-failed { background: #fbf3e4; border-color: #e5d2a6; }
 .auth-panel .error { margin: 0; padding: 12px 14px; border-radius: 10px; background: #fbeeee; border: 1px solid #e5b9b9; color: #7a1f1f; line-height: 1.45; }
+
+/* BG-WEB-ONBOARDING-MOCKUP (Issue #85): six-panel onboarding. Existing palette and radii only; no stock photography (rights/provenance), decorative shapes are CSS. */
+.ps-panel-count { margin: 0 0 8px; color: #4b564f; font-size: .9rem; font-weight: 600; letter-spacing: .02em; }
+.ps-assure { list-style: none; margin: 20px 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.ps-assure li { display: grid; gap: 4px; padding: 16px 18px; background: linear-gradient(160deg, #f6f8f4 0%, #e8f1ec 100%); border: 1px solid #cfe0d6; border-radius: 16px; }
+.ps-assure strong { color: #0b4943; }
+.ps-assure span { color: #34413b; font-size: .92rem; }
+.ps-objectives { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 4px 0 18px; }
+.ps-objective { width: 100%; justify-self: stretch; display: grid; gap: 4px; text-align: left; padding: 14px 16px; min-height: 64px; background: #fff; color: #16211d; border: 1px solid #8f9a92; border-radius: 14px; cursor: pointer; font: inherit; font-weight: 600; }
+.ps-objective small { color: #4b564f; font-weight: 400; }
+.ps-objective.on { border-color: #0b4943; box-shadow: inset 0 0 0 2px #0b4943; background: #f1f7f4; }
+.ps-objective:focus-visible, .ps-channel:focus-visible { outline: 3px solid #16211d; outline-offset: 2px; }
+.ps-brandcards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin: 12px 0 20px; }
+.ps-brandcard { display: grid; gap: 8px; align-content: start; padding: 16px 18px; background: #fff; border: 1px solid #d9dbd3; border-radius: 16px; }
+.ps-brandcard h3 { margin: 0; }
+.ps-brandcard p { margin: 0; color: #34413b; overflow-wrap: anywhere; }
+.ps-brandcard-off { background: #f6f6f2; border-style: dashed; }
+.ps-channel-wrap { display: grid; gap: 6px; align-content: start; }
+.ps-channel-note { margin: 0; color: #4b564f; font-size: .85rem; }
+.ps-review { margin: 16px 0 20px; padding: 18px 20px; background: #f6f8f4; border: 1px solid #cfe0d6; border-radius: 16px; }
+.ps-next-list { margin: 12px 0 0; padding-left: 20px; color: #34413b; }
+@media (max-width: 640px) {
+  .ps-progress .ps-step-l { display: none; }
+  .ps-progress li.current .ps-step-l { display: inline; }
+  .ps-progress { gap: 6px; }
+}
+.ps-hero { position: relative; overflow: hidden; margin: 0 0 16px; padding: clamp(20px, 4vw, 36px); border-radius: 18px; background: linear-gradient(135deg, #0b4943 0%, #14665c 55%, #1f7a6b 100%); color: #fff; }
+.ps-hero .eyebrow { color: #cfe9df; margin: 0 0 8px; }
+.ps-hero h2 { color: #fff; margin: 0; max-width: 18ch; }
+.ps-hero-shape { position: absolute; border-radius: 50%; background: rgba(255, 255, 255, .08); pointer-events: none; }
+.ps-hero-shape-a { width: 120px; height: 120px; right: 14px; top: 14px; }
+.ps-hero-shape-b { width: 72px; height: 72px; right: 110px; bottom: 12px; background: rgba(255, 255, 255, .06); }
+.ps-channels { align-items: start; }

@@ -200,7 +200,7 @@ export default function PremiumStudio({ session, brainState, onLoadBrain, onSave
         session={session} brainState={brainState} onLoadBrain={onLoadBrain} onSave={onSaveBrain} onBootstrap={onBootstrap}
         onboardingState={onboardingState} onLoadOnboarding={onLoadOnboarding} onSaveProgress={saveProgress} dirty={dirty} readOnly={readOnly} membershipRole={membershipRole} onGoToStep={setStage} onChooseWorkspace={() => go({ view: "workspaces" })} getBrainBaseline={getBrainBaseline}
         recommendationState={recommendationState} onRecommend={onRecommend}
-        onFinish={() => go({ view: "overview" })} onOpenStudio={() => go({ view: "studio" })}
+        onFinish={() => go({ view: "overview" })} onOpenStudio={() => go({ view: "studio" })} onOpenBrand={() => go({ view: "brand" })} onOpenAccounts={() => go({ view: "connections" })}
       />
     );
   } else if (view === "overview") {
