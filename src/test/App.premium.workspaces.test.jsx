@@ -179,7 +179,7 @@ describe("choosing when the API says selection_required", () => {
     let up = false;
     handlers["GET /customer/workspace"] = () => (up ? ok({ status: "selection_required", workspaces: world.list }) : fail(503));
     render(<App />);
-    await screen.findByRole("heading", { name: /tell us about your business|let.s set up your workspace/i });
+    await screen.findByRole("heading", { name: /tell us about your business|your marketing engine, ready to work/i });
     // The list could not load: the existing onboarding path stays available and still never guesses a workspace.
     expect(called("POST", "/workspace/select")).toHaveLength(0);
   });
@@ -187,14 +187,14 @@ describe("choosing when the API says selection_required", () => {
   it("a malformed list shows no workspaces rather than guessing", async () => {
     handlers["GET /customer/workspace"] = () => ok({ status: "selection_required", workspaces: [{ brand_id: "b" }, { brand_id: "c" }] });
     render(<App />);
-    await screen.findByRole("heading", { name: /let.s set up your workspace/i });
+    await screen.findByRole("heading", { name: /your marketing engine, ready to work/i });
     expect(screen.queryByRole("list", { name: /workspaces you can use/i })).toBeNull();
   });
 
   it("creating a workspace never silently picks one when the customer already has several", async () => {
     handlers["GET /customer/workspace"] = (() => { let n = 0; return () => (++n === 1 ? ok({ status: "missing_workspace", workspace: null }) : ok({ status: "selection_required", workspaces: world.list })); })();
     render(<App />);
-    await screen.findByRole("heading", { name: /let.s set up your workspace/i });
+    await screen.findByRole("heading", { name: /your marketing engine, ready to work/i });
     fireEvent.click(button(/^continue$/i));
     fireEvent.change(await screen.findByLabelText(/business name/i), { target: { value: "New Co" } });
     fireEvent.click(button(/create my workspace/i));
@@ -320,7 +320,7 @@ describe("switching from a workspace you are in", () => {
   it("unsaved answers are protected: the customer must explicitly discard them, and can stay", async () => {
     world.byToken[TOKEN_A].onboarding = onboardingDoc(WS_A, { version: 2, status: "in_progress", completed_at: null, current_step: 3, channels: { values: [], source: null } });
     render(<App />);
-    await screen.findByRole("heading", { name: /who do you serve/i });
+    await screen.findByRole("heading", { name: /what are you trying to achieve/i });
     fireEvent.change(screen.getByLabelText(/what do you want a campaign to achieve/i), { target: { value: "My unsaved goal" } });
     await openWorkspaces();
     fireEvent.click(screen.getByRole("button", { name: "Use Brookside Aesthetics" }));
@@ -342,14 +342,14 @@ describe("save and resume across workspaces", () => {
     world.byToken[TOKEN_A].onboarding = onboardingDoc(WS_A, { version: 2, status: "in_progress", completed_at: null, current_step: 3, channels: { values: [], source: null } });
     world.byToken[TOKEN_B].onboarding = onboardingDoc(WS_B, { version: 7, status: "in_progress", completed_at: null, current_step: 3, channels: { values: [], source: null } });
     render(<App />);
-    await screen.findByRole("heading", { name: /who do you serve/i });
+    await screen.findByRole("heading", { name: /what are you trying to achieve/i });
     fireEvent.change(screen.getByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Fill the A diary" } });
     fireEvent.click(button(/^save progress$/i));
     await screen.findByText(/setup progress saved\. you can leave/i);
     // To B: it has its own version and no trace of A's goal.
     await openWorkspaces();
     fireEvent.click(screen.getByRole("button", { name: "Use Brookside Aesthetics" }));
-    await screen.findByRole("heading", { name: /who do you serve/i });
+    await screen.findByRole("heading", { name: /what are you trying to achieve/i });
     expect(screen.getByLabelText(/what do you want a campaign to achieve/i)).toHaveValue("");
     expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/version 7/i);
     fireEvent.change(screen.getByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Fill the B diary" } });
@@ -361,7 +361,7 @@ describe("save and resume across workspaces", () => {
     refreshCustomerSessionMock.mockResolvedValue(SESSION_A);
     await openWorkspaces();
     fireEvent.click(screen.getByRole("button", { name: "Use Northgate Vehicle Leasing" }));
-    await screen.findByRole("heading", { name: /who do you serve/i });
+    await screen.findByRole("heading", { name: /what are you trying to achieve/i });
     expect(screen.getByLabelText(/what do you want a campaign to achieve/i)).toHaveValue("Fill the A diary");
     expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/version 3/i);
     expect(document.body.textContent).not.toContain("Fill the B diary");

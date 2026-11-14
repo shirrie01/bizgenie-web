@@ -160,7 +160,7 @@ test('save and resume across switching: each workspace keeps its own saved progr
   const log = await setup(page, { start: WS.a });
   log.data.ba.onboarding = doc(WS.a, { version: 2, status: 'in_progress', completed_at: null, current_step: 3, channels: { values: [], source: null } });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /who do you serve/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /what are you trying to achieve/i })).toBeVisible();
   await page.getByLabel(/what do you want a campaign to achieve/i).fill('Fill the Northgate diary');
   await page.getByRole('button', { name: /^save progress$/i }).click();
   await expect(page.getByText(/setup progress saved\. you can leave/i)).toBeVisible();
@@ -169,7 +169,7 @@ test('save and resume across switching: each workspace keeps its own saved progr
   await expect(page.getByRole('heading', { name: 'Welcome back, Brookside Aesthetics.' })).toBeVisible();
   await nav(page).getByRole('button', { name: 'Workspaces' }).click();
   await page.getByRole('button', { name: 'Use Northgate Vehicle Leasing' }).click();
-  await expect(page.getByRole('heading', { name: /who do you serve/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /what are you trying to achieve/i })).toBeVisible();
   await expect(page.getByLabel(/what do you want a campaign to achieve/i)).toHaveValue('Fill the Northgate diary');
   expect(log.puts.map((p) => p.brand)).toEqual(['ba']); // B was never written to
   await scan(page, 'resume-after-switch');

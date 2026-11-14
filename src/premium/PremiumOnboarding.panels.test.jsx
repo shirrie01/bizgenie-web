@@ -35,10 +35,10 @@ describe("six-panel progress", () => {
 });
 
 describe("welcome", () => {
-  it("states the three assurances, uses no stock photography, and has a way to start", () => {
+  it("states the four assurances, uses no stock photography, and has a way to start", () => {
     view(0);
     const list = screen.getByRole("list", { name: /what bizgenie promises/i });
-    expect(list).toHaveTextContent(/approve everything/i); expect(list).toHaveTextContent(/never publishes, schedules or connects/i);
+    expect(list).toHaveTextContent(/you stay in control/i); expect(list).toHaveTextContent(/no publishing without your approval/i); expect(screen.getByText(/nothing is published, scheduled or connected by setting up/i)).toBeInTheDocument();
     expect(document.querySelectorAll(".ps-onboarding img")).toHaveLength(0);
     expect(screen.getByRole("button", { name: /^continue$/i })).toBeInTheDocument();
   });

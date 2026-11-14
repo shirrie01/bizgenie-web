@@ -242,7 +242,7 @@ describe("missing Brand Brain information", () => {
 
 describe("workspace creation (existing bootstrap contract)", () => {
   beforeEach(() => { getCustomerSessionMock.mockResolvedValue(SCOPE_MISSING); });
-  const toIdentity = async () => { render(<App />); await screen.findByRole("heading", { name: /let.s set up your workspace/i }); fireEvent.click(button(/^continue$/i)); await screen.findByRole("heading", { name: /tell us about your business/i }); };
+  const toIdentity = async () => { render(<App />); await screen.findByRole("heading", { name: /your marketing engine, ready to work/i }); fireEvent.click(button(/^continue$/i)); await screen.findByRole("heading", { name: /tell us about your business/i }); };
 
   it("requires a business name and creates nothing without one", async () => {
     await toIdentity();
@@ -419,7 +419,7 @@ describe("what is saved, and what is not", () => {
     fireEvent.change(await screen.findByLabelText(/who are your customers/i), { target: { value: "Small business owners" } });
     fireEvent.change(screen.getByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
     fireEvent.click(button(/^continue$/i)); // goals -> Brand setup (the six-panel order puts Brand setup before Channels)
-    await screen.findByRole("heading", { name: /set up your brand/i });
+    await screen.findByRole("heading", { name: /let.s make it yours/i });
   };
 
   it("saves only description, audience and customer action to the existing Brand Brain endpoint, and nothing else", async () => {
@@ -697,7 +697,7 @@ function fakeServer(initial) {
 const use = (server) => { handlers["GET /customer/workspace/onboarding"] = server.get; handlers["PUT /customer/workspace/onboarding"] = server.put; };
 const onboardingPuts = () => called("PUT", "/workspace/onboarding");
 const heading = (re) => screen.findByRole("heading", { name: re });
-const stageHeadings = { 2: /what does your business do/i, 3: /who do you serve/i, 4: /where would you like to reach customers/i, 5: /set up your brand/i };
+const stageHeadings = { 2: /what does your business do/i, 3: /what are you trying to achieve/i, 4: /where do your customers find you/i, 5: /let.s make it yours/i };
 
 describe("persistent onboarding: returning customers and resume", () => {
   it("a customer who confirmed setup lands on the workspace; the API is read with the bearer token only and writes nothing", async () => {
@@ -1078,7 +1078,7 @@ describe("persistent onboarding: backend placeholder flag, accounts and workspac
   it("a customer with no workspace yet makes no onboarding request and is not offered Save and exit", async () => {
     getCustomerSessionMock.mockResolvedValue(SCOPE_MISSING);
     render(<App />);
-    await screen.findByRole("heading", { name: /set up your workspace/i });
+    await screen.findByRole("heading", { name: /your marketing engine, ready to work/i });
     fireEvent.click(button(/^continue$/i));
     await screen.findByRole("heading", { name: /tell us about your business/i });
     expect(screen.queryByRole("button", { name: /save and exit/i })).toBeNull();
