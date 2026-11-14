@@ -418,10 +418,8 @@ describe("what is saved, and what is not", () => {
     fireEvent.click(button(/^continue$/i));
     fireEvent.change(await screen.findByLabelText(/who are your customers/i), { target: { value: "Small business owners" } });
     fireEvent.change(screen.getByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
-    fireEvent.click(button(/^continue$/i));
-    fireEvent.click(await screen.findByRole("button", { name: /^Instagram/ }));
-    fireEvent.click(button(/^continue$/i));
-    await screen.findByRole("heading", { name: /your brand brain/i });
+    fireEvent.click(button(/^continue$/i)); // goals -> Brand setup (the six-panel order puts Brand setup before Channels)
+    await screen.findByRole("heading", { name: /set up your brand/i });
   };
 
   it("saves only description, audience and customer action to the existing Brand Brain endpoint, and nothing else", async () => {
@@ -458,7 +456,7 @@ describe("what is saved, and what is not", () => {
 
   it("labels an unsaved sector and unsaved channels as such, and a saved one as saved", async () => {
     await toBrainStep();
-    fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i));
+    fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i)); // Brand setup -> goals -> about
     expect(screen.getByText(/Inferred from what you typed · not saved yet/i)).toBeInTheDocument();
     for (const c of calls) expect(String(c.options.body || "")).not.toMatch(/instagram|vehicle leasing/i);
   });
@@ -471,7 +469,7 @@ describe("recommendation, campaign and review safety inside the premium shell", 
     fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
     fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
     for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i)); // customers, channels, Brand Brain, then recommendation
-    await screen.findByRole("heading", { name: /your first recommendation/i });
+    await screen.findByRole("heading", { name: /review your campaign proposal/i });
     fireEvent.click(button(/get my recommendation/i));
     await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
   }
@@ -699,7 +697,7 @@ function fakeServer(initial) {
 const use = (server) => { handlers["GET /customer/workspace/onboarding"] = server.get; handlers["PUT /customer/workspace/onboarding"] = server.put; };
 const onboardingPuts = () => called("PUT", "/workspace/onboarding");
 const heading = (re) => screen.findByRole("heading", { name: re });
-const stageHeadings = { 2: /what does your business do/i, 3: /who do you serve/i, 4: /where would you like to reach customers/i, 5: /your brand brain/i };
+const stageHeadings = { 2: /what does your business do/i, 3: /who do you serve/i, 4: /where would you like to reach customers/i, 5: /set up your brand/i };
 
 describe("persistent onboarding: returning customers and resume", () => {
   it("a customer who confirmed setup lands on the workspace; the API is read with the bearer token only and writes nothing", async () => {
@@ -721,6 +719,8 @@ describe("persistent onboarding: returning customers and resume", () => {
     expect(screen.getByRole("button", { name: /^Email/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: /^TikTok/ })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/saved \(version 2\)/i);
+    fireEvent.click(button(/^back$/i)); // Brand setup (it comes before Channels in the six-panel order)
+    await heading(stageHeadings[5]);
     fireEvent.click(button(/^back$/i)); // customers and goal
     expect(await screen.findByLabelText(/what do you want a campaign to achieve/i)).toHaveValue("Sell more discovery sets");
     fireEvent.click(button(/^back$/i)); // what you do
@@ -748,7 +748,7 @@ describe("persistent onboarding: returning customers and resume", () => {
     await heading(/what does your business do/i); // not the workspace overview
     expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue("");
     expect(document.body.textContent).not.toMatch(/welcome back/i);
-    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i));
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); // about -> goals -> Brand setup
     await heading(stageHeadings[5]);
     expect(screen.getByText(/only a web address is stored here/i)).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("leaseexpert.example");
@@ -779,7 +779,7 @@ describe("persistent onboarding: Save progress, Save and exit, and confirmation"
     await heading(stageHeadings[2]);
     fillAbout();
     expect(screen.getByTestId("ps-save-state")).toHaveTextContent(/changes that are not saved yet/i);
-    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i));
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); // about -> goals -> Brand setup -> Channels
     fireEvent.click(await screen.findByRole("button", { name: /^Instagram/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Email/ }));
     expect(onboardingPuts()).toHaveLength(0); // clicking saves nothing
@@ -1223,7 +1223,7 @@ describe("hardened API: 422 incomplete business setup", () => {
     handlers["PUT /customer/workspace/onboarding"] = () => incomplete("description");
     fireEvent.click(button(/confirm setup/i));
     await screen.findByRole("alert");
-    fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i));
+    fireEvent.click(button(/^back$/i)); fireEvent.click(button(/^back$/i)); // Brand setup -> goals -> about
     expect(await screen.findByText(/saved · inferred from what you typed, not confirmed/i)).toBeInTheDocument();
     expect(server.state.doc.sector.source).toBe("inferred");
   });
@@ -1245,11 +1245,11 @@ describe("hardened API: only the workspace owner can write", () => {
     expect(note).toHaveTextContent(/only the workspace owner can save or confirm setup/i);
     expect(button(/^save progress$/i)).toBeDisabled();
     expect(button(/^save and exit$/i)).toBeDisabled();
-    fireEvent.click(button(/^continue$/i)); // reading and navigating still work
+    fireEvent.click(button(/^back$/i)); // reading and navigating still work (Brand setup comes before Channels)
     await heading(stageHeadings[5]);
     expect(button(/confirm setup/i)).toBeDisabled();
     // The saved setup is shown: authorised read access is preserved.
-    fireEvent.click(button(/^back$/i));
+    fireEvent.click(button(/^continue$/i));
     expect(screen.getByRole("button", { name: /^Email/ })).toHaveAttribute("aria-pressed", "true");
     expect(onboardingPuts()).toHaveLength(0);
     expect(server.state.doc.version).toBe(2);
@@ -1321,16 +1321,16 @@ describe("Brand Brain identity ownership (DEC-021 / DEC-022)", () => {
   const brainPuts = () => called("PUT", "/brand-brain");
   const goBack = (n) => { for (let i = 0; i < n; i++) fireEvent.click(button(/^back$/i)); };
   const typeAudience = async (text) => {
-    goBack(2); await heading(stageHeadings[3]);
+    goBack(1); await heading(stageHeadings[3]);
     fireEvent.change(await screen.findByLabelText(/who are your customers/i), { target: { value: text } });
-    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]);
+    fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]);
   };
 
   it("a member sees the name and description as owner-only, and can still save who it serves and the customer action", async () => {
     await atBrain("member");
     await screen.findByText(/only the workspace owner can change the business name and description/i);
     expect(screen.getByRole("button", { name: /save who it serves and customer action/i })).toBeDisabled(); // nothing edited yet
-    goBack(3); await heading(stageHeadings[2]);
+    goBack(2); await heading(stageHeadings[2]);
     expect(screen.getByLabelText(/describe what the business does/i)).toHaveAttribute("readonly");
     expect(screen.getByLabelText(/describe what the business does/i)).toHaveValue(DESCRIPTION);
     expect(screen.getByText(/only the workspace owner can change the description of the business/i)).toBeInTheDocument();
@@ -1358,11 +1358,11 @@ describe("Brand Brain identity ownership (DEC-021 / DEC-022)", () => {
     await atBrain("owner");
     expect(screen.queryByText(/only the workspace owner can change the business name and description/i)).toBeNull();
     expect(button(/^save to brand brain$/i)).toBeDisabled(); // nothing edited yet
-    goBack(3); await heading(stageHeadings[2]);
+    goBack(2); await heading(stageHeadings[2]);
     const box = screen.getByLabelText(/describe what the business does/i);
     expect(box).not.toHaveAttribute("readonly");
     fireEvent.change(box, { target: { value: "An independent perfume house in Paris." } });
-    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]);
+    fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]); // about -> goals -> Brand setup
     fireEvent.click(button(/^save to brand brain$/i));
     expect(await screen.findByText(/saved to your brand brain\. it is a draft/i)).toBeInTheDocument();
     expect(JSON.parse(brainPuts()[0].options.body).identity.description).toBe("An independent perfume house in Paris.");
@@ -1379,7 +1379,7 @@ describe("Brand Brain identity ownership (DEC-021 / DEC-022)", () => {
     expect(alert).toHaveTextContent(/nothing was saved/i);
     expect(screen.queryByText(/saved to your brand brain/i)).toBeNull();
     await waitFor(() => expect(called("GET", "/customer/workspace").length).toBeGreaterThan(roleReads)); // the role is re-read
-    goBack(2); await heading(stageHeadings[3]);
+    goBack(1); await heading(stageHeadings[3]);
     expect(screen.getByLabelText(/who are your customers/i)).toHaveValue("Collectors"); // typed answer still there
   });
 
@@ -1407,7 +1407,7 @@ describe("Brand Brain identity ownership (DEC-021 / DEC-022)", () => {
     await waitFor(() => expect(called("GET", "/brand-brain").length).toBeGreaterThan(reads));
     expect(await screen.findByText("Changed elsewhere.")).toBeInTheDocument();
     expect(brainPuts()).toHaveLength(1); // no automatic retry
-    goBack(2); await heading(stageHeadings[3]);
+    goBack(1); await heading(stageHeadings[3]);
     expect(screen.getByLabelText(/who are your customers/i)).toHaveValue("Collectors");
   });
 
@@ -1463,8 +1463,8 @@ describe("Brand Brain integrity under change (BG-STUDIO-015)", () => {
   const back = (n) => { for (let i = 0; i < n; i++) fireEvent.click(button(/^back$/i)); };
   const forward = async (n) => { for (let i = 0; i < n; i++) fireEvent.click(button(/^continue$/i)); await heading(stageHeadings[5]); };
   const edit = async (label, value, stepsBack) => { back(stepsBack); await screen.findByLabelText(label); fireEvent.change(screen.getByLabelText(label), { target: { value } }); await forward(stepsBack); };
-  const editCta = (v) => edit(/what should a customer do next/i, v, 3);
-  const editAudience = (v) => edit(/who are your customers/i, v, 2);
+  const editCta = (v) => edit(/what should a customer do next/i, v, 2); // Brand setup -> goals -> about (the six-panel order)
+  const editAudience = (v) => edit(/who are your customers/i, v, 1);
 
   it("D1 lost update: an edit is applied to the LATEST stored Brand Brain, not to the copy loaded when the screen opened", async () => {
     await open("owner");
@@ -1530,7 +1530,7 @@ describe("Brand Brain integrity under change (BG-STUDIO-015)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/only the workspace owner can change the business name and description/i);
     await screen.findByText(/only the workspace owner can change the business name and description/i, { selector: ".ps-readonly" });
     expect(await screen.findByRole("button", { name: /save who it serves and customer action/i })).toBeEnabled();
-    back(3);
+    back(2);
     expect(await screen.findByLabelText(/what should a customer do next/i)).toHaveValue("Book a discovery set");
   });
 
@@ -1540,7 +1540,7 @@ describe("Brand Brain integrity under change (BG-STUDIO-015)", () => {
     handlers["PUT /customer/workspace/brand-brain"] = () => { stored = base({ audience: { summary: "Newer audience." } }); return fail(409, { status: "failed", error: { code: "BRAND_BRAIN_VERSION_CONFLICT", message: "Brand Brain changed; reload before saving" } }); };
     fireEvent.click(button(/^save to brand brain$/i));
     expect(await screen.findByRole("alert")).toHaveTextContent(/nothing was overwritten/i);
-    back(2);
+    back(1);
     await waitFor(() => expect(screen.getByLabelText(/who are your customers/i)).toHaveValue("Newer audience.")); // untouched: follows the stored value
     fireEvent.click(button(/^continue$/i)); fireEvent.click(button(/^back$/i));
     back(1);
@@ -1741,7 +1741,7 @@ describe("the campaign calendar loads by itself and states its window (DEC-023, 
     fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
     fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
     for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i));
-    await screen.findByRole("heading", { name: /your first recommendation/i });
+    await screen.findByRole("heading", { name: /review your campaign proposal/i });
     fireEvent.click(button(/get my recommendation/i));
     await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
     fireEvent.click(button(/continue in campaign studio/i));
@@ -1851,7 +1851,7 @@ describe("scheduling an approved item records a plan and never publishes (BG-STU
     fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
     fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
     for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i));
-    await screen.findByRole("heading", { name: /your first recommendation/i });
+    await screen.findByRole("heading", { name: /review your campaign proposal/i });
     fireEvent.click(button(/get my recommendation/i));
     await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
     fireEvent.click(button(/continue in campaign studio/i));
@@ -2104,7 +2104,7 @@ describe("recording how a manual publication went (BG-STUDIO-019-FE, workstream 
     fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
     fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
     for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i));
-    await screen.findByRole("heading", { name: /your first recommendation/i });
+    await screen.findByRole("heading", { name: /review your campaign proposal/i });
     fireEvent.click(button(/get my recommendation/i));
     await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
     fireEvent.click(button(/continue in campaign studio/i));
@@ -2241,7 +2241,7 @@ describe("the credit cost is shown before generation, and a refusal says why (BG
     fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
     fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
     for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i));
-    await screen.findByRole("heading", { name: /your first recommendation/i });
+    await screen.findByRole("heading", { name: /review your campaign proposal/i });
     fireEvent.click(button(/get my recommendation/i));
     await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
     fireEvent.click(button(/continue in campaign studio/i));
@@ -2301,7 +2301,7 @@ describe("the read-only price preview before a text draft (BG-STUDIO-021-FE; MOC
     fireEvent.click(screen.getAllByRole("button", { name: /tell us your goal/i })[0]);
     fireEvent.change(await screen.findByLabelText(/what do you want a campaign to achieve/i), { target: { value: "Get more lease enquiries" } });
     for (let i = 0; i < 3; i++) fireEvent.click(button(/^continue$/i));
-    await screen.findByRole("heading", { name: /your first recommendation/i });
+    await screen.findByRole("heading", { name: /review your campaign proposal/i });
     fireEvent.click(button(/get my recommendation/i));
     await screen.findByRole("heading", { name: "Lease Enquiry Campaign" });
     fireEvent.click(button(/continue in campaign studio/i));
