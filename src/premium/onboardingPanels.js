@@ -28,8 +28,9 @@ export const OBJECTIVES = Object.freeze([
   { id: "inspiration", label: "Get content ideas", text: "Get fresh content ideas and inspiration" },
 ]);
 const norm = (s) => String(s || "").trim().toLowerCase();
-// A goal "starts with" an objective only at a word boundary, so "...my business owners" is the customer's own sentence, not the objective plus a stray word.
-const startsWithObjective = (goal, o) => { const g = norm(goal), t = norm(o.text); return g.startsWith(t) && (g.length === t.length || !/[a-z0-9]/.test(g[t.length])); };
+// A goal counts as an objective only when it is exactly the objective sentence or the sentence followed by punctuation and the customer's own detail (the form the picker writes: "<objective>. <detail>").
+// A longer sentence that merely begins with the same words ("... my business owners") is the customer's own and is never treated as, or rewritten as, an objective.
+const startsWithObjective = (goal, o) => { const g = norm(goal), t = norm(o.text); return g.startsWith(t) && (g.length === t.length || /^\s*[.,;:–—-]/.test(g.slice(t.length))); };
 export const objectiveForGoal = (goal) => OBJECTIVES.find((o) => startsWithObjective(goal, o)) || null;
 // Put the chosen objective at the start of the goal, keeping anything the customer added after a previous objective.
 export function applyObjective(goal, objective) {
