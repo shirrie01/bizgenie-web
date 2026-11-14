@@ -37,6 +37,12 @@ describe("objectives are saved as goal text", () => {
   it("picking an objective on an empty goal sets exactly its sentence, and it is recognised again", () => {
     const o = OBJECTIVES[1]; expect(applyObjective("", o)).toBe(o.text); expect(objectiveForGoal(o.text)).toBe(o); expect(objectiveForGoal("")).toBeNull(); expect(objectiveForGoal("something else")).toBeNull();
   });
+  it("an objective counts only at a word boundary, so the customer's own longer sentence is never rewritten", () => {
+    const a = OBJECTIVES[0];
+    expect(objectiveForGoal(`${a.text} owners`)).toBeNull();
+    expect(applyObjective(`${a.text} owners`, OBJECTIVES[1])).toBe(`${OBJECTIVES[1].text}. ${a.text} owners`);
+    expect(objectiveForGoal(`${a.text}, especially locally`)).toBe(a);
+  });
   it("switching objective keeps what the customer added after the previous one", () => {
     const a = OBJECTIVES[0], b = OBJECTIVES[3];
     const withDetail = `${a.text}. especially from small garages`;
