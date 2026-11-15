@@ -4,17 +4,25 @@ import { PANELS, objectiveForGoal, panelIndexOfStage } from "./onboardingPanels"
 // It is prepared guidance written from the customer's own saved and typed answers. It is NOT a live AI assistant: it calls no model
 // and no API, stores nothing and cannot change any answer. Every sentence is chosen from what is actually on screen or saved.
 
-const SAVED_LABEL = (onboarding) => (onboarding && onboarding.version > 0 && Number.isInteger(onboarding.current_step) ? PANELS[panelIndexOfStage(onboarding.current_step)].label : null);
+// The API accepts a saved step of 0-20 but the wizard has seven stages (0-6): a step with no panel is still saved progress, never an error.
+function savedProgress(onboarding) {
+  if (!onboarding || !(onboarding.version > 0)) return { returning: false, label: null };
+  const step = onboarding.current_step;
+  const index = Number.isInteger(step) && step >= 0 ? panelIndexOfStage(step) : -1;
+  return { returning: true, label: index >= 0 ? PANELS[index].label : null };
+}
 
 // stageId is the stored stage id (welcome, identity, about, customers, channels, brain, recommendation).
 export function genieMessage({ stageId, draft = {}, sector = null, channels = [], onboarding = null, brain = null, brainStatus = "idle", scopeMissing = false }) {
   const name = (brain && brain.name) || String(draft.businessName || "").trim();
-  const saved = SAVED_LABEL(onboarding);
+  const progress = savedProgress(onboarding);
   const objective = draft.goal ? objectiveForGoal(draft.goal) : null;
   switch (stageId) {
     case "welcome":
-      return saved
-        ? { say: `Welcome back${name ? `, ${name}` : ""}. Your last saved setup was at “${saved}”. Carry on from there, or look back at anything you have already answered.`, ask: null }
+      return progress.returning
+        ? { say: progress.label
+          ? `Welcome back${name ? `, ${name}` : ""}. Your last saved setup was at “${progress.label}”. Carry on from there, or look back at anything you have already answered.`
+          : `Welcome back${name ? `, ${name}` : ""}. Your setup progress is saved. Carry on from the beginning, or look back at anything you have already answered.`, ask: null }
         : { say: "Hello, I’m the Genie guide. I’ll walk you through six short panels so BizGenie can plan your first campaign from your own words.", ask: "When you’re ready, press Continue." };
     case "identity":
       return scopeMissing

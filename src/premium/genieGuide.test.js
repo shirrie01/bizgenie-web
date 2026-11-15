@@ -35,3 +35,14 @@ describe("genieMessage (deterministic guide, never a live AI claim)", () => {
     expect(genieMessage({ stageId: "unknown" }).say).toBe("");
   });
 });
+
+describe("every valid persisted step is handled (API allows 0-20; the wizard has seven stages)", () => {
+  it.each([[7], [8], [20], [-1], [1.5], [null], [undefined]])("a saved step of %s never throws and still welcomes the customer back", (step) => {
+    const m = genieMessage({ stageId: "welcome", onboarding: { version: 3, current_step: step }, brain: { name: "Fonzo" } });
+    expect(m.say).toMatch(/Welcome back, Fonzo/); expect(m.say).not.toMatch(/undefined|NaN/);
+  });
+  it("normal six-panel behaviour is unchanged for steps 0-6", () => {
+    const labels = { 0: "Welcome", 1: "Your business", 2: "Your business", 3: "Your goals", 4: "Channels", 5: "Brand setup", 6: "Review proposal" };
+    for (const [step, label] of Object.entries(labels)) expect(genieMessage({ stageId: "welcome", onboarding: { version: 1, current_step: Number(step) } }).say).toContain(`“${label}”`);
+  });
+});

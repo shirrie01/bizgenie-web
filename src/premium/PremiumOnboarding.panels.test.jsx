@@ -157,3 +157,11 @@ describe("Genie v1 guide (Issue #154): prepared guidance over the six panels", (
     expect(screen.queryByText(/saved only when you create a campaign/i)).toBeNull();
   });
 });
+
+describe("a persisted step beyond the seven stages", () => {
+  it.each([7, 20])("renders the Welcome panel with the Genie guide instead of crashing (saved step %s)", (step) => {
+    view(0, { onboardingState: { status: "ready", onboarding: { ...ONB, current_step: step }, brandNamePlaceholder: false } });
+    expect(screen.getByRole("complementary", { name: /genie guide/i })).toHaveTextContent(/welcome back, fixture brand/i);
+    expect(document.querySelector(".ps-panel-count").textContent).toBe("Step 1 of 6: Welcome");
+  });
+});

@@ -701,3 +701,13 @@ test('GOLDEN JOURNEY: onboarding with the Genie guide to a saved, approved campa
   await expect(page.getByRole('heading', { name: /sign in|welcome/i }).first()).toBeVisible();
   expect(log.errors).toEqual([]);
 });
+
+// Codex review of #88: an unbroken 200-character business name must wrap inside the Genie guide at every width (320px expanded to ~1,988px).
+test('a 200-character unbroken business name wraps: no horizontal overflow on the Welcome panel', async ({ page }) => {
+  const long = 'N'.repeat(200);
+  await setup(page, { brainDoc: brain(long, 'A small description.'), onboarding: onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 0, sector: { key: 'perfume', source: 'customer' }, channels: { values: ['email'], source: 'customer' } }) });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /your marketing engine, ready to work/i })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: /genie guide/i })).toContainText(long);
+  await scan(page, 'long-business-name');
+});

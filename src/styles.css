@@ -485,3 +485,7 @@ button.link:focus-visible { outline: 3px solid #0b4943; outline-offset: 2px; bor
 .ps-genie-label span { font-weight: 500; letter-spacing: 0; text-transform: none; }
 .ps-genie-say { margin: 0; color: #16211d; line-height: 1.5; }
 .ps-genie-ask { margin: 6px 0 0; color: #34413b; font-size: .92rem; line-height: 1.45; }
+
+/* Long unbroken text (for example a 200-character business name) wraps inside the guide instead of widening the page. */
+.ps-genie > div { min-width: 0; }
+.ps-genie-say, .ps-genie-ask { overflow-wrap: anywhere; }
