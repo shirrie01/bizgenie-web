@@ -63,8 +63,8 @@ test('the six panels work end to end with saved progress, and every panel is acc
   await scan(page, '2-business');
   // Welcome (panel 1): reachable by going back; promises, no stock photography.
   await page.getByRole('button', { name: /^back$/i }).click(); await page.getByRole('button', { name: /^back$/i }).click();
-  await expect(page.getByRole('heading', { name: /set up your workspace/i })).toBeVisible();
-  await expect(page.getByRole('list', { name: /what bizgenie promises/i })).toContainText(/never publishes, schedules or connects/i);
+  await expect(page.getByRole('heading', { name: /your marketing engine, ready to work/i })).toBeVisible();
+  await expect(page.getByRole('list', { name: /what bizgenie promises/i })).toContainText(/no publishing without your approval/i);
   expect(await page.locator('.ps-onboarding img').count()).toBe(0);
   await expect(count(page)).toHaveText('Step 1 of 6: Welcome');
   await scan(page, '1-welcome');
@@ -73,7 +73,7 @@ test('the six panels work end to end with saved progress, and every panel is acc
   await page.getByLabel(/describe what the business does/i).fill('Independent business advisers for small firms.');
   await page.getByLabel(/what should a customer do next/i).fill('Book a call');
   await page.getByRole('button', { name: /^continue$/i }).click();
-  await expect(page.getByRole('heading', { name: /who do you serve/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /what are you trying to achieve/i })).toBeVisible();
   await expect(count(page)).toHaveText('Step 3 of 6: Your goals');
   await page.getByLabel(/who are your customers/i).fill('Owner-managed firms');
   const obj = page.getByRole('button', { name: /get more customers/i });
@@ -82,7 +82,7 @@ test('the six panels work end to end with saved progress, and every panel is acc
   await scan(page, '3-goals');
   // Brand setup comes before Channels: real stored values, logo honestly unavailable, no upload control.
   await page.getByRole('button', { name: /^continue$/i }).click();
-  await expect(page.getByRole('heading', { name: /set up your brand/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible();
   await expect(count(page)).toHaveText('Step 4 of 6: Brand setup');
   const cards = page.getByRole('group', { name: /brand setup/i });
   await expect(cards).toContainText('Calm and plain-spoken'); await expect(cards).toContainText('Independent, Fixed-fee advice'); await expect(cards).toContainText('Navy, Sand'); await expect(cards).toContainText(/logo upload isn't available in this version yet/i);
@@ -90,7 +90,7 @@ test('the six panels work end to end with saved progress, and every panel is acc
   await scan(page, '4-brand');
   // Channels: planning only; nothing connectable in this build.
   await page.getByRole('button', { name: /^continue$/i }).click();
-  await expect(page.getByRole('heading', { name: /where would you like to reach customers/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /where do your customers find you/i })).toBeVisible();
   await expect(count(page)).toHaveText('Step 5 of 6: Channels');
   await page.getByRole('button', { name: /^Instagram/ }).click(); await page.getByRole('button', { name: /^Email/ }).click();
   expect(await page.getByRole('button', { name: /connect/i }).count()).toBe(0);
@@ -117,7 +117,7 @@ test('a saved position still resumes the same stage: step index 4 reopens Channe
   const log = await setup(page);
   log.doc = onboarding({ version: 2, status: 'in_progress', current_step: 4, sector: { key: 'professional_services', source: 'customer' }, channels: { values: ['email'], source: 'customer' } });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /where would you like to reach customers/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /where do your customers find you/i })).toBeVisible();
   await expect(count(page)).toHaveText('Step 5 of 6: Channels');
   await expect(page.getByRole('button', { name: /^Email/ })).toHaveAttribute('aria-pressed', 'true');
 });

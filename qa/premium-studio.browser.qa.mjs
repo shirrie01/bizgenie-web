@@ -140,7 +140,7 @@ for (const [slug, name, description, label, key] of [
 test('onboarding for a new customer: create workspace, save to Brand Brain, recommendation, Campaign Studio review to approval', async ({ page }) => {
   const log = await setup(page, { scoped: false, onboarding: NOT_STARTED });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /let.s set up your workspace/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /your marketing engine, ready to work/i })).toBeVisible();
   await scan(page, 'onboarding-1-welcome');
   await page.getByRole('button', { name: /^continue$/i }).click();
   await expect(page.getByRole('heading', { name: /tell us about your business/i })).toBeFocused();
@@ -161,13 +161,13 @@ test('onboarding for a new customer: create workspace, save to Brand Brain, reco
   await scan(page, 'onboarding-4-customers');
   // Six panels: Brand setup comes before Channels. Choose the channel first, then come back to save and confirm.
   await page.getByRole('button', { name: /^continue$/i }).click();
-  await expect(page.getByRole('heading', { name: /set up your brand/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible();
   await page.getByRole('button', { name: /^continue$/i }).click();
   await page.getByRole('button', { name: /^Instagram/ }).click();
   await expect(page.getByRole('button', { name: /^Instagram/ })).toHaveAttribute('aria-pressed', 'true');
   await scan(page, 'onboarding-5-channels');
   await page.getByRole('button', { name: /^back$/i }).click();
-  await expect(page.getByRole('heading', { name: /set up your brand/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible();
   await page.getByRole('button', { name: /save to brand brain/i }).click();
   await expect(page.getByText(/saved to your brand brain/i)).toBeVisible();
   // Setup counts as complete only after the customer saves their progress and then confirms it.
@@ -249,12 +249,12 @@ test('keyboard: sections are reachable and operable without a mouse', async ({ p
 test('resume: an unfinished setup reopens at the saved step with saved sector, channels and unsaved answers', async ({ page }) => {
   const log = await setup(page, { brainDoc: brain('Maison Aurelle'), onboarding: onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 4, sector: { key: 'perfume', source: 'customer' }, channels: { values: ['instagram', 'email'], source: 'customer' }, draft: { goal: 'Sell more discovery sets' } }) });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /where would you like to reach customers/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /where do your customers find you/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Instagram/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('ps-save-state')).toContainText('Setup progress saved (version 2)');
   await scan(page, 'resume-channels');
   await page.getByRole('button', { name: /^back$/i }).click();
-  await expect(page.getByRole('heading', { name: /set up your brand/i })).toBeVisible(); // Brand setup precedes Channels
+  await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible(); // Brand setup precedes Channels
   await page.getByRole('button', { name: /^back$/i }).click();
   await expect(page.getByLabel(/what do you want a campaign to achieve/i)).toHaveValue('Sell more discovery sets');
   expect(log.puts).toEqual([]); // resuming writes nothing
@@ -279,7 +279,7 @@ test('Save and exit: saves exactly what changed, opens the workspace, and the ne
   await expect(page.getByRole('button', { name: /continue your setup/i })).toBeVisible();
   await scan(page, 'saved-and-exited');
   await page.reload();
-  await expect(page.getByRole('heading', { name: /where would you like to reach customers/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /where do your customers find you/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Email/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
@@ -364,7 +364,7 @@ test('lost acknowledgement: the save committed but answered 503, so the page say
 test('incomplete business setup (422): field-specific guidance, nothing marked confirmed', async ({ page }) => {
   const log = await setup(page, { brainDoc: brain('Maison Aurelle', 'A small-batch perfume house.'), putIncomplete: ['business_name', 'description'], onboarding: onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 5, completeness: { sector: true, channels: true, ready_to_complete: true, missing: [] } }) });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /set up your brand/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible();
   await page.getByRole('button', { name: /confirm setup/i }).click();
   const list = page.getByRole('list', { name: /what is still needed/i });
   await expect(list).toContainText(/business name/i);
@@ -399,13 +399,13 @@ async function editAudienceAtBrainStep(page, text) {
   await page.getByRole('button', { name: /^back$/i }).click(); // Brand setup follows Goals directly
   await page.getByLabel(/who are your customers/i).fill(text);
   await page.getByRole('button', { name: /^continue$/i }).click();
-  await expect(page.getByRole('heading', { name: /set up your brand/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible();
 }
 
 // Brand Brain identity ownership (DEC-021 / DEC-022; backend draft PR #214 at 2319e5e8). MOCKED API: not staging evidence.
 async function toBrainStep(page) {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /set up your brand/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible();
 }
 const BRAIN_STEP = onboardingDoc({ version: 2, status: 'in_progress', completed_at: null, current_step: 5, channels: { values: ['email'], source: 'customer' } });
 const FULL_BRAIN = { ...brain('Maison Aurelle', 'A small-batch perfume house.'), audience: { summary: 'Gift buyers.' }, commercial: { primary_cta: 'Shop the new scent' } };
@@ -430,7 +430,7 @@ test('refused (403) and conflicting (409) Brand Brain saves are explained, keep 
   for (const [mode, text, label] of [['forbidden', /only the workspace owner can change the business name and description, and anyone whose access|changed by the workspace owner/i, 'brain-write-refused'], ['conflict', /changed somewhere else[\s\S]*nothing was overwritten/i, 'brain-write-conflict']]) {
     const log = await setup(page, { brainDoc: FULL_BRAIN, brainPut: mode, onboarding: BRAIN_STEP });
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: /set up your brand/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible();
     await editAudienceAtBrainStep(page, 'Collectors');
     await page.getByRole('button', { name: /^save to brand brain$/i }).click();
     await expect(page.getByRole('alert')).toContainText(text);
@@ -444,7 +444,7 @@ test('refused (403) and conflicting (409) Brand Brain saves are explained, keep 
 test('an unavailable Brand Brain save says "not confirmed" and offers to check what was saved', async ({ page }) => {
   const log = await setup(page, { brainDoc: FULL_BRAIN, brainPut: 'unavailable', onboarding: BRAIN_STEP });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /set up your brand/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible();
   await editAudienceAtBrainStep(page, 'Collectors');
   await page.getByRole('button', { name: /^save to brand brain$/i }).click();
   await expect(page.getByRole('alert')).toContainText(/save not confirmed — your changes may already have been saved/i);

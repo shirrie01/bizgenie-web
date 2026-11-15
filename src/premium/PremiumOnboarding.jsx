@@ -28,6 +28,11 @@ export const STAGES = [
   { id: "recommendation", label: "First recommendation" },
 ];
 
+const OBJECTIVE_HINTS = { customers: "Drive awareness and trial in new areas", sales: "Grow your online revenue", awareness: "Reach new audiences", launch: "Introduce a new product or range", promotion: "Seasonal, event or limited offer", inspiration: "Not sure yet? That’s fine, explore ideas and set a goal later" };
+const CHANNEL_HINTS = { Instagram: "Posts, Reels, Stories", TikTok: "Short-form video", Facebook: "Posts and ads", LinkedIn: "Business updates", Email: "Newsletters and offers", Website: "Pages and landing content" };
+// Plain line icons, decorative only (aria-hidden): the card's text carries the meaning.
+const ICON_PATHS = { customers: "M4 20V10M10 20V4M16 20v-8M22 20H2", sales: "M3 4h2l2 11h11l2-8H6M9 20a1 1 0 100-2 1 1 0 000 2zM17 20a1 1 0 100-2 1 1 0 000 2z", awareness: "M3 11v2l11 5V6L3 11zM14 8a4 4 0 010 8", launch: "M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM12 12l8-4.5M12 12v9M12 12L4 7.5", promotion: "M3 12l9-9h8v8l-9 9-8-8zM15.5 8.5h.01", inspiration: "M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9V16h7v-2.1A6 6 0 0012 3z" };
+function ObjectiveIcon({ id }) { return (<svg className="ps-objective-icon" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d={ICON_PATHS[id] || ICON_PATHS.customers} /></svg>); }
 export const CHANNELS = CHANNEL_LABELS;
 const LIMITS = { businessName: 200, website: 500, challenge: 1000, description: 2000, audience: 2000, cta: 2000, goal: 2000, industryText: 200 };
 
@@ -142,25 +147,33 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   let body = null;
   if (current.id === "welcome") {
     body = (<>
-      <div className="ps-hero" data-testid="ps-hero">
-        <span className="ps-hero-shape ps-hero-shape-a" aria-hidden="true" /><span className="ps-hero-shape ps-hero-shape-b" aria-hidden="true" />
-        <p className="eyebrow">BizGenie · marketing, made with you</p>
-        {heading("Let’s set up your workspace")}
+      <div className="ps-welcome" data-testid="ps-hero">
+        <div className="ps-welcome-copy">
+          <p className="ps-eyebrow">From idea to impact</p>
+          {heading("Your marketing engine, ready to work.")}
+          <p className="ps-lede">Create your Brand Brain, plan your first campaign and reach more customers, all in one place. Six short panels, and you can save and come back at any time.</p>
+          <ul className="ps-checks" aria-label="What BizGenie promises">
+            <li>Guided setup, step by step</li>
+            <li>Tailored to your business</li>
+            <li>You stay in control</li>
+            <li>No publishing without your approval</li>
+          </ul>
+        </div>
+        <div className="ps-collage" aria-hidden="true">
+          <span className="ps-tile ps-tile-a" /><span className="ps-tile ps-tile-b" /><span className="ps-tile ps-tile-c" /><span className="ps-tile ps-tile-d" /><span className="ps-tile ps-tile-e" />
+        </div>
       </div>
-      <p className="ps-lede">Six short panels so BizGenie works from your own words, not a template. You can save and come back at any time.</p>
-      <ul className="ps-assure" aria-label="What BizGenie promises">
-        <li><strong>You stay in control</strong><span>You review and approve everything before it goes anywhere.</span></li>
-        <li><strong>Nothing posts by itself</strong><span>BizGenie never publishes, schedules or connects an account on its own.</span></li>
-        <li><strong>Your details stay yours</strong><span>You choose what is saved, and you can edit it later.</span></li>
-      </ul>
+      <details className="ps-saved-details"><summary>What is saved, and when</summary>
       <div className="ps-saved" role="group" aria-label="What is saved and what is not">
         <div><h3>Saved to your account</h3><ul><li>Your business name, and a website or challenge if you add them.</li><li>What your business does, who it serves and what customers should do next, when you press Save to Brand Brain.</li><li>Your sector, channels, the step you are on and any unsaved answers, when you press Save progress or Save and exit.</li></ul></div>
         <div><h3>Not saved until you act</h3><ul><li>Anything you type stays on this screen until you save it.</li><li>Your goal becomes a campaign only when you create one.</li></ul></div>
       </div>
+      </details>
       <Truth>Nothing is published, scheduled or connected by setting up. You approve everything before it goes anywhere.</Truth>
     </>);
   } else if (current.id === "identity") {
     body = (<>
+      <p className="ps-eyebrow">Your Brand Brain</p>
       {heading("Tell us about your business")}
       <Field id="ps-name" label="Business name" hint={scopeMissing ? "Required. This creates your workspace." : identityLocked ? "Only the workspace owner can change the business name." : "Shown across your workspace. Saved with your Brand Brain on the Brand Brain step."}>
         <input id="ps-name" value={identityLocked ? storedName : draft.businessName} readOnly={identityLocked} maxLength={LIMITS.businessName + 20} onChange={(e) => setField("businessName", e.target.value)} aria-invalid={errors.businessName ? "true" : undefined} aria-describedby={errors.businessName ? "ps-name-error" : "ps-name-hint"} autoComplete="organization" />
@@ -206,7 +219,9 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
     </>);
   } else if (current.id === "customers") {
     body = (<>
-      {heading("Who do you serve, and what is your goal?")}
+      <p className="ps-eyebrow">Your marketing outcome</p>
+      {heading("What are you trying to achieve?")}
+      <p className="ps-lede">Choose a primary goal, and tell us who you serve. You can change both later.</p>
       <Field id="ps-audience" label="Who are your customers?" hint="Saved to your Brand Brain when you press Save.">
         <textarea id="ps-audience" rows={3} value={draft.audience} onChange={(e) => setField("audience", e.target.value)} />
         {errors.audience && <p className="error" role="alert">{errors.audience}</p>}
@@ -214,7 +229,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
       <div className="ps-objectives" role="group" aria-label="Pick an objective">
         {OBJECTIVES.map((o) => { const on = objectiveForGoal(draft.goal) === o; return (
           <button key={o.id} type="button" className={`ps-objective${on ? " on" : ""}`} aria-pressed={on} onClick={() => setField("goal", applyObjective(draft.goal, o))}>
-            <span>{o.label}</span><small>{on ? "Your objective" : "Use this objective"}</small>
+            <ObjectiveIcon id={o.id} /><span className="ps-objective-label">{o.label}</span><small>{OBJECTIVE_HINTS[o.id]}</small>{on && <em className="ps-objective-on">Your objective</em>}
           </button>); })}
       </div>
       <Field id="ps-goal" label="What do you want a campaign to achieve?" hint="Used for your first recommendation. Picking an objective above starts this sentence; add your own detail after it. It is saved only when you create a campaign.">
@@ -224,7 +239,8 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
     </>);
   } else if (current.id === "channels") {
     body = (<>
-      {heading("Where would you like to reach customers?")}
+      <p className="ps-eyebrow">Reach your customers</p>
+      {heading("Where do your customers find you?")}
       <p className="ps-lede">Pick the channels you are planning for. This helps you organise your plan; it does not connect an account.</p>
       <div className="ps-channels" role="group" aria-label="Channels you are planning for">
         {CHANNELS.map((name) => {
@@ -232,7 +248,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
           const link = channelConnection(name, { socialEnabled: isSocialApiEnabled(), providers: connectableProviders() });
           return (<div key={name} className="ps-channel-wrap">
             <button type="button" className={`ps-channel${on ? " on" : ""}`} aria-pressed={on} onClick={() => toggleChannel(name)}>
-              <span>{name}</span><small>{on ? "Planning for this" : "Not selected"}</small>
+              <span className="ps-channel-badge" aria-hidden="true">{name.slice(0, 1)}</span><span className="ps-channel-name">{name}</span><small className="ps-channel-desc">{CHANNEL_HINTS[name]}</small><small className="ps-channel-state">{on ? "Planning for this" : "Not selected"}</small>
             </button>
             <p className="ps-channel-note">{link.text}</p>
             {link.offered && onOpenAccounts && <button type="button" className="secondary" onClick={onOpenAccounts} aria-label={`Open Accounts and publishing to connect ${name}`}>Connect</button>}
@@ -243,7 +259,8 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
     </>);
   } else if (current.id === "brain") {
     body = (<>
-      {heading("Set up your brand")}
+      <p className="ps-eyebrow">Your Brand Brain</p>
+      {heading("Let’s make it yours.")}
       <p className="ps-lede">This is your Brand Brain: what BizGenie reads before it writes anything for you. It is yours to edit, and it stays a draft until you approve it.</p>
       <div className="ps-brandcards" role="group" aria-label="Brand setup">
         {BRAND_CARDS.map((c) => (<div key={c.id} className="ps-brandcard"><h3>{c.label}</h3><p>{brainState.status === "ready" && brainState.brain ? brandCardSummary(c, extendedFormValues(brainState.brain)) : "Available once your Brand Brain has loaded"}</p>
@@ -280,6 +297,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   } else {
     const rec = recommendationState.recommendation;
     body = (<>
+      <p className="ps-eyebrow">Your plan</p>
       {heading("Review your campaign proposal")}
       <section className="ps-review" aria-label="What BizGenie will plan from">
         <h3>What BizGenie will plan from</h3>
