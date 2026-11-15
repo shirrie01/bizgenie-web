@@ -7,6 +7,7 @@ import { roleLabel } from "./membershipClient";
 import { changedBrainFields, describeBrainFailure, extendedFormValues } from "./brainClient";
 import { BRAND_CARDS, LOGO_NOTE, OBJECTIVES, PANELS, applyObjective, brandCardSummary, channelConnection, nextStage, objectiveForGoal, panelIndexOfStage, partOfPanel, prevStage } from "./onboardingPanels";
 import { connectableProviders, isSocialApiEnabled } from "./socialClient";
+import { genieMessage } from "./genieGuide";
 
 // Production onboarding (BG-STUDIO-008-FE, persistent since BG-STUDIO-010-FE). Each step says exactly what it saves and where:
 //  - Business identity: created through POST /customer/workspace/bootstrap (only when no workspace exists yet).
@@ -44,6 +45,16 @@ function Field({ id, label, hint, children }) {
 }
 
 function Truth({ children }) { return <p className="ps-truth">{children}</p>; }
+
+// Genie v1 guide: prepared guidance, never presented as a live AI assistant (see genieGuide.js).
+function GenieGuide({ message }) {
+  if (!message || !message.say) return null;
+  return (<aside className="ps-genie" aria-label="Genie guide">
+    <span className="ps-genie-mark" aria-hidden="true">G</span>
+    <div><p className="ps-genie-label">Genie guide <span>· prepared guidance, not a live AI assistant</span></p>
+      <p className="ps-genie-say">{message.say}</p>{message.ask && <p className="ps-genie-ask">{message.ask}</p>}</div>
+  </aside>);
+}
 
 export default function PremiumOnboarding({ stage, setStage, draft, setField, channels, toggleChannel, session, brainState, onLoadBrain, onSave, onBootstrap, onRecommend, recommendationState, onFinish, onOpenStudio, onOpenBrand = null, onOpenAccounts = null, onboardingState, onLoadOnboarding, onSaveProgress, dirty = false, readOnly = false, membershipRole = null, onGoToStep, getBrainBaseline, onChooseWorkspace = null }) {
   const headingRef = useRef(null);
@@ -142,7 +153,8 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
   }
 
   const current = STAGES[stage];
-  const heading = (text) => <h2 ref={headingRef} tabIndex={-1}>{text}</h2>;
+  const guide = genieMessage({ stageId: current.id, draft, sector: { ...sector, label: SECTORS[sector.key] && SECTORS[sector.key].label }, channels: CHANNELS.filter((c) => channels.has(c)), onboarding, brain: brainReady ? brainState.brain : null, brainStatus: brainState.status, scopeMissing });
+  const heading = (text) => (<><h2 ref={headingRef} tabIndex={-1}>{text}</h2><GenieGuide message={guide} /></>);
 
   let body = null;
   if (current.id === "welcome") {
@@ -232,7 +244,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
             <ObjectiveIcon id={o.id} /><span className="ps-objective-label">{o.label}</span><small>{OBJECTIVE_HINTS[o.id]}</small>{on && <em className="ps-objective-on">Your objective</em>}
           </button>); })}
       </div>
-      <Field id="ps-goal" label="What do you want a campaign to achieve?" hint="Used for your first recommendation. Picking an objective above starts this sentence; add your own detail after it. It is saved only when you create a campaign.">
+      <Field id="ps-goal" label="What do you want a campaign to achieve?" hint="Used for your first recommendation. Picking an objective above starts this sentence; add your own detail after it. It is saved with your setup progress when you press Save progress, and becomes a campaign only when you create one.">
         <textarea id="ps-goal" rows={3} value={draft.goal} maxLength={LIMITS.goal + 50} onChange={(e) => setField("goal", e.target.value)} aria-invalid={errors.goal ? "true" : undefined} placeholder="e.g. Get more enquiries from small businesses" />
         {errors.goal && <p className="error" role="alert">{errors.goal}</p>}
       </Field>
@@ -368,6 +380,7 @@ export default function PremiumOnboarding({ stage, setStage, draft, setField, ch
           {current.id === "identity" && scopeMissing
             ? <button type="button" className="ps-primary" onClick={createWorkspace} disabled={busy}>{busy ? "Creating your workspace…" : "Create my workspace"}</button>
             : !last && <button type="button" className="ps-primary" onClick={next} disabled={busy}>Continue</button>}
+          {(current.id === "channels" || current.id === "brain") && <button type="button" className="secondary" onClick={next} disabled={busy}>Skip for now</button>}
           {last && <button type="button" className="ps-primary" onClick={onFinish}>Go to my workspace</button>}
           {canSaveProgress && <button type="button" className="secondary" onClick={() => saveProgress({})} disabled={busy || readOnly}>Save progress</button>}
           {canSaveProgress && <button type="button" className="secondary" onClick={() => saveProgress({ exit: true })} disabled={busy || readOnly}>Save and exit</button>}

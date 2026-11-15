@@ -477,3 +477,11 @@ button.link:focus-visible { outline: 3px solid #0b4943; outline-offset: 2px; bor
   .ps-channel-note { padding-left: 0; }
   .ps-progress { gap: 4px; }
 }
+
+/* Genie v1 guide: prepared guidance beside the existing panels (no new behaviour). */
+.ps-genie { display: flex; gap: 14px; align-items: flex-start; margin: 4px 0 20px; padding: 14px 18px; background: #eef3ef; border: 1px solid #cfe0d6; border-radius: 18px; max-width: 62ch; }
+.ps-genie-mark { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #0b4943; color: #fff; font-family: Fraunces, Georgia, serif; font-weight: 700; }
+.ps-genie-label { margin: 0 0 4px; font-size: .74rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #3f5a52; }
+.ps-genie-label span { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.ps-genie-say { margin: 0; color: #16211d; line-height: 1.5; }
+.ps-genie-ask { margin: 6px 0 0; color: #34413b; font-size: .92rem; line-height: 1.45; }

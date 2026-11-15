@@ -27,7 +27,7 @@ async function setup(page, { bridge = null, workspaceAbort = false, bootstrapSta
   const log = { calls: [], errors: [], puts: [], brainPuts: [], doc: onboarding, refusals: [], scopes: [], preflights: [], requests: [] };
   let sessionScoped = scoped; // the trusted scope the bridge would read from the signed-in token (MOCKED)
   page.on('pageerror', (e) => log.errors.push(e.message));
-  if (!signedOut) await page.addInitScript(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(scoped)]);
+  if (!signedOut) await page.addInitScript(([t]) => { if (!localStorage.getItem('sb-supabase-auth-token')) localStorage.setItem('sb-supabase-auth-token', t); }, [token(scoped)]); // a token already issued (e.g. scoped after bootstrap) survives a reload, as a real session does
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   let items = 0;
   await page.route('http://api.test/**', async (route) => {
@@ -73,18 +73,18 @@ async function setup(page, { bridge = null, workspaceAbort = false, bootstrapSta
     }
     if (u.pathname.endsWith('/brand-brain') && m === 'GET') return brainStatus === 200 ? json({ status: 'ready', brand_brain: brainDoc }) : json({}, brainStatus);
     if (u.pathname.endsWith('/brand-brain') && m === 'PUT') { const b = JSON.parse(req.postData()); log.brainPuts.push(b); if (brainPut === 'forbidden') return json({ status: 'failed', error: { code: 'BRAND_BRAIN_WRITE_FORBIDDEN', message: 'Current workspace-owner authority is required for business identity changes' } }, 403); if (brainPut === 'conflict') return json({ status: 'failed', error: { code: 'BRAND_BRAIN_VERSION_CONFLICT', message: 'Brand Brain changed; reload before saving' } }, 409); if (brainPut === 'unavailable') return json({ status: 'failed', error: { code: 'BRAND_BRAIN_PERSISTENCE_UNAVAILABLE', message: 'x' } }, 503); brainDoc = { ...b, brand_id: 'b', project_id: 'p', metadata: { version: 2, status: 'draft' } }; return json({ status: 'ready', brand_brain: brainDoc }); }
-    if (u.pathname === '/customer/campaigns' && m === 'GET') return json({ campaigns: [] });
+    if (u.pathname === '/customer/campaigns' && m === 'GET') return json({ campaigns: log.savedCampaign ? [log.savedCampaign] : [] }); // only a campaign the customer created in this test is ever listed (MOCKED persistence)
     if (u.pathname === '/customer/workspace') return role ? json({ status: 'ready', workspace: { tenant_id: 't', tenant_name: 'T', project_id: 'p', project_name: 'P', brand_id: 'b', brand_name: 'B', brand_status: 'approved', membership_role: role } }) : json({ status: 'missing_workspace', workspace: null });
     if (u.pathname.endsWith('/workspace/bootstrap') && bootstrapStatus !== 201) return json({ status: 'failed', error: { code: 'X', message: 'x' } }, bootstrapStatus);
     if (u.pathname.endsWith('/workspace/bootstrap')) { sessionScoped = true; brainDoc = brain(JSON.parse(req.postData()).business_name); await page.evaluate(([t]) => localStorage.setItem('sb-supabase-auth-token', t), [token(true)]); return json({ status: 'ready', workspace: { tenant_id: 't' }, requires_session_refresh: false }, 201); }
     if (u.pathname.endsWith('/campaign-recommendations')) return json({ recommendation: rec });
-    if (u.pathname.endsWith('/campaigns') && m === 'POST') { items = 0; return json({ result: { campaign_id: CID, campaign_version: 1 }, campaign: camp(1, 0) }); }
+    if (u.pathname.endsWith('/campaigns') && m === 'POST') { items = 0; log.savedCampaign = camp(1, 0); return json({ result: { campaign_id: CID, campaign_version: 1 }, campaign: log.savedCampaign }); }
     if (u.pathname.endsWith('/content-items')) { items += 1; return json({ campaign: camp(2, 1) }); }
     if (u.pathname.endsWith('/generate')) return json({ campaign: camp(3, 1, 'review') });
     if (u.pathname.includes('/creative-preview')) return json({ preview: { contract_version: 'campaign-creative-preview.v1', campaign_id: CID, campaign_version: Number(u.searchParams.get('expected_campaign_version')), content_item_id: 'c1', variant_id: 'v1', revision_id: u.searchParams.get('revision_id'), revision_number: 1, platform: 'instagram', placement: 'feed', content_type: 'text', workflow: 'review', content_status: 'available', copy_status: 'available', copy: { title: null, body: 'Server persisted review copy', caption: null, alt_text: null }, media: [], provenance: { source: 'persisted_revision', revision_source: 'manual', created_at: '2026-10-22T09:00:00.000Z' }, approval_status: 'not_approved', platform_preview: { status: 'unrendered', artifact_url: null, reason: 'NO_PERSISTED_PLATFORM_ARTIFACT' }, acknowledgement_status: 'not_acknowledged', read_only: true } });
     if (u.pathname.endsWith('/preview-renders')) return json({ preview: { render_receipt_id: 'receipt-1', revision_id: 'rev-1' } }, 201);
     if (u.pathname.endsWith('/preview-acknowledgements')) return json({ campaign: camp(4, 1, 'review'), result: { created_ids: { preview_ids: ['preview-1'] } } });
-    if (u.pathname.endsWith('/approval')) return json({ campaign: camp(5, 1, 'approved') });
+    if (u.pathname.endsWith('/approval')) { log.savedCampaign = camp(5, 1, 'approved'); return json({ campaign: log.savedCampaign }); }
     return json({}, 404);
   });
   return log;
@@ -627,4 +627,77 @@ test('an expired session through the bridge shows a clear way back in, with no d
   await expect(page.getByRole('button', { name: /sign in again/i }).first()).toBeVisible();
   expect(await page.locator('body').innerText()).not.toMatch(/failed to fetch/i);
   expect(log.refusals.every((r) => /401 AUTHENTICATION_REQUIRED/.test(r))).toBe(true);
+});
+
+// BG-LAUNCH-FINAL-WEB-01 Golden Journey (controlled fixtures; API and session MOCKED, not staging, not customer acceptance).
+// Signed-in new customer: Welcome (Genie guide, keyboard) -> Business -> Goals -> Brand -> Channels -> Recommendation -> Campaign ->
+// review -> approval -> Calendar -> Overview -> reload (same workspace, saved campaign found) -> sign out.
+test('GOLDEN JOURNEY: onboarding with the Genie guide to a saved, approved campaign, then return to the same workspace', async ({ page }) => {
+  const log = await setup(page, { scoped: false, onboarding: NOT_STARTED });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /your marketing engine, ready to work/i })).toBeVisible();
+  const genie = page.getByRole('complementary', { name: /genie guide/i });
+  await expect(genie).toContainText(/not a live AI assistant/i);
+  await expect(genie).toContainText(/Hello, I.m the Genie guide/i);
+  await scan(page, 'golden-1-welcome');
+  // Keyboard alone: Tab to Continue and press Enter.
+  const cont = page.getByRole('button', { name: /^continue$/i });
+  for (let i = 0; i < 40 && !(await cont.evaluate((el) => el === document.activeElement)); i += 1) await page.keyboard.press('Tab');
+  await expect(cont).toBeFocused(); await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: /tell us about your business/i })).toBeFocused();
+  await page.getByLabel('Business name').fill('Northgate Vehicle Leasing');
+  await page.getByRole('button', { name: /create my workspace/i }).click();
+  await expect(page.getByRole('heading', { name: /what does your business do/i })).toBeFocused();
+  expect(log.calls.filter((c) => c.endsWith('/workspace/bootstrap'))).toHaveLength(1);
+  await page.getByLabel(/what kind of business/i).fill('vehicle leasing');
+  await expect(page.getByRole('complementary', { name: /genie guide/i })).toContainText(/won.t treat it as your answer until you do/i);
+  await page.getByLabel(/describe what the business does/i).fill('We lease cars to small businesses.');
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByLabel(/who are your customers/i).fill('Small business owners');
+  await page.getByRole('button', { name: /get more customers/i }).click();
+  await expect(page.getByRole('complementary', { name: /genie guide/i })).toContainText(/You chose .Get more customers./i);
+  await scan(page, 'golden-3-goals');
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await expect(page.getByRole('heading', { name: /let.s make it yours/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /skip for now/i })).toBeVisible();
+  await page.getByRole('button', { name: /skip for now/i }).click(); // non-essential: no dead end
+  await expect(page.getByRole('heading', { name: /where do your customers find you/i })).toBeVisible();
+  await page.getByRole('button', { name: /^Instagram/ }).click();
+  await expect(page.getByText(/connecting isn.t available in this version yet/i).first()).toBeVisible();
+  expect(await page.getByRole('button', { name: /connect/i }).count()).toBe(0);
+  await page.getByRole('button', { name: /^back$/i }).click();
+  await page.getByRole('button', { name: /save to brand brain/i }).click();
+  await expect(page.getByText(/saved to your brand brain/i)).toBeVisible();
+  await page.getByRole('button', { name: /^save progress$/i }).click();
+  await page.getByRole('button', { name: /confirm setup/i }).click();
+  await expect(page.getByText(/setup confirmed and saved/i)).toBeVisible();
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.getByRole('button', { name: /get my recommendation/i }).click();
+  await expect(page.getByRole('heading', { name: 'Lease Enquiry Campaign' })).toBeVisible();
+  await page.getByRole('button', { name: /continue in campaign studio/i }).click();
+  await page.getByRole('button', { name: /^create campaign$/i }).click();
+  await expect(page.getByText(/saved to your workspace/i)).toBeVisible();
+  await page.getByRole('button', { name: /generate draft/i }).first().click();
+  await expect(page.getByText('Server persisted review copy').first()).toBeVisible();
+  await page.getByRole('button', { name: /^render preview$/i }).click();
+  await page.getByRole('button', { name: /^acknowledge preview$/i }).click();
+  await page.getByRole('button', { name: /^approve$/i }).click();
+  await expect(page.getByText('Approved', { exact: true })).toBeVisible();
+  await expect(page.getByText(/manual publication required/i)).toBeVisible();
+  const nav = page.getByRole('navigation', { name: /workspace sections/i });
+  await nav.getByRole('button', { name: 'Calendar' }).click();
+  await expect(page.getByRole('heading', { name: /calendar/i }).first()).toBeVisible();
+  await nav.getByRole('button', { name: 'Overview' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome back, Northgate Vehicle Leasing.' })).toBeVisible();
+  await scan(page, 'golden-overview');
+  // Return visit: the same workspace and the saved campaign, with nothing published or scheduled.
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Welcome back, Northgate Vehicle Leasing.' })).toBeVisible();
+  await nav.getByRole('button', { name: 'Campaigns' }).click();
+  await expect(page.getByText('Lease Enquiry Campaign').first()).toBeVisible();
+  expect(log.calls.some((c) => /\/(publish|schedule)/.test(c))).toBe(false);
+  await page.getByRole('button', { name: /sign out/i }).click();
+  await expect(page.getByRole('heading', { name: /sign in|welcome/i }).first()).toBeVisible();
+  expect(log.errors).toEqual([]);
 });

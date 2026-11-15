@@ -134,3 +134,26 @@ describe("review proposal", () => {
     expect(screen.getByRole("button", { name: /get my recommendation/i })).toBeDisabled();
   });
 });
+
+describe("Genie v1 guide (Issue #154): prepared guidance over the six panels", () => {
+  it("every panel shows a Genie guide that says it is prepared guidance and not a live AI assistant", () => {
+    for (const stage of [0, 2, 3, 5, 4, 6]) {
+      view(stage); const g = screen.getByRole("complementary", { name: /genie guide/i });
+      expect(g).toHaveTextContent(/not a live ai assistant/i); expect(within(g).queryAllByRole("button")).toHaveLength(0); cleanup();
+    }
+  });
+  it("returning customers are told their genuine saved position (saved step 4 = Channels)", () => {
+    view(0, { onboardingState: { status: "ready", onboarding: { ...ONB, current_step: 4 }, brandNamePlaceholder: false } }); expect(screen.getByRole("complementary", { name: /genie guide/i })).toHaveTextContent(/welcome back, fixture brand.*channels/i);
+  });
+  it("Skip for now exists only on the non-essential Brand setup and Channels panels, moves on and saves nothing", () => {
+    const apply = (fn, from) => fn(from);
+    const c = view(4); fireEvent.click(screen.getByRole("button", { name: /skip for now/i })); expect(apply(c.setStage.mock.calls[0][0], 4)).toBe(6);
+    expect(c.onSaveProgress).not.toHaveBeenCalled(); expect(c.onSave).not.toHaveBeenCalled(); cleanup();
+    const b = view(5); fireEvent.click(screen.getByRole("button", { name: /skip for now/i })); expect(apply(b.setStage.mock.calls[0][0], 5)).toBe(4); expect(b.onSave).not.toHaveBeenCalled(); cleanup();
+    for (const stage of [0, 2, 3, 6]) { view(stage); expect(screen.queryByRole("button", { name: /skip for now/i })).toBeNull(); cleanup(); }
+  });
+  it("the goal hint states what the accepted contract does: saved with setup progress, a campaign only when created", () => {
+    view(3); expect(screen.getByText(/saved with your setup progress when you press save progress, and becomes a campaign only when you create one/i)).toBeInTheDocument();
+    expect(screen.queryByText(/saved only when you create a campaign/i)).toBeNull();
+  });
+});
