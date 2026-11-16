@@ -19,8 +19,7 @@ if (form) {
   const button = $("submit-btn");
   const closed = $("closed-note");
   const success = $("success");
-  const shownAt = performance.now();
-  const FIELDS = { intention: "intent-early_access", name: "f-name", email: "f-email", company: "f-company", industry: "f-industry", contactConsent: "c-contact" };
+  const FIELDS = { intention: "intent-early_access", name: "f-name", email: "f-email", company: "f-company", website: "f-website", stage: "f-stage", challenge: "f-challenge", contactConsent: "c-contact" };
   let attempt = null; // { id, fingerprint } kept in memory so a retry reuses the SAME submission id
 
   if (!leadUrl) { closed.hidden = false; button.disabled = true; }
@@ -43,8 +42,8 @@ if (form) {
   const collect = () => {
     const f = new FormData(form);
     return {
-      name: f.get("name"), email: f.get("email"), company: f.get("company"), industry: f.get("industry"), intention: f.get("intention"),
-      priorities: f.getAll("priorities"), notes: f.get("notes"), contactConsent: f.get("contactConsent") === "on", marketingConsent: f.get("marketingConsent") === "on",
+      name: f.get("name"), email: f.get("email"), company: f.get("company"), website: f.get("website"), stage: f.get("stage"), challenge: f.get("challenge"),
+      intention: f.get("intention"), contactConsent: f.get("contactConsent") === "on",
     };
   };
 
@@ -85,7 +84,7 @@ if (form) {
     const fingerprint = JSON.stringify(check.values);
     if (!attempt || attempt.fingerprint !== fingerprint) attempt = { id: newSubmissionId(), fingerprint };
     button.disabled = true; status.textContent = "Sending…"; measure.attempt();
-    const payload = await buildPayload({ values: check.values, attribution, submissionId: attempt.id, elapsedMs: Math.max(0, performance.now() - shownAt), consentContactText: $("c-contact-label").textContent.trim(), consentMarketingText: $("c-marketing-label").textContent.trim() });
+    const payload = buildPayload({ values: check.values, submissionId: attempt.id });
     const result = await submitLead({ url: leadUrl, payload });
     if (result.kind === "received") { measure.success(); attempt = null; renderSuccess(check.values.intention, result.reference); return; }
     measure.failure(result.kind);

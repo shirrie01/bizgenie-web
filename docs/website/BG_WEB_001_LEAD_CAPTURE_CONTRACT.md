@@ -1,5 +1,8 @@
 # BG-WEB-001 — lead-capture and site-measurement contract (PROPOSED, for Codex)
 
+> **SUPERSEDED for registration (16 Nov 2026).** The `POST /public/early-access-interest` (`early-access-interest.v1`) route in section 1 was only ever a proposal. The website now targets the **existing** `bizgenie-api` route `POST /public/paid-beta-interest`; see `BG_WEB_LEAD_CAPTURE_RECONCILIATION.md`. Do **not** build the proposed route. Section 4 (`/public/site-events`, aggregate measurement) is still only proposed and measurement stays off.
+
+
 27 October 2026. **Proposal only. No backend source, migration, secret or service was changed or activated.** Reference implementation for local testing: `site/dev/lead-stub.mjs` (in-memory). Contract tests that any implementation can run: `CONTRACT_BASE_URL=<url> CONTRACT_ORIGIN=https://getbizgenie.com npx vitest run site/contract` (28 tests; 28 pass against the stub).
 
 ## 0. Start from what already exists

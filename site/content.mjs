@@ -65,27 +65,23 @@ export const founding = {
 export const faq = [
   { q: "Is BizGenie available now?", a: "No. BizGenie is not yet open to the public. Some parts are built and being tested; others are in development. Registering your interest is the way to hear when access opens." },
   { q: "Which social channels will be supported?", a: "Planning and manual publication records come first. Automatic publishing is in development and starts only for platforms that have approved BizGenie. We will not list a channel as supported until it is. Which channels come first depends on each platform approving BizGenie." },
-  { q: "What happens to the details I give you?", a: "We use them to respond to your registration and, only if you tick the separate box, to send product news. We do not ask for social media passwords or tokens. The privacy notice explains what we collect, why, and your rights." },
+  { q: "What happens to the details I give you?", a: "We use them only to contact you about the paid beta. We do not ask for social media passwords or tokens. The privacy notice explains what we collect, why, and your rights." },
   { q: "What is the difference between early access and founding customer?", a: "Early access is for anyone who wants updates and an invitation when it is available. Founding customer is for businesses that would like early access and may become paying subscribers when the product is ready. Neither promises a place, a date, or a price." },
   { q: "How do invitations work?", a: "We expect to invite businesses in small groups so we can support them properly. Founding-customer registrations are looked at first, but registering does not guarantee an invitation. We will email you if you are invited." },
   { q: "Will you share my details?", a: "We will not sell them. The privacy notice lists who processes them for us once that is confirmed." },
   { q: "How do I ask to have my details deleted?", a: "Use the contact details on the data-deletion page. We will confirm what we hold and remove it unless the law requires us to keep it." },
 ];
 
-export const industries = [
-  ["", "Choose your industry"], ["agency", "Agency"], ["ecommerce", "Ecommerce or online retail"], ["professional_services", "Professional services"],
-  ["hospitality", "Hospitality"], ["product_brand", "Product brand"], ["other", "Other"],
-];
-export const priorities = [
-  ["brand_consistency", "Keeping my brand consistent"], ["faster_content", "Creating content faster"], ["campaign_planning", "Planning campaigns"],
-  ["publishing", "Scheduling and publishing"], ["performance", "Understanding what works"], ["image_video", "Images and video"],
+// The five stages the existing API accepts (src/paid-beta/schema.js). The labels only restate the API values; they add no currency or period.
+export const businessStages = [
+  ["", "Choose your business stage"], ["pre-revenue", "Pre-revenue"], ["under-250k", "Under 250k"], ["250k-1m", "250k to 1m"], ["1m-5m", "1m to 5m"], ["5m-plus", "5m or more"],
 ];
 export const intentions = [
   { value: "early_access", label: "Early access", help: "Updates, and an invitation when access opens." },
   { value: "founding_customer", label: "Founding customer", help: "Early access for a business that may become a paying subscriber when the product is ready." },
 ];
 
-// Consent wording is versioned. The server records the version and the wording hash it was shown; changing a word means a new version.
-export const CONSENT_VERSION = "early-access-contact-v1";
-export const CONSENT_CONTACT = "I agree that BizGenie may use these details to contact me about early access to BizGenie.";
-export const CONSENT_MARKETING = "I would also like occasional news about BizGenie. I can unsubscribe at any time. (Optional)";
+// The server records ITS OWN consent version and wording (src/paid-beta/config.js). The checkbox must show exactly that wording, so it is copied verbatim.
+// There is no separate marketing consent in the existing API, so the form offers none.
+export const CONSENT_VERSION = "paid-beta-contact-v1";
+export const CONSENT_CONTACT = "I agree that BizGenie may use these details to contact me about the paid beta.";
