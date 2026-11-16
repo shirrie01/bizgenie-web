@@ -155,3 +155,10 @@ export async function recordManualPublication({ apiBaseUrl, accessToken, scope, 
   body.idempotency_key = await campaignKey(campaign, `manual-${outcome}`, `${variant.variant_id}:${attemptId}`);
   return send(fetchImpl, `${apiBaseUrl}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/manual-publication/${outcome}`, { method: "POST", headers: headers(accessToken), body: JSON.stringify(body) }, outcome === "confirm" ? "Recording your publication" : outcome === "fail" ? "Recording the failure" : "Cancelling the handoff");
 }
+
+// Text-only correction: immutable save_revision; media and lineage remain server-owned.
+export async function saveCopyRevision({apiBaseUrl,accessToken,scope,campaign,variant,content,fetchImpl=(...a)=>fetch(...a)}) {
+  const limits={title:200,body:32000,caption:8000,alt_text:2000};
+  if(!variant.current_revision_id||Object.keys(content||{}).length!==4||Object.keys(content).some(k=>!Object.hasOwn(limits,k))||Object.entries(limits).some(([k,max])=>content[k]!==null&&(typeof content[k]!=="string"||!content[k].length||content[k].length>max)))throw new CampaignApiError("Check the copy fields and their lengths.",{kind:"invalid",code:"VALIDATION_ERROR"});
+  return send(fetchImpl,`${apiBaseUrl}/customer/campaigns/${campaign.campaign_id}/variants/${variant.variant_id}/revisions`,{method:"POST",headers:headers(accessToken),body:JSON.stringify({...scopeOf(scope),idempotency_key:await campaignKey(campaign,"save-copy",JSON.stringify([variant.variant_id,variant.current_revision_id,content])),expected_campaign_version:campaign.version,revision_id:variant.current_revision_id,content})},"Saving your corrected copy");
+}

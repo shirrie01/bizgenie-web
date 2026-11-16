@@ -23,6 +23,7 @@ const allowedAny = (p) => METHODS.some((m) => bridgeAllows(m, p));
 
 // Everything the Studio calls that the bridge will answer 404 RESOURCE_NOT_AVAILABLE for, with the reason it does not matter for the staging first-customer journey, or why it does.
 const NOT_THROUGH_THE_BRIDGE = {
+  [`/customer/campaigns/${U}/variants/${U}/revisions`]: "Copy correction requires the dependent API revision contract; copyEditing stays OFF through bridge-v1 pending separate route review.",
   "/public/paid-beta-interest": "lead capture, not shown in the premium Studio build",
   "/billing/checkout/success": "a Studio page, not an API route", "/billing/checkout/cancel": "a Studio page, not an API route",
   "/customer/billing/invoices": "gate off (VITE_BILLING_MANAGEMENT_API); no API implementation",

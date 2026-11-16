@@ -3,10 +3,11 @@
 // verified in the manifest for the capability. Missing, malformed or unlisted evidence means OFF.
 import { API_COMPATIBILITY } from "./apiCompatibility";
 
-export const CAPABILITIES = Object.freeze(["quotedGeneration", "workspaceCalendar", "mediaIntake", "social", "learning", "commercialCatalogue", "creditPreview", "billingManagement", "professionalSector"]);
+export const CAPABILITIES = Object.freeze(["quotedGeneration", "workspaceCalendar", "mediaIntake", "social", "learning", "commercialCatalogue", "creditPreview", "billingManagement", "professionalSector", "copyRevisions"]);
 const PROVIDERS = ["instagram", "facebook", "linkedin", "tiktok", "youtube"];
 // Each customer-facing feature: its build flag and the backend capability it depends on.
 export const FEATURES = Object.freeze({
+  copyEditing: { flag: "VITE_COPY_EDIT_API", capability: "copyRevisions" },
   generationQuote: { flag: "VITE_GENERATION_QUOTE_API", capability: "quotedGeneration" },
   customerMedia: { flag: "VITE_CUSTOMER_MEDIA_API", capability: "quotedGeneration" },
   workspaceCalendar: { flag: "VITE_WORKSPACE_CALENDAR_API", capability: "workspaceCalendar" },
@@ -23,7 +24,7 @@ export const FEATURES = Object.freeze({
 
 // Features the staging Studio bridge does not forward (API main src/studio-bridge/service.js allow-list: no /customer/insights*, no /customer/billing/management*, no /customer/billing/invoices).
 // Behind that bridge (VITE_API_ROUTE_LIMITS=bridge-v1) they cannot work whatever the API revision supports, so they stay off.
-export const BRIDGE_V1_NOT_CARRIED = Object.freeze(["analytics", "billingManagement"]);
+export const BRIDGE_V1_NOT_CARRIED = Object.freeze(["analytics", "billingManagement", "copyEditing"]);
 const SHA = /^[0-9a-f]{40}$/;
 const truthy = (v) => typeof v === "string" && v.trim().toLowerCase() === "true";
 const https = (v) => { try { const u = new URL(v); return u.protocol === "https:" && !u.username && !u.password; } catch { return false; } };

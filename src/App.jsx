@@ -1,3 +1,4 @@
+import { featureEnabled as copyFeatureEnabled } from "./premium/featureGate";
 import BrandBrainProfile from "./BrandBrainProfile";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCustomerSession, refreshCustomerSession } from "./session";
@@ -15,6 +16,7 @@ import { applyDeliveryOverlay, fetchDeliveryOverlay } from "./premium/calendarOv
 const ScheduleControls = lazy(() => import("./premium/ScheduleControls"));
 const ManualPublicationPanel = lazy(() => import("./premium/ManualPublicationPanel"));
 const GenerateWithQuote = lazy(() => import("./premium/GenerateWithQuote"));
+const CopyRevisionEditor = lazy(() => import("./premium/CopyRevisionEditor"));
 const CreativeStudio = lazy(() => import("./premium/CreativeStudio"));
 import { fetchConnections as fetchSocialConnections, isSocialApiEnabled } from "./premium/socialClient";
 import { isMediaIntakeApiEnabled } from "./premium/mediaIntakeClient";
@@ -25,7 +27,7 @@ import { requestCostCheck } from "./premium/costCheck";
 import { describeGenerateRefusal } from "./premium/generationQuoteClient";
 import { activeSchedule } from "./premium/scheduleModel";
 import { forget, recall, remember } from "./premium/rememberedFacts";
-import { addContentItem, fetchCampaignDetail, isUnscheduleApiEnabled, recordManualPublication, renameCampaign, setCampaignArchived, unscheduleVariant } from "./premium/campaignManagementClient";
+import { saveCopyRevision, addContentItem, fetchCampaignDetail, isUnscheduleApiEnabled, recordManualPublication, renameCampaign, setCampaignArchived, unscheduleVariant } from "./premium/campaignManagementClient";
 import CreativeReview from "./CreativeReview";
 import CreativePreviewCard, { creativeAsText } from "./CreativePreviewCard";
 import ApprovedCreative from "./ApprovedCreative";
@@ -770,6 +772,12 @@ export default function App() {
       setAddItemState({ status: "error", error: error.message || "That could not be added yet. Nothing was changed.", notice: "" }); return { ok: false };
     }
   }
+  async function premiumSaveCopy(variant, content, base) {
+    const token=scopeTokenRef.current;if(!campaignState.campaign)return null;
+    const updated=await saveCopyRevision({apiBaseUrl:API_BASE_URL,accessToken:session.accessToken,scope:adminScope(),campaign:{...campaignState.campaign,version:base.version},variant:{...variant,current_revision_id:base.revision},content});
+    if(token!==scopeTokenRef.current)return null;
+    setCampaignState({status:"ready",campaign:updated,error:""});resetCampaignViews();setCalendarState({status:"idle",entries:[],error:""});setWorkspaceCalendarState(WS_CAL_IDLE);return updated;
+  }
   async function premiumReloadCampaign() {
     if (!campaignState.campaign) return; const scopeToken = scopeTokenRef.current;
     try { const latest = await fetchCampaignDetail({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaignId: campaignState.campaign.campaign_id }); if (scopeToken === scopeTokenRef.current) setCampaignState({ status: "ready", campaign: latest, error: "" }); }
@@ -1038,6 +1046,7 @@ export default function App() {
                     {!["review", "approved"].includes(variant.workflow) && <p>{creativeAsText(variant.current_content) || (variant.workflow === "draft" ? "Draft ready to generate." : variant.workflow)}</p>}
                     {variant.workflow === "approved" && (campaignState.campaign && variant.current_content && Array.isArray(variant.current_content.asset_refs) && variant.current_content.asset_refs.length ? <ApprovedCreative apiBaseUrl={API_BASE_URL} session={session} campaign={campaignState.campaign} variant={variant} onReload={premiumReloadCampaign} /> : <CreativePreviewCard variant={variant} />)}
                     <small>{variant.destination_label}</small>
+                    {premiumEnabled&&<Lazy><CopyRevisionEditor key={`copy:${session.tenantId}:${session.projectId}:${variant.variant_id}`} enabled={copyFeatureEnabled("copyEditing")} readOnly={isReadOnlyRole(roleState.role)} campaign={campaignState.campaign} variant={variant} onSave={(content,base)=>premiumSaveCopy(variant,content,base)} onReload={premiumReloadCampaign}/></Lazy>}
                     {variant.workflow === "draft" && (premiumEnabled ? (
                       item.format === "text" ? (
                         <Lazy><GenerateWithQuote key={`${variant.variant_id}:${campaignState.campaign.version}`} quotesEnabled={isCreditPreviewApiEnabled()} disabled={generationState.status === "loading"} onQuote={() => premiumQuote(variant)} onGenerate={(q) => premiumGenerate(variant, q)} /></Lazy>

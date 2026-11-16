@@ -27,6 +27,10 @@ Failure wording (`routeAbsent.js`): a 404 **without** an API error code (the fra
 Not gated by a WEB flag and unaffected: onboarding, workspace, Brand Brain, campaigns, review/approval, schedule/reschedule, manual publication, creative-preview and asset-preview, subscription read, checkout (separate checkout gate, off).
 Strategy workflows, product intelligence and creative-intelligence routes are mounted on API main but have **no WEB consumer behind a flag in this repository**; nothing is shown for them.
 
+## Copy correction source preparation
+
+`VITE_COPY_EDIT_API` requires the verified `copyRevisions` capability and additive authenticated `POST /customer/campaigns/:id/variants/:id/revisions` contract. Both remain OFF for the current compatibility manifest; bridge-v1 does not carry this route. Customer copy correction remains a required integration task, not a deferred product feature. No R1 route, gate or deployment is changed.
+
 ## 4. Result and how a feature is released
 **WEB/API staging compatibility: BLOCKED, by design.** Every flagged control is OFF in the next staging build because no API revision is declared and none is verified. Per feature, release needs: (1) a staging revision built from an accepted API commit with the activation flags and configuration above evidenced from the real revision (metadata collector or operator); (2) a hosted check that the route answers 2xx for the test tenant; (3) a reviewed WEB PR adding the manifest entry (sha, revision name, date, evidence URL, verified capabilities, social providers) **and** the workflow/Pages setting of `VITE_API_SOURCE_SHA` and `VITE_API_SERVING_REVISION` under the founder's deployment approval. This PR does not deploy, edit the workflow or change any setting.
 ## 5. Bounded Codex / operator requests (only what is genuinely absent or unverified on `5cd1d774`)
