@@ -358,6 +358,18 @@
    "risk": "COST if ever enabled",
    "ui_when_unavailable": "Superseded by quote + confirm",
    "owner": "Codex route; Claude UI"
+  },
+  {
+   "routes": [
+    "POST /customer/campaigns/:id/variants/:id/revisions"
+   ],
+   "purpose": "Correct draft customer copy and CTA with immutable revision history",
+   "studio_gate": "VITE_COPY_EDIT_API plus verified copyRevisions capability; OFF through bridge-v1",
+   "launch_class": "B",
+   "risk": "write: new draft; revokes active approval and cancels planned publication; no generation",
+   "ui_when_unavailable": "Editor hidden until the authenticated revision contract is verified",
+   "owner": "Codex API and Studio copy correction",
+   "decision_needed": "Required journey remains blocked until dependent API source, secure route transport and hosted acceptance are approved; existing R1 bridge remains unchanged."
   }
  ]
 }
