@@ -886,3 +886,11 @@ describe("recommendation-to-campaign creation", () => {
     });
   });
 });
+
+ it("R2 root-only mode saves one campaign and never posts suggested items",async()=>{
+  vi.stubEnv("VITE_FOUNDER_CAMPAIGN_ROOT_API","true");
+  try{global.fetch.mockResolvedValueOnce({ok:true,json:async()=>({recommendation})}).mockResolvedValueOnce({ok:true,status:201,json:async()=>campaign(1,0)});
+   render(<App/>);fireEvent.change(screen.getByLabelText(/your goal/i),{target:{value:"Promote the Audi A3 offer"}});fireEvent.click(screen.getByRole("button",{name:/get my recommendation/i}));await screen.findByText("Audi A3 Offer Campaign");fireEvent.click(screen.getByRole("button",{name:/^create campaign$/i}));
+   await screen.findByText(/Suggested content has not been added/);expect(global.fetch).toHaveBeenCalledTimes(2);expect(JSON.parse(global.fetch.mock.calls[1][1].body).idempotency_key).toBe("bg-r2-founder-campaign-v1");expect(global.fetch.mock.calls.some(([url])=>String(url).includes("/content-items"))).toBe(false);
+  }finally{vi.unstubAllEnvs();}
+ });

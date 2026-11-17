@@ -1,3 +1,4 @@
+import { createFounderCampaignRootClient } from "./premium/founderCampaignRootClient";
 import { featureEnabled as copyFeatureEnabled } from "./premium/featureGate";
 import BrandBrainProfile from "./BrandBrainProfile";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -613,17 +614,23 @@ export default function App() {
     }
   }
 
+  const founderRootClient = useRef(null);
+  if (!founderRootClient.current) founderRootClient.current = createFounderCampaignRootClient();
   async function runCreateCampaign() {
     if (session.status !== "ready" || !state.recommendation || campaignState.status === "loading") return;
+    const creationScope=scopeTokenRef.current;
     setCampaignState({ status: "loading", campaign: null, error: "" });
     try {
-      const campaign = await createCampaignFromRecommendation({
+      const rootOnly = copyFeatureEnabled("founderCampaignRoot");
+      const campaign = rootOnly ? await founderRootClient.current({apiBaseUrl:API_BASE_URL,accessToken:session.accessToken,session,recommendation:state.recommendation,fetchImpl:apiFetch}) : await createCampaignFromRecommendation({
         accessToken: session.accessToken,
         session,
         recommendation: state.recommendation,
       });
-      setCampaignState({ status: "ready", campaign, error: "" });
+      if(creationScope!==scopeTokenRef.current)return;
+      setCampaignState({ status: "ready", campaign, rootOnly, error: "" });
     } catch (error) {
+      if(creationScope!==scopeTokenRef.current)return;
       setCampaignState({ status: "error", campaign: null, error: error.message });
     }
   }
@@ -1022,7 +1029,7 @@ export default function App() {
   const campaignSection = campaignState.campaign && (
         <section className="recommendation" aria-live="polite">
           <div className="recommendation-header"><div><p className="eyebrow">Saved to your workspace</p><h2>{campaignState.campaign.name}</h2></div><span className="pill">Draft</span></div>
-          <p>Your campaign and recommended starting items are now saved. Nothing has been scheduled or published.</p>
+          <p>{campaignState.rootOnly ? "Your draft campaign is saved. Suggested content has not been added. Nothing has been generated, scheduled or published." : "Your campaign and recommended starting items are now saved. Nothing has been scheduled or published."}</p>
           <div className="item" aria-label="Generation setup">
             <span>Creative direction</span>
             <h3>How should BizGenie build this?</h3>
