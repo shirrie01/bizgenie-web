@@ -27,12 +27,12 @@ const shot = async (page, name) => {
   await page.screenshot({ path: `${EVIDENCE}/${W}-${name}.jpg`, type: "jpeg", quality: 55, fullPage: full });
 };
 const uniq = () => `qa.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@example.com`;
-async function fill(page, { email = uniq(), intent = "early_access", name = "Ada Lovelace", company = "Analytical Engines Ltd", industry = "agency", marketing = false } = {}) {
+async function fill(page, { email = uniq(), intent = "early_access", name = "Ada Lovelace", company = "Analytical Engines Ltd", website = "https://example.com/ada", stage = "250k-1m" } = {}) {
   await page.getByRole("radio", { name: new RegExp(intent === "early_access" ? "^Early access" : "^Founding customer") }).check();
   await page.getByLabel(/^Your name/).fill(name); await page.getByLabel(/^Business email/).fill(email);
-  await page.getByLabel(/^Business or company name/).fill(company); await page.getByLabel(/^Industry/).selectOption(industry);
+  await page.getByLabel(/^Business or company name/).fill(company); await page.getByLabel(/^Website or social profile/).fill(website);
+  await page.getByLabel(/^Business stage/).selectOption(stage); await page.getByLabel(/^Your main marketing challenge/).fill("Keeping launch campaigns consistent.");
   await page.getByLabel(/I agree that BizGenie may use these details/).check();
-  if (marketing) await page.getByLabel(/occasional news about BizGenie/).check();
   return email;
 }
 
@@ -55,40 +55,40 @@ test("home: positioning, honest availability, labelled previews and no invented 
   for (const img of await page.locator("img").all()) { await img.scrollIntoViewIfNeeded(); await expect.poll(() => img.evaluate((i) => i.complete && i.naturalWidth > 0)).toBe(true); }
 });
 
-test("early access: choose, fill, submit - recorded once with consent evidence, attribution and no unnecessary data", async ({ page }) => {
+test("early access: choose, fill, submit - recorded once with the existing contract fields and no unnecessary data", async ({ page }) => {
   await page.goto("/?utm_source=QA&utm_medium=test&utm_campaign=launch1");
   await page.getByRole("link", { name: "Join early access" }).first().click();
   await expect(page.getByRole("radio", { name: /^Early access/ })).toBeChecked();
-  const reqs = []; page.on("request", (r) => { if (r.url().includes("/public/early-access-interest") && r.method() === "POST") reqs.push(r.postDataJSON()); });
+  const reqs = []; page.on("request", (r) => { if (r.url().includes("/public/paid-beta-interest") && r.method() === "POST") reqs.push(r.postDataJSON()); });
   const email = await fill(page, { intent: "early_access" });
   await page.waitForTimeout(3100);
   await page.getByRole("button", { name: "Register my interest" }).click();
   await expect(page.getByRole("heading", { name: /We have recorded your interest/ })).toBeVisible();
   await expect(page.locator("#success")).toBeFocused(); await expect(page.locator("#success")).toContainText("does not guarantee");
   expect(reqs).toHaveLength(1); const b = reqs[0];
-  expect(b).toMatchObject({ contract_version: "early-access-interest.v1", intention: "early_access", work_email: email, privacy_contact_consent: true, marketing_consent: false, industry: "agency", source: { utm_source: "qa", utm_medium: "test", utm_campaign: "launch1", landing_path: "/" } });
-  expect(b.consent.contact_text_sha256).toMatch(/^[a-f0-9]{64}$/); expect(b.client.elapsed_ms).toBeGreaterThan(3000);
-  expect(JSON.stringify(b)).not.toMatch(/password|token|cookie/i);
-  const s = await state(); const rec = s.records.find((r) => r.work_email === email); expect(rec).toMatchObject({ intention: "early_access", marketing_consent: false, utm_source: "qa" }); expect(s.records.filter((r) => r.work_email === email)).toHaveLength(1);
+  expect(Object.keys(b).sort()).toEqual(["business_name", "business_stage", "name", "primary_marketing_challenge", "privacy_contact_consent", "source", "submission_id", "website_or_social_profile", "work_email"]);
+  expect(b).toMatchObject({ work_email: email, privacy_contact_consent: true, business_stage: "250k-1m", website_or_social_profile: "https://example.com/ada", source: "website-early-access" });
+  expect(JSON.stringify(b)).not.toMatch(/password|token|cookie|marketing_consent|utm_/i);
+  const s = await state(); const rec = s.records.find((r) => r.work_email === email); expect(rec).toMatchObject({ business_stage: "250k-1m", consent_version: "paid-beta-contact-v1" }); expect(s.records.filter((r) => r.work_email === email)).toHaveLength(1);
   await checks(page, "success"); await shot(page, "early-access-success");
 });
 
-test("founding customer: recorded as a distinct intention; a repeat with the same email stays one canonical record", async ({ page }) => {
+test("founding customer: recorded with its own source label; a repeat with the same email stays one canonical record", async ({ page }) => {
   await page.goto("/"); await page.getByRole("link", { name: "Register as a founding customer" }).first().click();
   await expect(page.getByRole("radio", { name: /^Founding customer/ })).toBeChecked();
-  const email = await fill(page, { intent: "founding_customer", marketing: true, industry: "ecommerce" });
+  const email = await fill(page, { intent: "founding_customer" });
   await page.getByRole("button", { name: "Register my interest" }).click();
   await expect(page.locator("#success-text")).toContainText("founding customer"); await expect(page.locator("#success")).toContainText("does not guarantee");
   await page.goto("/"); await fill(page, { email, intent: "early_access" }); await page.getByRole("button", { name: "Register my interest" }).click();
   await expect(page.getByRole("heading", { name: /We have recorded your interest/ })).toBeVisible();
-  const recs = (await state()).records.filter((r) => r.work_email === email); expect(recs).toHaveLength(1); expect(recs[0]).toMatchObject({ intention: "founding_customer", marketing_consent: true }); expect(recs[0].receipts).toHaveLength(2);
+  const recs = (await state()).records.filter((r) => r.work_email === email); expect(recs).toHaveLength(1); expect(recs[0].source).toBe("website-founding-customer"); expect(recs[0].receipts).toHaveLength(2); // the first record is never overwritten
 });
 
 test("validation: an empty submit names every problem, focuses the summary, marks fields invalid and sends nothing", async ({ page }) => {
-  await page.goto("/#register"); let posts = 0; page.on("request", (r) => { if (r.method() === "POST" && r.url().includes("/public/early-access-interest")) posts++; });
+  await page.goto("/#register"); let posts = 0; page.on("request", (r) => { if (r.method() === "POST" && r.url().includes("/public/paid-beta-interest")) posts++; });
   await page.getByRole("button", { name: "Register my interest" }).click();
   const summary = page.locator("#form-error-summary"); await expect(summary).toBeVisible(); await expect(summary).toBeFocused();
-  await expect(summary.locator("li")).toHaveCount(6); await expect(page.locator("#f-name")).toHaveAttribute("aria-invalid", "true"); await expect(page.locator("#name-error")).toHaveText("Enter your name.");
+  await expect(summary.locator("li")).toHaveCount(8); await expect(page.locator("#f-name")).toHaveAttribute("aria-invalid", "true"); await expect(page.locator("#name-error")).toHaveText("Enter your name.");
   await summary.getByRole("link", { name: "Enter your email address." }).click(); await expect(page.locator("#f-email")).toBeFocused();
   await page.getByLabel(/^Business email/).fill("nope"); await page.getByRole("button", { name: "Register my interest" }).click(); await expect(page.locator("#email-error")).toContainText("name@company.com");
   expect(posts).toBe(0); await checks(page, "validation"); await shot(page, "validation");
@@ -100,7 +100,9 @@ test("keyboard only: the whole registration can be completed and submitted witho
   await page.keyboard.press("Tab"); // out of the radio group to the name field
   await expect(page.locator("#f-name")).toBeFocused(); await page.keyboard.type("Grace Hopper");
   await page.keyboard.press("Tab"); await page.keyboard.type(email); await page.keyboard.press("Tab"); await page.keyboard.type("Navy Systems");
-  await page.keyboard.press("Tab"); await page.keyboard.press("ArrowDown"); // industry select
+  await page.keyboard.press("Tab"); await page.keyboard.type("https://example.com/navy"); // website
+  await page.keyboard.press("Tab"); await page.keyboard.press("ArrowDown"); // business stage select
+  await page.keyboard.press("Tab"); await page.keyboard.type("Reaching new customers."); // main marketing challenge
   for (let i = 0; i < 12; i++) { await page.keyboard.press("Tab"); if (await page.locator("#c-contact").evaluate((e) => e === document.activeElement)) break; }
   await page.keyboard.press("Space"); await expect(page.locator("#c-contact")).toBeChecked();
   await page.locator("#submit-btn").focus(); await page.keyboard.press("Enter");
@@ -110,7 +112,7 @@ test("keyboard only: the whole registration can be completed and submitted witho
 
 test("failures keep the answers and are worded plainly: rate limit, outage, network loss; a retry reuses the SAME submission id", async ({ page }) => {
   await page.goto("/#register"); await fill(page); const ids = []; let mode = "429";
-  await page.route("**/public/early-access-interest", async (route) => {
+  await page.route("**/public/paid-beta-interest", async (route) => {
     if (route.request().method() === "OPTIONS") return route.fallback();
     ids.push(route.request().postDataJSON().submission_id);
     if (mode === "429") return route.fulfill({ status: 429, headers: { "access-control-allow-origin": "http://127.0.0.1:4300", "retry-after": "900", "content-type": "application/json" }, body: "{}" });

@@ -77,12 +77,23 @@ describe("registration form", () => {
     expect(f().querySelector('fieldset input[name="intention"]').closest("fieldset").querySelector("legend")).toBeTruthy();
     const hp = f().querySelector(".hp"); expect(hp.getAttribute("aria-hidden")).toBe("true"); expect(f().querySelector("#f-hp").getAttribute("tabindex")).toBe("-1");
   });
-  it("offers both intentions, none preselected; two separate consents, only the contact one required, neither ticked", () => {
+  it("offers both intentions, none preselected; one required, unticked consent with the server's exact wording, and no marketing consent the API cannot record", () => {
     expect([...f().querySelectorAll('input[name="intention"]')].map((i) => i.value)).toEqual(["early_access", "founding_customer"]);
     expect(f().querySelector('input[name="intention"]:checked')).toBeNull();
-    const c1 = f().querySelector("#c-contact"), c2 = f().querySelector("#c-marketing");
-    expect(c1.required).toBe(true); expect(c2.required).toBe(false); expect(c1.checked).toBe(false); expect(c2.checked).toBe(false);
-    expect(f().querySelector("#c-marketing-label").textContent).toMatch(/optional/i);
+    const c1 = f().querySelector("#c-contact");
+    expect(c1.required).toBe(true); expect(c1.checked).toBe(false);
+    expect(f().querySelector("#c-contact-label").textContent.trim()).toBe("I agree that BizGenie may use these details to contact me about the paid beta.");
+    expect(f().querySelector("#c-marketing")).toBeNull(); expect(f().querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+  });
+  it("asks exactly for the fields of the existing API contract, all required", () => {
+    expect([...f().querySelectorAll("input[name],select[name],textarea[name]")].map((e) => e.name).filter((n) => n !== "hp_confirm" && n !== "intention")).toEqual(["name", "email", "company", "website", "stage", "challenge", "contactConsent"]);
+    for (const id of ["f-name", "f-email", "f-company", "f-website", "f-stage", "f-challenge", "c-contact"]) expect(f().querySelector("#" + id).required, id).toBe(true);
+    expect([...f().querySelectorAll("#f-stage option")].map((o) => o.value)).toEqual(["", "pre-revenue", "under-250k", "250k-1m", "1m-5m", "5m-plus"]);
+  });
+  it("the privacy notice describes the data the form actually collects and no product-news consent", () => {
+    const t = dom("privacy/index.html").body.textContent.replace(/\s+/g, " ");
+    expect(t).toMatch(/website or social profile address, business stage, your main marketing challenge/i); expect(t).toMatch(/contact you about the paid beta/i);
+    expect(t).not.toMatch(/product news|optional: agreement|industry/i);
   });
   it("asks for no credentials, tokens, passwords or social handles, and warns not to enter them", () => {
     const names = [...f().querySelectorAll("input,select,textarea")].map((e) => e.name).join(" "); expect(names).not.toMatch(/pass|token|secret|handle|instagram|facebook|meta|social|card|phone/i);

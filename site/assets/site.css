@@ -159,3 +159,6 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 
 .consent .check { margin-bottom: 14px; }
 .consent .error { margin-top: -6px; margin-bottom: 14px; }
+
+/* The server reference (pbi_ + 24 characters) is one unbroken word: let it wrap on narrow screens. */
+.success .fine { overflow-wrap: anywhere; }

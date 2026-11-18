@@ -1,33 +1,37 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { MESSAGES, buildPayload, messageFor, readAttribution, sha256Hex, submitLead, validate } from "../assets/form-model.js";
+import { MESSAGES, SOURCE_BY_INTENTION, STAGES, buildPayload, messageFor, readAttribution, submitLead, validate } from "../assets/form-model.js";
 import { validateLead } from "../dev/lead-stub.mjs";
-import { CONSENT_CONTACT, CONSENT_MARKETING } from "../content.mjs";
+import { CONSENT_CONTACT, CONSENT_VERSION, businessStages } from "../content.mjs";
 
-const good = () => ({ name: "  Ada   Lovelace ", email: " Ada@Example.COM ", company: "Analytical Engines Ltd", industry: "agency", intention: "founding_customer", priorities: ["performance", "bogus"], notes: " hello ", contactConsent: true, marketingConsent: false });
+const good = () => ({ name: "  Ada   Lovelace ", email: " Ada@Example.COM ", company: "Analytical Engines Ltd", website: " example.com/ada ", stage: "250k-1m", challenge: "  Keeping launch campaigns consistent. ", intention: "founding_customer", contactConsent: true });
 const res = (status, body = {}, headers = {}) => ({ status, json: async () => body, headers: { get: (k) => headers[k.toLowerCase()] } });
 
-describe("validate", () => {
+describe("validate (existing paid-beta contract)", () => {
   it("accepts a complete registration and normalises it", () => {
     const r = validate(good()); expect(r.ok).toBe(true);
-    expect(r.values).toMatchObject({ name: "Ada Lovelace", email: "ada@example.com", priorities: ["performance"], notes: "hello", marketingConsent: false });
+    expect(r.values).toMatchObject({ name: "Ada Lovelace", email: "ada@example.com", website: "https://example.com/ada", stage: "250k-1m", challenge: "Keeping launch campaigns consistent." });
   });
   it("requires each mandatory field, with a code per field", () => {
     const r = validate({}); expect(r.ok).toBe(false);
-    expect(r.errors).toEqual({ name: "required", email: "required", company: "required", industry: "required", intention: "required", contactConsent: "required" });
+    expect(r.errors).toEqual({ name: "required", email: "required", company: "required", website: "required", stage: "required", challenge: "required", intention: "required", contactConsent: "required" });
   });
-  it("rejects bad email, unknown industry/intention, over-long values and consent that is not explicitly true", () => {
+  it("rejects bad email, bad address, unknown stage/intention, over-long values and consent that is not explicitly true", () => {
     expect(validate({ ...good(), email: "not-an-email" }).errors.email).toBe("invalid");
-    expect(validate({ ...good(), email: "a@b" }).errors.email).toBe("invalid");
-    expect(validate({ ...good(), industry: "crypto" }).errors.industry).toBe("required");
+    expect(validate({ ...good(), website: "https://user:pass@example.com" }).errors.website).toBe("invalid");
+    expect(validate({ ...good(), website: "ftp://example.com" }).errors.website).toBe("invalid");
+    expect(validate({ ...good(), website: "not a url" }).errors.website).toBe("invalid");
+    expect(validate({ ...good(), website: "https://e.com/" + "x".repeat(2100) }).errors.website).toBe("invalid");
+    expect(validate({ ...good(), stage: "huge" }).errors.stage).toBe("required");
     expect(validate({ ...good(), intention: "buy_now" }).errors.intention).toBe("required");
     expect(validate({ ...good(), name: "x".repeat(121) }).errors.name).toBe("too_long");
     expect(validate({ ...good(), company: "x".repeat(161) }).errors.company).toBe("too_long");
+    expect(validate({ ...good(), challenge: "x".repeat(1001) }).errors.challenge).toBe("too_long");
     expect(validate({ ...good(), contactConsent: "on" }).errors.contactConsent).toBe("required");
   });
-  it("marketing consent is optional and only ever true when explicitly given", () => {
-    expect(validate({ ...good(), marketingConsent: undefined }).values.marketingConsent).toBe(false);
-    expect(validate({ ...good(), marketingConsent: true }).values.marketingConsent).toBe(true);
+  it("offers exactly the five stages the API accepts, and the form lists the same values", () => {
+    expect(STAGES).toEqual(["pre-revenue", "under-250k", "250k-1m", "1m-5m", "5m-plus"]);
+    expect(businessStages.map(([v]) => v).filter(Boolean)).toEqual(STAGES);
   });
   it("every error code has a plain-language message", () => {
     for (const [field, codes] of Object.entries(MESSAGES)) for (const code of Object.keys(codes)) expect(messageFor(field, code).length).toBeGreaterThan(8);
@@ -44,17 +48,20 @@ describe("attribution (memory only, allow-listed)", () => {
 });
 
 describe("payload", () => {
-  it("is exactly the contract, passes the contract validator, and carries the consent evidence", async () => {
+  it("is exactly the nine fields of the existing contract and passes the contract validator", () => {
     const values = validate(good()).values;
-    const p = await buildPayload({ values, attribution: { utm_source: "x" }, submissionId: "ws-1", elapsedMs: 4321.7, consentContactText: CONSENT_CONTACT, consentMarketingText: CONSENT_MARKETING });
-    expect(Object.keys(p).sort()).toEqual(["client", "consent", "contract_version", "industry", "intention", "marketing_consent", "marketing_priorities", "name", "notes", "privacy_contact_consent", "source", "submission_id", "work_email", "business_name"].sort());
-    expect(p).toMatchObject({ privacy_contact_consent: true, marketing_consent: false, work_email: "ada@example.com", client: { elapsed_ms: 4322 }, consent: { version: "early-access-contact-v1" } });
-    expect(p.consent.contact_text_sha256).toBe(await sha256Hex(CONSENT_CONTACT));
+    const p = buildPayload({ values, submissionId: "ws-1" });
+    expect(Object.keys(p).sort()).toEqual(["business_name", "business_stage", "name", "primary_marketing_challenge", "privacy_contact_consent", "source", "submission_id", "website_or_social_profile", "work_email"]);
+    expect(p).toMatchObject({ privacy_contact_consent: true, work_email: "ada@example.com", business_stage: "250k-1m", source: "website-founding-customer", submission_id: "ws-1" });
     expect(validateLead(p).errors).toBeUndefined(); // client and (reference) server agree
   });
-  it("omits notes when empty and contains no credential-like or device fields", async () => {
-    const p = await buildPayload({ values: validate({ ...good(), notes: "" }).values, attribution: {}, submissionId: "ws-2", elapsedMs: 10, consentContactText: "a", consentMarketingText: "b" });
-    expect(p).not.toHaveProperty("notes"); expect(JSON.stringify(p)).not.toMatch(/token|password|secret|cookie|user.?agent|fingerprint/i);
+  it("maps each registration choice to a safe source label and carries no marketing, attribution, device or credential data", () => {
+    for (const intention of ["early_access", "founding_customer"]) { const p = buildPayload({ values: validate({ ...good(), intention }).values, submissionId: "ws-2" }); expect(p.source).toBe(SOURCE_BY_INTENTION[intention]); expect(p.source).toMatch(/^[a-z0-9][a-z0-9._:-]{0,63}$/); }
+    expect(JSON.stringify(buildPayload({ values: validate(good()).values, submissionId: "ws-3" }))).not.toMatch(/marketing_consent|utm_|referrer|token|password|secret|cookie|user.?agent|fingerprint|industry/i);
+  });
+  it("shows the consent wording the server records, word for word", () => {
+    expect(CONSENT_CONTACT).toBe("I agree that BizGenie may use these details to contact me about the paid beta."); // src/paid-beta/config.js PAID_BETA_CONSENT_WORDING
+    expect(CONSENT_VERSION).toBe("paid-beta-contact-v1");
   });
 });
 
@@ -62,8 +69,8 @@ describe("submitLead", () => {
   const p = { a: 1 };
   it("is closed (no request) without a URL", async () => { const f = vi.fn(); expect(await submitLead({ url: "", payload: p, fetchImpl: f })).toEqual({ kind: "closed" }); expect(f).not.toHaveBeenCalled(); });
   it("sends JSON with no credentials and no referrer", async () => {
-    const f = vi.fn().mockResolvedValue(res(202, { reference_id: "ea_1" })); const r = await submitLead({ url: "https://api.test/x", payload: p, fetchImpl: f });
-    expect(r).toEqual({ kind: "received", reference: "ea_1" });
+    const f = vi.fn().mockResolvedValue(res(202, { reference_id: "pbi_1" })); const r = await submitLead({ url: "https://api.test/x", payload: p, fetchImpl: f });
+    expect(r).toEqual({ kind: "received", reference: "pbi_1" });
     expect(f.mock.calls[0][1]).toMatchObject({ method: "POST", credentials: "omit", referrerPolicy: "no-referrer", headers: { "content-type": "application/json" } });
   });
   it.each([[429, "rate_limited", true], [400, "invalid", false], [422, "invalid", false], [409, "conflict", false], [500, "unavailable", true], [503, "unavailable", true]])("maps %i to %s (retryable %s)", async (status, kind, retryable) => {

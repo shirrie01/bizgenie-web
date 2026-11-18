@@ -26,7 +26,7 @@ export const company = {
 // build and the page makes no network request. Set at build time: SITE_API_URL=https://api.example (the approved CORS origin must include the site).
 export const runtime = {
   apiBaseUrl: process.env.SITE_API_URL || "",
-  leadPath: "/public/early-access-interest",           // PROPOSED route (see docs/website/BG_WEB_001_LEAD_CAPTURE_CONTRACT.md)
+  leadPath: "/public/paid-beta-interest",              // EXISTING bizgenie-api route (src/paid-beta). Collection stays OFF until SITE_API_URL is set at build time.
   eventsPath: "/public/site-events",                   // PROPOSED route
   measurement: process.env.SITE_MEASUREMENT === "1",   // off unless explicitly enabled AND an API URL is set
 };

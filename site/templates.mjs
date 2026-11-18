@@ -86,9 +86,8 @@ function footer(strict) {
 const statusBadge = (s) => `<span class="badge badge-${s}">${esc(C.STATUS[s].label)}</span>`;
 
 function registerForm() {
-  const industryOptions = C.industries.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+  const stageOptions = C.businessStages.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
   const intentions = C.intentions.map((i) => `<div class="choice"><input type="radio" id="intent-${i.value}" name="intention" value="${i.value}" required><label for="intent-${i.value}"><strong>${esc(i.label)}</strong><span class="help">${esc(i.help)}</span></label></div>`).join("");
-  const priorities = C.priorities.map(([v, l]) => `<div class="check"><input type="checkbox" id="prio-${v}" name="priorities" value="${v}"><label for="prio-${v}">${esc(l)}</label></div>`).join("");
   return `<form id="register-form" class="card form" novalidate method="post" action="#register" aria-labelledby="register-title">
   <div id="form-error-summary" class="error-summary" role="alert" tabindex="-1" hidden>
     <h3>Please check the form</h3>
@@ -116,24 +115,26 @@ function registerForm() {
     <p class="error" id="company-error" hidden></p>
   </div>
   <div class="field">
-    <label for="f-industry">Industry <span class="req">(required)</span></label>
-    <select id="f-industry" name="industry" required aria-describedby="industry-error">${industryOptions}</select>
-    <p class="error" id="industry-error" hidden></p>
+    <label for="f-website">Website or social profile <span class="req">(required)</span></label>
+    <input id="f-website" name="website" type="url" autocomplete="url" maxlength="2048" inputmode="url" required aria-describedby="website-hint website-error">
+    <p class="hint" id="website-hint">The address of your website or a business profile, for example https://example.com. Do not include a password or login.</p>
+    <p class="error" id="website-error" hidden></p>
   </div>
-  <fieldset class="field">
-    <legend>What matters most to you? <span class="opt">(optional)</span></legend>
-    <div class="checks">${priorities}</div>
-  </fieldset>
   <div class="field">
-    <label for="f-notes">Anything else we should know? <span class="opt">(optional)</span></label>
-    <textarea id="f-notes" name="notes" rows="3" maxlength="500" aria-describedby="notes-hint"></textarea>
-    <p class="hint" id="notes-hint">Please do not include passwords, social media logins or personal data about other people.</p>
+    <label for="f-stage">Business stage <span class="req">(required)</span></label>
+    <select id="f-stage" name="stage" required aria-describedby="stage-error">${stageOptions}</select>
+    <p class="error" id="stage-error" hidden></p>
+  </div>
+  <div class="field">
+    <label for="f-challenge">Your main marketing challenge <span class="req">(required)</span></label>
+    <textarea id="f-challenge" name="challenge" rows="4" maxlength="1000" required aria-describedby="challenge-hint challenge-error"></textarea>
+    <p class="hint" id="challenge-hint">Please do not include passwords, social media logins or personal data about other people.</p>
+    <p class="error" id="challenge-error" hidden></p>
   </div>
   <div class="hp" aria-hidden="true"><label for="f-hp">Leave this field empty</label><input id="f-hp" name="hp_confirm" type="text" tabindex="-1" autocomplete="off"></div>
   <div class="field consent">
     <div class="check"><input type="checkbox" id="c-contact" name="contactConsent" required aria-describedby="contact-error"><label for="c-contact" id="c-contact-label">${esc(C.CONSENT_CONTACT)}</label></div>
     <p class="error" id="contactConsent-error" hidden></p>
-    <div class="check"><input type="checkbox" id="c-marketing" name="marketingConsent"><label for="c-marketing" id="c-marketing-label">${esc(C.CONSENT_MARKETING)}</label></div>
     <p class="fine">We use your details as described in the <a href="/privacy/">privacy notice</a>. We never ask for social media passwords or access tokens.</p>
   </div>
   <p id="closed-note" class="notice" hidden>Registration is not open on this preview of the site yet, so nothing can be sent. When it opens, this form will record your interest.</p>
@@ -267,11 +268,8 @@ export function privacyPage({ strict }) {
   <table>
     <thead><tr><th scope="col">What</th><th scope="col">Why</th><th scope="col">Our basis</th></tr></thead>
     <tbody>
-      <tr><th scope="row" data-label="What">Name, email, business name, industry and the type of registration you choose</th><td data-label="Why">To record your interest and contact you about early access</td><td data-label="Our basis">Your consent, which you can withdraw</td></tr>
-      <tr><th scope="row" data-label="What">Optional: what matters to you, and anything you add in the notes box</th><td data-label="Why">To understand what to build and to decide who to invite</td><td data-label="Our basis">Your consent</td></tr>
-      <tr><th scope="row" data-label="What">Optional: agreement to receive product news</th><td data-label="Why">To send occasional news about BizGenie</td><td data-label="Our basis">Your separate consent. Unticked by default</td></tr>
+      <tr><th scope="row" data-label="What">Name, email, business name, website or social profile address, business stage, your main marketing challenge and the type of registration you choose</th><td data-label="Why">To record your interest and contact you about the paid beta</td><td data-label="Our basis">Your consent, which you can withdraw</td></tr>
       <tr><th scope="row" data-label="What">The wording you agreed to, its version and the time you agreed</th><td data-label="Why">To prove what you consented to</td><td data-label="Our basis">Legal obligation to demonstrate consent</td></tr>
-      <tr><th scope="row" data-label="What">Where you came from (for example the campaign tag in a link, or the website that linked to us)</th><td data-label="Why">To understand which channels bring interested businesses</td><td data-label="Our basis">Legitimate interests</td></tr>
       <tr><th scope="row" data-label="What">A one-way pseudonym of your connection, held briefly</th><td data-label="Why">To limit automated abuse of the form. Your raw IP address is not stored with your registration</td><td data-label="Our basis">Legitimate interests</td></tr>
     </tbody>
   </table>
@@ -284,7 +282,7 @@ export function privacyPage({ strict }) {
   <h2>How long we keep it</h2>
   <p>${company.retentionDecision ? esc(company.retentionDecision) : tbc(null, strict)}</p>
   <h2>Your rights</h2>
-  <p>You can ask to see, correct or delete your data, to object to or restrict its use, and to withdraw consent at any time, including for product news (every message will have an unsubscribe link). To do this, contact us using the details above or use the <a href="/data-deletion/">data-deletion page</a>. You can complain to the Information Commissioner's Office (ico.org.uk) if you are unhappy with how we handle your data.</p>
+  <p>You can ask to see, correct or delete your data, to object to or restrict its use, and to withdraw consent at any time. To do this, contact us using the details above or use the <a href="/data-deletion/">data-deletion page</a>. You can complain to the Information Commissioner's Office (ico.org.uk) if you are unhappy with how we handle your data.</p>
   <h2>Transfers outside the UK</h2>
   <p>${tbc(company.internationalTransfers, strict)}</p>
   <h2>Changes</h2>
@@ -327,7 +325,7 @@ export function deletionPage({ strict }) {
     <li>If you no longer have access to that address, tell us the business name and the date you registered. We may ask a question to check it is you.</li>
   </ol>
   <h2>What happens next</h2>
-  <p>We will confirm what we hold and delete it without undue delay and within one month, unless the law requires us to keep something, in which case we will tell you what and why. We will also stop product news immediately if you withdraw that consent.</p>
+  <p>We will confirm what we hold and delete it without undue delay and within one month, unless the law requires us to keep something, in which case we will tell you what and why.</p>
   <h2>Social media connections</h2>
   <p>This website does not connect to your social media accounts and holds no tokens for them. If BizGenie later offers account connections, you will be able to disconnect them in the product, remove BizGenie in the settings of the platform concerned, and ask us here to delete the related data.</p>
   <p>More: <a href="/privacy/">privacy notice</a>.</p>

@@ -1,14 +1,20 @@
 // Registration form model: validation, payload and submit logic. Pure ES module, no DOM, no storage, no cookies (tested in tests/form-model.test.js).
-// Contract: docs/website/BG_WEB_001_LEAD_CAPTURE_CONTRACT.md (`early-access-interest.v1`, PROPOSED; the server re-validates everything).
-export const CONTRACT_VERSION = "early-access-interest.v1";
-export const CONSENT_VERSION = "early-access-contact-v1";
+// Contract: the EXISTING bizgenie-api route POST /public/paid-beta-interest (src/paid-beta/schema.js; docs/launch/PAID_BETA_CAPTURE_AND_CHECKOUT_RETURN.md in
+// bizgenie-api). The body is strict: exactly the nine fields below, nothing else. The server re-validates everything and records its own consent version/wording.
 export const MIN_FILL_MS = 3000; // a form completed faster than this is treated as automated
 export const INTENTIONS = ["early_access", "founding_customer"];
-export const INDUSTRIES = ["agency", "ecommerce", "professional_services", "hospitality", "product_brand", "other"];
-export const PRIORITIES = ["brand_consistency", "faster_content", "campaign_planning", "publishing", "performance", "image_video"];
+// The existing API has no intention field. The chosen registration is carried only as the short, safe `source` label the API already accepts.
+export const SOURCE_BY_INTENTION = { early_access: "website-early-access", founding_customer: "website-founding-customer" };
+export const STAGES = ["pre-revenue", "under-250k", "250k-1m", "1m-5m", "5m-plus"];
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 const clean = (v) => String(v ?? "").replace(/\s+/g, " ").trim();
+// A visitor may type "example.com". The API needs an HTTP(S) address, so a missing scheme gets https://. Credentials in the address are refused.
+const addressOf = (v) => { const t = clean(v); return !t ? "" : /^[a-z][a-z0-9+.-]*:/i.test(t) ? t : `https://${t}`; };
+function validAddress(t) {
+  if (!t || t.length > 2048) return false;
+  try { const u = new URL(t); return ["http:", "https:"].includes(u.protocol) && !u.username && !u.password; } catch { return false; }
+}
 
 // Returns { ok, errors: { field: code }, values }. Error CODES (not prose) so the same code can be measured without any value being recorded.
 export function validate(input) {
@@ -16,18 +22,19 @@ export function validate(input) {
     name: clean(input.name),
     email: clean(input.email).toLowerCase(),
     company: clean(input.company),
-    industry: clean(input.industry),
+    website: addressOf(input.website),
+    stage: clean(input.stage),
+    challenge: String(input.challenge ?? "").trim(),
     intention: clean(input.intention),
-    priorities: (Array.isArray(input.priorities) ? input.priorities : []).filter((p) => PRIORITIES.includes(p)),
-    notes: String(input.notes ?? "").trim().slice(0, 500),
     contactConsent: input.contactConsent === true,
-    marketingConsent: input.marketingConsent === true,
   };
   const errors = {};
   if (!v.name) errors.name = "required"; else if (v.name.length > 120) errors.name = "too_long";
   if (!v.email) errors.email = "required"; else if (v.email.length > 254 || !EMAIL.test(v.email)) errors.email = "invalid";
   if (!v.company) errors.company = "required"; else if (v.company.length > 160) errors.company = "too_long";
-  if (!INDUSTRIES.includes(v.industry)) errors.industry = "required";
+  if (!v.website) errors.website = "required"; else if (!validAddress(v.website)) errors.website = "invalid";
+  if (!STAGES.includes(v.stage)) errors.stage = "required";
+  if (!v.challenge) errors.challenge = "required"; else if (v.challenge.length > 1000) errors.challenge = "too_long";
   if (!INTENTIONS.includes(v.intention)) errors.intention = "required";
   if (!v.contactConsent) errors.contactConsent = "required";
   return { ok: Object.keys(errors).length === 0, errors, values: v };
@@ -37,9 +44,11 @@ export const MESSAGES = {
   name: { required: "Enter your name.", too_long: "Use 120 characters or fewer." },
   email: { required: "Enter your email address.", invalid: "Enter an email address like name@company.com." },
   company: { required: "Enter your business or company name.", too_long: "Use 160 characters or fewer." },
-  industry: { required: "Choose the industry that fits best." },
+  website: { required: "Enter your website or social profile address.", invalid: "Enter a web address like https://example.com, without a username or password." },
+  stage: { required: "Choose the business stage that fits best." },
+  challenge: { required: "Tell us your main marketing challenge.", too_long: "Use 1,000 characters or fewer." },
   intention: { required: "Choose early access or founding customer." },
-  contactConsent: { required: "Tick this box so we can contact you about early access." },
+  contactConsent: { required: "Tick this box so we can contact you about the paid beta." },
 };
 export const messageFor = (field, code) => (MESSAGES[field] && MESSAGES[field][code]) || "Check this field.";
 
@@ -56,35 +65,20 @@ export function readAttribution(search, referrer, pathname = "/") {
   return Object.fromEntries(Object.entries(out).filter(([, x]) => x !== undefined));
 }
 
-export async function sha256Hex(text) {
-  const bytes = new TextEncoder().encode(text);
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 export const newSubmissionId = () => `ws-${globalThis.crypto.randomUUID()}`;
 
-// The exact request body. Nothing else is ever added (no tokens, no social handles, no device identifiers).
-export async function buildPayload({ values, attribution, submissionId, elapsedMs, consentContactText, consentMarketingText }) {
+// The exact request body of the existing contract. Nothing else is ever added (no tokens, no social handles, no device identifiers, no attribution).
+export function buildPayload({ values, submissionId }) {
   return {
-    contract_version: CONTRACT_VERSION,
-    submission_id: submissionId,
     name: values.name,
     work_email: values.email,
     business_name: values.company,
-    industry: values.industry,
-    intention: values.intention,
-    marketing_priorities: values.priorities,
-    ...(values.notes ? { notes: values.notes } : {}),
+    website_or_social_profile: values.website,
+    business_stage: values.stage,
+    primary_marketing_challenge: values.challenge,
     privacy_contact_consent: true,
-    marketing_consent: values.marketingConsent === true,
-    consent: {
-      version: CONSENT_VERSION,
-      contact_text_sha256: await sha256Hex(consentContactText),
-      marketing_text_sha256: await sha256Hex(consentMarketingText),
-      shown_at: new Date().toISOString(),
-    },
-    source: attribution || {},
-    client: { elapsed_ms: Math.max(0, Math.round(elapsedMs)) },
+    source: SOURCE_BY_INTENTION[values.intention],
+    submission_id: submissionId,
   };
 }
 
