@@ -1,6 +1,7 @@
 {
  "contract_version": "content-plan.v1",
  "pack": "launch-week-7d.v1",
+ "plan_id": "launch-week-7d.v1:2026-12-07",
  "campaign_id": "33333333-3333-4333-8333-333333333333",
  "start_date": "2026-12-07",
  "display_timezone": "Europe/London",
@@ -61,13 +62,15 @@
  "items": [
   {
    "plan_item": 1,
+   "idempotency_key": "plan:launch-week-7d.v1:2026-12-07:33333333-3333-4333-8333-333333333333:1",
+   "display_name": "Campaign key visual (Instagram image)",
    "key": "key-visual",
    "day": null,
    "is_post": false,
    "theme": "Campaign key visual",
    "audience_lane": "both",
    "content_item": {
-    "name": "Campaign key visual (Instagram image)",
+    "name": "Week of 2026-12-07 · Campaign key visual (Instagram image)",
     "format": "image",
     "platform": "instagram",
     "placement": "feed",
@@ -84,7 +87,7 @@
     {
      "execution_class": "image.normal",
      "purpose": "image_asset",
-     "execution_brief": "Single branded image for Fonzo on Instagram: Campaign key visual. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any health, sugar-content, calorie or nutritional claim; also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
+     "execution_brief": "Single branded image for Fonzo on Instagram: Campaign key visual. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any unapproved health, sugar-content, calorie or nutritional claim (only the approved facts above may be stated); also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
     }
    ],
    "execution_mode_options": [
@@ -103,13 +106,15 @@
   },
   {
    "plan_item": 2,
+   "idempotency_key": "plan:launch-week-7d.v1:2026-12-07:33333333-3333-4333-8333-333333333333:2",
+   "display_name": "Day 1 · Meet the brand (Instagram image)",
    "key": "d1",
    "day": 1,
    "is_post": true,
    "theme": "Meet the brand",
    "audience_lane": "consumer",
    "content_item": {
-    "name": "Day 1 · Meet the brand (Instagram image)",
+    "name": "Week of 2026-12-07 · Day 1 · Meet the brand (Instagram image)",
     "format": "image",
     "platform": "instagram",
     "placement": "feed",
@@ -126,7 +131,7 @@
     {
      "execution_class": "image.normal",
      "purpose": "image_asset",
-     "execution_brief": "Single branded image for Fonzo on Instagram: Meet the brand. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any health, sugar-content, calorie or nutritional claim; also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
+     "execution_brief": "Single branded image for Fonzo on Instagram: Meet the brand. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any unapproved health, sugar-content, calorie or nutritional claim (only the approved facts above may be stated); also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
     }
    ],
    "execution_mode_options": [
@@ -150,13 +155,15 @@
   },
   {
    "plan_item": 3,
+   "idempotency_key": "plan:launch-week-7d.v1:2026-12-07:33333333-3333-4333-8333-333333333333:3",
+   "display_name": "Day 2 · Flavour in motion (TikTok video)",
    "key": "d2",
    "day": 2,
    "is_post": true,
    "theme": "Flavour in motion",
    "audience_lane": "consumer",
    "content_item": {
-    "name": "Day 2 · Flavour in motion (TikTok video)",
+    "name": "Week of 2026-12-07 · Day 2 · Flavour in motion (TikTok video)",
     "format": "video",
     "platform": "tiktok",
     "placement": "feed",
@@ -173,7 +180,7 @@
     {
      "execution_class": "video.normal",
      "purpose": "video_asset",
-     "execution_brief": "Short vertical-safe product video for Fonzo on TikTok: Flavour in motion. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any health, sugar-content, calorie or nutritional claim; also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
+     "execution_brief": "Short vertical-safe product video for Fonzo on TikTok: Flavour in motion. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any unapproved health, sugar-content, calorie or nutritional claim (only the approved facts above may be stated); also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
     }
    ],
    "execution_mode_options": [
@@ -198,13 +205,15 @@
   },
   {
    "plan_item": 4,
+   "idempotency_key": "plan:launch-week-7d.v1:2026-12-07:33333333-3333-4333-8333-333333333333:4",
+   "display_name": "Day 3 · Retailer enquiry: stock the brand (LinkedIn image)",
    "key": "d3",
    "day": 3,
    "is_post": true,
    "theme": "Retailer enquiry: stock the brand",
    "audience_lane": "trade",
    "content_item": {
-    "name": "Day 3 · Retailer enquiry: stock the brand (LinkedIn image)",
+    "name": "Week of 2026-12-07 · Day 3 · Retailer enquiry: stock the brand (LinkedIn image)",
     "format": "image",
     "platform": "linkedin",
     "placement": "feed",
@@ -221,7 +230,7 @@
     {
      "execution_class": "image.normal",
      "purpose": "image_asset",
-     "execution_brief": "Single branded image for Fonzo on LinkedIn: Retailer enquiry: stock the brand. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any health, sugar-content, calorie or nutritional claim; also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
+     "execution_brief": "Single branded image for Fonzo on LinkedIn: Retailer enquiry: stock the brand. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any unapproved health, sugar-content, calorie or nutritional claim (only the approved facts above may be stated); also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
     }
    ],
    "execution_mode_options": [
@@ -245,13 +254,15 @@
   },
   {
    "plan_item": 5,
+   "idempotency_key": "plan:launch-week-7d.v1:2026-12-07:33333333-3333-4333-8333-333333333333:5",
+   "display_name": "Day 4 · Why this brand: value and positioning (Facebook video)",
    "key": "d4",
    "day": 4,
    "is_post": true,
    "theme": "Why this brand: value and positioning",
    "audience_lane": "both",
    "content_item": {
-    "name": "Day 4 · Why this brand: value and positioning (Facebook video)",
+    "name": "Week of 2026-12-07 · Day 4 · Why this brand: value and positioning (Facebook video)",
     "format": "video",
     "platform": "facebook",
     "placement": "feed",
@@ -268,7 +279,7 @@
     {
      "execution_class": "video.normal",
      "purpose": "video_asset",
-     "execution_brief": "Short vertical-safe product video for Fonzo on Facebook: Why this brand: value and positioning. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any health, sugar-content, calorie or nutritional claim; also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
+     "execution_brief": "Short vertical-safe product video for Fonzo on Facebook: Why this brand: value and positioning. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any unapproved health, sugar-content, calorie or nutritional claim (only the approved facts above may be stated); also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
     }
    ],
    "execution_mode_options": [
@@ -293,13 +304,15 @@
   },
   {
    "plan_item": 6,
+   "idempotency_key": "plan:launch-week-7d.v1:2026-12-07:33333333-3333-4333-8333-333333333333:6",
+   "display_name": "Day 5 · Product spotlight (Instagram image)",
    "key": "d5",
    "day": 5,
    "is_post": true,
    "theme": "Product spotlight",
    "audience_lane": "consumer",
    "content_item": {
-    "name": "Day 5 · Product spotlight (Instagram image)",
+    "name": "Week of 2026-12-07 · Day 5 · Product spotlight (Instagram image)",
     "format": "image",
     "platform": "instagram",
     "placement": "feed",
@@ -316,7 +329,7 @@
     {
      "execution_class": "image.normal",
      "purpose": "image_asset",
-     "execution_brief": "Single branded image for Fonzo on Instagram: Product spotlight. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any health, sugar-content, calorie or nutritional claim; also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
+     "execution_brief": "Single branded image for Fonzo on Instagram: Product spotlight. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any unapproved health, sugar-content, calorie or nutritional claim (only the approved facts above may be stated); also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
     }
    ],
    "execution_mode_options": [
@@ -340,13 +353,15 @@
   },
   {
    "plan_item": 7,
+   "idempotency_key": "plan:launch-week-7d.v1:2026-12-07:33333333-3333-4333-8333-333333333333:7",
+   "display_name": "Day 6 · For retailers: how to enquire (LinkedIn video)",
    "key": "d6",
    "day": 6,
    "is_post": true,
    "theme": "For retailers: how to enquire",
    "audience_lane": "trade",
    "content_item": {
-    "name": "Day 6 · For retailers: how to enquire (LinkedIn video)",
+    "name": "Week of 2026-12-07 · Day 6 · For retailers: how to enquire (LinkedIn video)",
     "format": "video",
     "platform": "linkedin",
     "placement": "feed",
@@ -363,7 +378,7 @@
     {
      "execution_class": "video.normal",
      "purpose": "video_asset",
-     "execution_brief": "Short vertical-safe product video for Fonzo on LinkedIn: For retailers: how to enquire. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any health, sugar-content, calorie or nutritional claim; also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
+     "execution_brief": "Short vertical-safe product video for Fonzo on LinkedIn: For retailers: how to enquire. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any unapproved health, sugar-content, calorie or nutritional claim (only the approved facts above may be stated); also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
     }
    ],
    "execution_mode_options": [
@@ -388,13 +403,15 @@
   },
   {
    "plan_item": 8,
+   "idempotency_key": "plan:launch-week-7d.v1:2026-12-07:33333333-3333-4333-8333-333333333333:8",
+   "display_name": "Day 7 · Week recap: try it or stock it (Facebook image)",
    "key": "d7",
    "day": 7,
    "is_post": true,
    "theme": "Week recap: try it or stock it",
    "audience_lane": "both",
    "content_item": {
-    "name": "Day 7 · Week recap: try it or stock it (Facebook image)",
+    "name": "Week of 2026-12-07 · Day 7 · Week recap: try it or stock it (Facebook image)",
     "format": "image",
     "platform": "facebook",
     "placement": "feed",
@@ -411,7 +428,7 @@
     {
      "execution_class": "image.normal",
      "purpose": "image_asset",
-     "execution_brief": "Single branded image for Fonzo on Facebook: Week recap: try it or stock it. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any health, sugar-content, calorie or nutritional claim; also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
+     "execution_brief": "Single branded image for Fonzo on Facebook: Week recap: try it or stock it. Campaign goal: Generate wholesale and retail stockist enquiries and build consumer brand awareness for Fonzo sugar-free soft drinks in 330ml cans, communicating flavour, value and product positioning to drive interest in stocking and purchasing Fonzo. About: Fonzo is a UK sugar-free soft drinks brand sold in 330ml cans. | Positioning: Sugar-free soft drinks in 330ml cans for UK shoppers and stockists. | Audience: UK consumers, plus independent retailers, wholesalers and distributors who stock soft drinks. | Tone: Clear, upbeat and straightforward. Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans. Use approved brand assets if they are supplied; otherwise a neutral placeholder composition with no invented product details. Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any unapproved health, sugar-content, calorie or nutritional claim (only the approved facts above may be stated); also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims."
     }
    ],
    "execution_mode_options": [
@@ -477,7 +494,7 @@
   "attribution": "Each item carries utm_campaign/utm_source/utm_content tags; the verified enquiry destination must be supplied before publishing."
  },
  "guardrails": [
-  "Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any health, sugar-content, calorie or nutritional claim; also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims.",
+  "Never state or imply: testimonials, ratings, certifications, retailer or distributor partnerships, awards, or any unapproved health, sugar-content, calorie or nutritional claim (only the approved facts above may be stated); also avoid: No health or weight-loss claims; No nutritional claims beyond sugar-free; No retailer partnership claims.",
   "Approved facts you may state: Fonzo is a sugar-free soft drink; Fonzo is sold in 330ml cans.",
   "Every item starts as a draft; nothing is approved, scheduled or published until the owner reviews and confirms.",
   "Instagram feed video is not offered: no approved preview profile exists for it."

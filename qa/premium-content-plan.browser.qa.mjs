@@ -32,7 +32,7 @@ async function mock(page, calls) {
     if (u.pathname === '/customer/campaigns' && m === 'GET') return json({ campaigns: [] });
     if (u.pathname.endsWith('/campaign-recommendations')) return json({ recommendation: rec });
     if (u.pathname === '/customer/campaigns' && m === 'POST') { names.length = 0; return json({ result: { campaign_id: CID, campaign_version: 1 }, campaign: camp(1, []) }); }
-    if (u.pathname.endsWith('/content-plan')) return json({ plan: { ...PLAN, campaign_id: CID } });
+    if (u.pathname.endsWith('/content-plan')) return json({ plan: { ...PLAN, campaign_id: CID, items: PLAN.items.map((i) => ({ ...i, idempotency_key: i.idempotency_key.replace('33333333-3333-4333-8333-333333333333', CID) })) } });
     if (u.pathname.endsWith('/content-items')) { const b = JSON.parse(req.postData()); if (!names.includes(b.name)) names.push(b.name); return json({ campaign: camp(names.length + 1, names) }, 201); }
     if (u.pathname === `/customer/campaigns/${CID}` && m === 'GET') return json({ campaign: camp(names.length + 1, names) });
     return json({}, 404);

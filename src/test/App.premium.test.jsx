@@ -2,7 +2,7 @@
 // All network is mocked with the backend's real request/response shapes. These are NOT deployed or staging proof.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { FONZO_PLAN } from "./fonzoPlanFixture";
+import { FONZO_PLAN, planForCampaign } from "./fonzoPlanFixture";
 import App from "../App";
 
 const getCustomerSessionMock = vi.fn();
@@ -496,7 +496,7 @@ describe("recommendation, campaign and review safety inside the premium shell", 
 
   it("launch-week plan: with the flag on, builds a plan, adds eight drafts with stable keys and never prices, generates, approves or schedules", async () => {
     vi.stubEnv("VITE_CONTENT_PLAN_API", "true");
-    handlers["GET /customer/campaigns/*/content-plan"] = () => ok({ plan: { ...FONZO_PLAN, campaign_id: CID } });
+    handlers["GET /customer/campaigns/*/content-plan"] = () => ok({ plan: planForCampaign(FONZO_PLAN, CID) });
     await toStudioWithRecommendation();
     fireEvent.click(button(/continue in campaign studio/i));
     fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
@@ -512,7 +512,7 @@ describe("recommendation, campaign and review safety inside the premium shell", 
     await screen.findByText(/8 items added as drafts/i);
     const adds = called("POST", "/content-items").slice(before);
     expect(adds).toHaveLength(8);
-    expect(adds.map((c) => JSON.parse(c.options.body).idempotency_key)).toEqual(FONZO_PLAN.items.map((i) => `plan:launch-week-7d.v1:${CID}:${i.plan_item}`));
+    expect(adds.map((c) => JSON.parse(c.options.body).idempotency_key)).toEqual(FONZO_PLAN.items.map((i) => `plan:launch-week-7d.v1:2026-12-07:${CID}:${i.plan_item}`));
     expect(adds.every((c) => JSON.parse(c.options.body).initial_content.asset_refs.length === 0)).toBe(true);
     for (const forbidden of ["/generation-quotes", "/confirm", "/schedule", "/approval", "/preview-acknowledgements", "/social"]) expect(calls.some((c) => c.method === "POST" && c.path.includes(forbidden))).toBe(false);
   });

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { addPlanItems, creditNeeds, fetchContentPlan, validatePlan } from "./contentPlanClient";
-import { FONZO_CAMPAIGN_ID, FONZO_PLAN } from "../test/fonzoPlanFixture";
+import { addPlanItems, creditNeeds, fetchContentPlan, isRealDate, validatePlan } from "./contentPlanClient";
+import { FONZO_CAMPAIGN_ID, FONZO_PLAN, FONZO_PLAN_NEXT_WEEK } from "../test/fonzoPlanFixture";
 
 const scope = { tenantId: "t", projectId: "p" };
 const base = { apiBaseUrl: "http://api.test", accessToken: "synthetic", scope };
@@ -53,7 +53,8 @@ describe("content plan client", () => {
     const posts = api.calls.filter((c) => c.method === "POST");
     expect(posts).toHaveLength(8);
     expect(posts.every((c) => /\/content-items$/.test(c.url))).toBe(true);
-    expect(posts.map((c) => c.body.idempotency_key)).toEqual(FONZO_PLAN.items.map((i) => `plan:launch-week-7d.v1:${FONZO_CAMPAIGN_ID}:${i.plan_item}`));
+    expect(posts.map((c) => c.body.idempotency_key)).toEqual(FONZO_PLAN.items.map((i) => `plan:launch-week-7d.v1:2026-12-07:${FONZO_CAMPAIGN_ID}:${i.plan_item}`));
+    expect(posts.every((c) => c.body.name.startsWith("Week of 2026-12-07 · "))).toBe(true);
     expect(posts.every((c) => c.body.initial_content.asset_refs.length === 0 && c.body.initial_content.body.includes("Fonzo"))).toBe(true);
     expect(posts.map((c) => c.body.expected_campaign_version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(api.calls.some((c) => /generation-quotes|confirm|schedule|approval|social/.test(c.url))).toBe(false);
@@ -79,5 +80,59 @@ describe("content plan client", () => {
     expect(r.campaign.items).toHaveLength(2);
     const done = await addPlanItems({ ...base, campaign: r.campaign, plan: FONZO_PLAN, fetchImpl: api.fetchImpl });
     expect(done.failed).toBeNull(); expect(api.items).toHaveLength(8);
+  });
+
+  it("rejects impossible dates and any plan whose week identity is inconsistent (fail closed)", () => {
+    for (const bad of ["2026-02-30", "2026-13-45", "2027-02-29", "2026-1-5", "", null, 20261207]) expect(isRealDate(bad)).toBe(false);
+    for (const good of ["2026-12-07", "2028-02-29"]) expect(isRealDate(good)).toBe(true);
+    const clone = () => structuredClone(FONZO_PLAN);
+    const mutate = (fn) => { const p = clone(); fn(p); return p; };
+    for (const bad of [
+      mutate((p) => { p.start_date = "2026-02-30"; }),
+      mutate((p) => { p.start_date = "2026-12-14"; }),                                  // week no longer matches names/keys
+      mutate((p) => { p.plan_id = "launch-week-7d.v1:2026-12-14"; }),
+      mutate((p) => { p.items[0].idempotency_key = p.items[0].idempotency_key.replace("2026-12-07", "2026-12-14"); }),
+      mutate((p) => { p.items[0].idempotency_key = `plan:launch-week-7d.v1:2026-12-07:${FONZO_CAMPAIGN_ID}:99`; }),
+      mutate((p) => { delete p.items[0].idempotency_key; }),
+      mutate((p) => { p.items[1].idempotency_key = p.items[0].idempotency_key; }),
+      mutate((p) => { p.items[0].content_item.name = "Day 1 · Meet the brand (Instagram image)"; }), // no week in the saved name
+      mutate((p) => { p.items[1].content_item.name = p.items[0].content_item.name; }),
+      mutate((p) => { p.pack = "bad pack!"; }),
+    ]) expect(() => validatePlan(bad, FONZO_CAMPAIGN_ID)).toThrow(/could not be checked/);
+    expect(validatePlan(FONZO_PLAN_NEXT_WEEK, FONZO_CAMPAIGN_ID)).toBe(FONZO_PLAN_NEXT_WEEK);
+  });
+  it("a different start date adds a second week with no name or key collision; the same week replays exactly", async () => {
+    const api = fakeApi();
+    const w1 = await addPlanItems({ ...base, campaign: campaign0, plan: FONZO_PLAN, fetchImpl: api.fetchImpl });
+    expect(w1).toMatchObject({ added: 8, skipped: 0, failed: null });
+    const w2 = await addPlanItems({ ...base, campaign: w1.campaign, plan: FONZO_PLAN_NEXT_WEEK, fetchImpl: api.fetchImpl });
+    expect(w2).toMatchObject({ added: 8, skipped: 0, failed: null });          // next week is NOT mistaken for already-added items
+    expect(api.items).toHaveLength(16); expect(new Set(api.items.map((i) => i.name)).size).toBe(16);
+    const posts = api.calls.filter((c) => c.method === "POST");
+    expect(posts).toHaveLength(16); expect(new Set(posts.map((c) => c.body.idempotency_key)).size).toBe(16);
+    expect(posts.slice(8).every((c) => c.body.name.startsWith("Week of 2026-12-14 · ") && c.body.idempotency_key.includes(":2026-12-14:"))).toBe(true);
+    // Same-week replays (either week) skip every item and send nothing.
+    const before = api.calls.length;
+    expect(await addPlanItems({ ...base, campaign: w2.campaign, plan: FONZO_PLAN, fetchImpl: api.fetchImpl })).toMatchObject({ added: 0, skipped: 8, failed: null });
+    expect(await addPlanItems({ ...base, campaign: w2.campaign, plan: FONZO_PLAN_NEXT_WEEK, fetchImpl: api.fetchImpl })).toMatchObject({ added: 0, skipped: 8, failed: null });
+    expect(api.calls.length).toBe(before); expect(api.items).toHaveLength(16);
+  });
+  it("a stale-view retry of the same week (campaign object not refreshed) is still exact: the server key makes it a replay, not a duplicate", async () => {
+    const api = fakeApi();
+    await addPlanItems({ ...base, campaign: campaign0, plan: FONZO_PLAN, fetchImpl: api.fetchImpl });
+    const again = await addPlanItems({ ...base, campaign: campaign0, plan: FONZO_PLAN, fetchImpl: api.fetchImpl }); // stale: still sees zero items
+    expect(again.failed).toBeNull(); expect(api.items).toHaveLength(8);
+  });
+  it("partial failure and a lost response in the second week keep week one intact and retry without duplicates", async () => {
+    for (const mode of [{ failAt: 12 }, { lose: 12 }]) {
+      const api = fakeApi(mode);
+      const w1 = await addPlanItems({ ...base, campaign: campaign0, plan: FONZO_PLAN, fetchImpl: api.fetchImpl });
+      expect(w1.failed).toBeNull();
+      const w2 = await addPlanItems({ ...base, campaign: w1.campaign, plan: FONZO_PLAN_NEXT_WEEK, fetchImpl: api.fetchImpl });
+      expect(w2.failed).not.toBeNull(); expect(w2.added).toBe(3);              // week-2 items 1..3 saved; the fourth failed or was lost
+      expect(api.items.slice(0, 8).every((i) => i.name.startsWith("Week of 2026-12-07 · "))).toBe(true);
+      const done = await addPlanItems({ ...base, campaign: w2.campaign, plan: FONZO_PLAN_NEXT_WEEK, fetchImpl: api.fetchImpl });
+      expect(done.failed).toBeNull(); expect(api.items).toHaveLength(16); expect(new Set(api.items.map((i) => i.name)).size).toBe(16);
+    }
   });
 });

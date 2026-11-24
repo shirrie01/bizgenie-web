@@ -31,12 +31,12 @@ export default function ContentPlanPanel({ state, onLoad, onAdd, busy = false })
             <ul>{plan.strategy.objectives.map((o) => <li key={o}>{o}</li>)}</ul>
             <p><strong>{plan.totals.posts} posts</strong> · {plan.totals.images} images · {plan.totals.videos} videos. Credits needed, by kind: {Object.keys(needs).length ? Object.entries(needs).map(([k, n]) => `${n} × ${CLASS_LABEL[k] || k}`).join(", ") : "none"}. Your exact price for each item is shown before you confirm it.</p>
             <table className="ps-plan-table">
-              <caption>Seven-day plan ({plan.display_timezone})</caption>
+              <caption>Seven-day plan, week of {plan.start_date} ({plan.display_timezone})</caption>
               <thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Channel</th><th scope="col">Call to action</th></tr></thead>
               <tbody>{plan.items.map((i) => (
                 <tr key={i.plan_item}>
                   <td data-label="When">{when(i.schedule)}</td>
-                  <td data-label="Item">{i.content_item.name}{present.has(i.content_item.name) && <em> · added</em>}</td>
+                  <td data-label="Item">{i.display_name || i.content_item.name}{present.has(i.content_item.name) && <em> · added</em>}</td>
                   <td data-label="Channel">{PLATFORM[i.content_item.platform] || i.content_item.platform} {i.content_item.format}</td>
                   <td data-label="Call to action">{i.cta.label}{i.cta.source !== "brand_brain" && <small> (default, please confirm)</small>}</td>
                 </tr>))}</tbody>

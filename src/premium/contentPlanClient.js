@@ -9,15 +9,29 @@ export const isContentPlanApiEnabled = (env = import.meta.env) => featureEnabled
 export const PLAN_CONTRACT = "content-plan.v1";
 const scopeQuery = (scope) => new URLSearchParams({ tenant_id: scope.tenantId, project_id: scope.projectId });
 
-// Fail closed: anything that is not exactly the contract is not shown or added.
+// A real calendar date: it must round-trip through a UTC date (2026-02-30 is refused, never rolled into March).
+export function isRealDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split("-").map(Number); const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
+// Fail closed: anything that is not exactly the contract is not shown or added. Week identity is part of the contract: the plan names its week,
+// every saved name starts with that week and every idempotency key embeds pack, week, campaign and item number, so one week can never be mistaken
+// for another and a retry of the same week repeats exactly.
 export function validatePlan(plan, campaignId) {
   const bad = () => new CampaignApiError("The launch-week plan could not be checked. Nothing was added.", { kind: "invalid", code: "BAD_PLAN" });
   if (!plan || plan.contract_version !== PLAN_CONTRACT || plan.campaign_id !== campaignId || !Array.isArray(plan.items) || plan.items.length < 1 || plan.items.length > 20) throw bad();
+  if (typeof plan.pack !== "string" || !/^[A-Za-z0-9._-]{1,40}$/.test(plan.pack) || !isRealDate(plan.start_date) || plan.plan_id !== `${plan.pack}:${plan.start_date}`) throw bad();
+  const keys = new Set(), names = new Set();
   for (const item of plan.items) {
     const c = item && item.content_item;
     if (!c || !["text", "image", "video"].includes(c.format) || typeof c.name !== "string" || !c.name || typeof c.platform !== "string" || typeof c.placement !== "string" || typeof c.destination_label !== "string") throw bad();
     if (!item.initial_content || typeof item.initial_content.body !== "string" || !Array.isArray(item.initial_content.asset_refs) || item.initial_content.asset_refs.length) throw bad();
     if (!Number.isInteger(item.plan_item) || item.plan_item < 1) throw bad();
+    if (item.idempotency_key !== `plan:${plan.pack}:${plan.start_date}:${campaignId}:${item.plan_item}` || item.idempotency_key.length > 128 || !c.name.startsWith(`Week of ${plan.start_date} · `)) throw bad();
+    if (keys.has(item.idempotency_key) || names.has(c.name)) throw bad();
+    keys.add(item.idempotency_key); names.add(c.name);
   }
   return plan;
 }
@@ -45,7 +59,7 @@ export async function addPlanItems({ apiBaseUrl, accessToken, scope, campaign, p
     const have = new Set((current.items || []).map((i) => i.name));
     if (have.has(item.content_item.name)) { skipped += 1; onProgress({ done: added + skipped, total: plan.items.length, name: item.content_item.name, skipped: true }); continue; }
     try {
-      current = await addContentItem({ apiBaseUrl, accessToken, scope, campaign: current, ...camel(item.content_item), initialContent: item.initial_content, idempotencyKey: `plan:${plan.pack}:${campaign.campaign_id}:${item.plan_item}`, fetchImpl });
+      current = await addContentItem({ apiBaseUrl, accessToken, scope, campaign: current, ...camel(item.content_item), initialContent: item.initial_content, idempotencyKey: item.idempotency_key, fetchImpl });
       added += 1; onProgress({ done: added + skipped, total: plan.items.length, name: item.content_item.name, skipped: false });
     } catch (error) {
       // An unconfirmed network failure may have saved the item: re-read before reporting, so the screen never claims what the server did not say.
