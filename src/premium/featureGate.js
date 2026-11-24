@@ -3,11 +3,12 @@
 // verified in the manifest for the capability. Missing, malformed or unlisted evidence means OFF.
 import { API_COMPATIBILITY } from "./apiCompatibility";
 
-export const CAPABILITIES = Object.freeze(["quotedGeneration", "workspaceCalendar", "mediaIntake", "social", "learning", "commercialCatalogue", "creditPreview", "billingManagement", "professionalSector", "copyRevisions", "founderCampaignRoot"]);
+export const CAPABILITIES = Object.freeze(["quotedGeneration", "workspaceCalendar", "mediaIntake", "social", "learning", "commercialCatalogue", "creditPreview", "billingManagement", "professionalSector", "copyRevisions", "founderCampaignRoot", "contentPlan"]);
 const PROVIDERS = ["instagram", "facebook", "linkedin", "tiktok", "youtube"];
 // Each customer-facing feature: its build flag and the backend capability it depends on.
 export const FEATURES = Object.freeze({
   founderCampaignRoot: { flag: "VITE_FOUNDER_CAMPAIGN_ROOT_API", capability: "founderCampaignRoot" },
+  contentPlan: { flag: "VITE_CONTENT_PLAN_API", capability: "contentPlan" },
   copyEditing: { flag: "VITE_COPY_EDIT_API", capability: "copyRevisions" },
   generationQuote: { flag: "VITE_GENERATION_QUOTE_API", capability: "quotedGeneration" },
   customerMedia: { flag: "VITE_CUSTOMER_MEDIA_API", capability: "quotedGeneration" },

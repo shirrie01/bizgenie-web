@@ -370,6 +370,17 @@
    "ui_when_unavailable": "Editor hidden until the authenticated revision contract is verified",
    "owner": "Codex API and Studio copy correction",
    "decision_needed": "Required journey remains blocked until dependent API source, secure route transport and hosted acceptance are approved; existing R1 bridge remains unchanged."
+  },
+  {
+   "routes": [
+    "GET /customer/campaigns/:id/content-plan"
+   ],
+   "purpose": "Plan a seven-day launch week from the campaign and Brand Brain (read-only)",
+   "studio_gate": "VITE_CONTENT_PLAN_API + verified contentPlan capability (OFF until the serving API revision is listed)",
+   "launch_class": "E",
+   "risk": "read; no provider, credit or write path",
+   "ui_when_unavailable": "The plan panel is not shown",
+   "owner": "Claude (API read route and Studio panel); Codex review"
   }
  ]
 }

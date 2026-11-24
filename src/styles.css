@@ -320,6 +320,20 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .ps-creative { margin-top: 12px; border: 1px solid var(--ps-line, #d9d4cc); border-radius: 8px; padding: 8px 12px; }
 .ps-creative > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
 .ps-creative-form, .ps-creative-job { display: grid; gap: 8px; margin-top: 8px; }
+/* Launch-week plan (BG-FOUNDER-E2E-FINAL-01): a table on wide screens, labelled stacked rows on narrow ones (no horizontal scroll). */
+.ps-plan-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 8px; min-width: 0; }
+.ps-plan-body > * { min-width: 0; }
+.ps-plan-note { margin: 0; overflow-wrap: anywhere; }
+.ps-plan-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.ps-plan-table caption { text-align: left; font-weight: 600; padding: 4px 0; }
+.ps-plan-table th, .ps-plan-table td { text-align: left; padding: 8px 10px; vertical-align: top; border-bottom: 1px solid var(--ps-line, #d9d4cc); overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .ps-plan-table thead { position: absolute; left: -9999px; }
+  .ps-plan-table, .ps-plan-table tbody, .ps-plan-table tr, .ps-plan-table td { display: block; width: 100%; }
+  .ps-plan-table tr { border: 1px solid var(--ps-line, #d9d4cc); border-radius: 8px; padding: 6px 8px; margin-bottom: 8px; }
+  .ps-plan-table td { border: 0; padding: 3px 2px; }
+  .ps-plan-table td::before { content: attr(data-label); display: block; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #4b564f; }
+}
 .ps-creative-form fieldset { border: 1px solid var(--ps-line, #d9d4cc); border-radius: 8px; min-width: 0; }
 .ps-radio { display: flex; gap: 8px; align-items: flex-start; overflow-wrap: anywhere; }
 .ps-creative-output { margin: 0; max-width: 100%; }

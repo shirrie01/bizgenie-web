@@ -93,7 +93,7 @@
     "GET",
     "HEAD"
    ],
-   "path": "/customer/campaigns/{U}/(?:calendar|measurements|publication-history)"
+   "path": "/customer/campaigns/{U}/(?:calendar|measurements|publication-history|content-plan)"
   },
   {
    "methods": [
