@@ -40,3 +40,5 @@ A read-only, non-sensitive **capability report** the WEB can use instead of a ha
 ## R2 root-only source preparation
 
 `VITE_FOUNDER_CAMPAIGN_ROOT_API` requires exact-serving-revision `founderCampaignRoot` capability evidence. Both remain OFF/unlisted until separately reviewed R2 release. This path posts only the pinned campaign root, no content items. An ambiguous response triggers scoped GET discovery, never infers identity from a matching name, and an explicit retry replays the SAME fixed key/body. No activation or Step7 change.
+
+`VITE_CONTENT_PLAN_API` (capability `contentPlan`) gates the read-only launch-week plan panel (BG-FOUNDER-E2E-FINAL-01). It needs the exact serving API revision listed with `contentPlan` evidence, and the staging bridge must carry `GET /customer/campaigns/:id/content-plan` (API change in the same programme). It adds items only through the existing content-item route; it never prices, generates, approves, schedules or publishes. Unlisted today: OFF.
