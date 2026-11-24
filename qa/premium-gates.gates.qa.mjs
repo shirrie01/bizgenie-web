@@ -156,7 +156,8 @@ test('credit cost: a read-only price preview is shown as the current price (not 
   expect(log.calls.some((c) => c.endsWith('/generate'))).toBe(false);
   await checks(page, 'preview');
   await page.getByRole('button', { name: 'Generate now' }).click();
-  await expect(page.getByText(/review/i).first()).toBeVisible();
+  // The plan disclosure also contains hidden 'review' text; assert the generated item's actual review control.
+  await expect(page.getByRole('group', { name: 'Review Instagram', exact: true })).toBeVisible();
   await expect.poll(() => log.bodies[`POST /customer/campaigns/${CID}/variants/v1/generate`]).toBeTruthy();
   expect(Object.keys(log.bodies[`POST /customer/campaigns/${CID}/variants/v1/generate`])).not.toContain('quote_id'); // the backend body is strict
 });
