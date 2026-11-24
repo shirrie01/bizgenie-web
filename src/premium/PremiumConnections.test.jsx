@@ -109,6 +109,16 @@ describe("PremiumConnections", () => {
     const complete = vi.fn(); render(<PremiumConnections enabled session={session} scope={scope} isOwner={false} search={`?code=abc&state=${ST}`} api={{ fetchConnections: async () => conns([]), fetchDispatches: none, completeConnect: complete }} />);
     await screen.findByText("No accounts are connected yet."); expect(complete).not.toHaveBeenCalled();
   });
+  it("BG-SOCIAL-LAUNCH-CLOSURE-01: only the owner is offered Renew, only on a renewable connection, and a lapsed renewable access is 'Needs renewing' not a forced sign-in", async () => {
+    const ren = vi.fn(async () => ({ connectionId: "t1" }));
+    const list = [C({ connection_id: "t1", platform: "tiktok", account_id: "tt", status: "expired", refreshable: true }), C({ connection_id: "l1", platform: "linkedin", account_id: "li", refreshable: false })];
+    const { unmount } = render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns(list), fetchDispatches: none, refreshConnection: ren }} />);
+    expect(await screen.findByText("Needs renewing")).toBeInTheDocument(); expect(screen.getAllByRole("button", { name: /^Renew / })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Renew tt" })); expect(await screen.findByText(/was renewed/)).toBeInTheDocument();
+    expect(ren).toHaveBeenCalledTimes(1); expect(ren.mock.calls[0][0].connectionId).toBe("t1"); unmount();
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner={false} search="" api={{ fetchConnections: async () => conns(list), fetchDispatches: none, refreshConnection: ren }} />);
+    await screen.findByText("Needs renewing"); expect(screen.queryByRole("button", { name: /^Renew / })).toBeNull();
+  });
   it("disconnect asks first and says published posts stay", async () => {
     const dis = vi.fn(async () => ({ connectionId: "c1" }));
     render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C()]), fetchDispatches: none, disconnect: dis }} />);

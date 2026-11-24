@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { SocialError, cancelDispatch, completeConnect, connectableProviders, disconnect, enqueueDispatch, fetchConnections, fetchDispatches, fetchPublishingCalendar, isSocialApiEnabled, newPkce, normaliseCalendar, normaliseConnections, normaliseDispatches, startConnect } from "./socialClient";
+import { SocialError, cancelDispatch, completeConnect, connectableProviders, disconnect, enqueueDispatch, fetchConnections, fetchDispatches, fetchPublishingCalendar, isSocialApiEnabled, newPkce, normaliseCalendar, refreshConnection, normaliseConnections, normaliseDispatches, startConnect } from "./socialClient";
 
 // FIXTURE tests of the adapter against the #218 /customer/social shapes; the same shapes are asserted against the real backend in qa/integration/backend218.
 const scope = { tenantId: "t1", projectId: "p1", brandId: "b1" };
@@ -187,4 +187,12 @@ describe("Studio-hosted staging callback is accepted only on the reviewed origin
       for (const redirect of bad) await expect(start(provider, redirect), redirect).rejects.toMatchObject({ code: "BAD_URL" });
     });
   }
+  it("BG-SOCIAL-LAUNCH-CLOSURE-01 refreshConnection: posts to the owner route, accepts only a confirmed renewal, explains refusal, and the connection flag is strict", async () => {
+    const f = reply(200, { status: "refreshed" }); expect(await refreshConnection({ apiBaseUrl: "http://a", accessToken: "t", scope, connectionId: "c1", fetchImpl: f })).toEqual({ connectionId: "c1" });
+    expect(f.mock.calls[0][0]).toBe("http://a/customer/social/connections/c1/refresh"); expect(f.mock.calls[0][1].method).toBe("POST");
+    await expect(refreshConnection({ apiBaseUrl: "h", accessToken: "t", scope, connectionId: "c1", fetchImpl: reply(200, {}) })).rejects.toMatchObject({ kind: "unconfirmed" });
+    await expect(refreshConnection({ apiBaseUrl: "h", accessToken: "t", scope, connectionId: "c1", fetchImpl: reply(503, { error: { code: "REFRESH_NOT_AVAILABLE" } }) })).rejects.toMatchObject({ kind: "conflict", code: "REFRESH_NOT_AVAILABLE" });
+    await expect(refreshConnection({ apiBaseUrl: "h", accessToken: "t", scope, connectionId: "c1", fetchImpl: vi.fn().mockRejectedValue(new Error("x")) })).rejects.toMatchObject({ kind: "unconfirmed" });
+    expect(normaliseConnections({ connections: [conn({ refreshable: true }), conn({ connection_id: "c2", refreshable: "yes" })] }).connections.map((c) => c.refreshable)).toEqual([true, false]);
+  });
 });
