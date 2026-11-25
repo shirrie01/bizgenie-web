@@ -251,3 +251,27 @@ describe("PremiumInsights (canonical performance-evidence models)", () => {
     expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull(); // an uploaded draft cannot be cancelled by BizGenie
   });
 });
+
+describe("W1 founder bridge preserves connection lifecycle", () => {
+  it("keeps TikTok and LinkedIn connection controls and authorised TikTok renewal without dispatch", async () => {
+    vi.stubEnv("VITE_API_ROUTE_LIMITS", "bridge-founder-release04");
+    vi.stubEnv("VITE_SOCIAL_PROVIDERS", "tiktok,linkedin");
+    const renew = vi.fn(async () => ({ connectionId: "t1" }));
+    try {
+      const empty = render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([]), fetchDispatches: none }} />);
+      expect(await screen.findByRole("button", { name: "Connect TikTok" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Connect LinkedIn" })).toBeInTheDocument();
+      empty.unmount();
+      render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([
+        C({ connection_id: "t1", platform: "tiktok", account_id: "tt", status: "expired", refreshable: true }),
+        C({ connection_id: "l1", platform: "linkedin", account_id: "li", refreshable: false }),
+      ]), fetchDispatches: none, refreshConnection: renew }} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Renew tt" }));
+      expect(await screen.findByText(/was renewed/)).toBeInTheDocument();
+      expect(renew).toHaveBeenCalledTimes(1);
+      expect(renew.mock.calls[0][0].connectionId).toBe("t1");
+      expect(screen.queryByRole("button", { name: "Renew li" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /send as a draft|publish/i })).toBeNull();
+    } finally { vi.unstubAllEnvs(); }
+  });
+});

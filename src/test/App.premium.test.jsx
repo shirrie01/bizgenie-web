@@ -2376,3 +2376,30 @@ describe("the read-only price preview before a text draft (BG-STUDIO-021-FE; MOC
     expect(screen.queryByText(/Create the image for this post/)).toBeNull();
   });
 });
+
+// W1: connection capability does not imply founder-bridge dispatch permission.
+describe("founder release04 TikTok dispatch compatibility", () => {
+  it.each([
+    ["bridge-founder-release04", false],
+    ["", true],
+    ["direct-api", true],
+  ])("scheduled TikTok draft action under profile %j has visibility %s", async (profile, visible) => {
+    vi.stubEnv("VITE_API_ROUTE_LIMITS", profile);
+    vi.stubEnv("VITE_SOCIAL_ACCOUNTS_API", "true");
+    handlers["GET /customer/workspace"] = () => ok({ status: "ready", workspace: { tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a", membership_role: "owner" } });
+    const campaign = campaignDoc(7, 1, "scheduled");
+    Object.assign(campaign.items[0].variants[0], { platform: "tiktok", current_schedule: { schedule_id: "schedule-1", scheduled_for: "2099-01-15T10:00:00.000Z", timezone: "Europe/London" } });
+    handlers["GET /customer/campaigns"] = () => ok({ campaigns: [{ campaign_id: CID, name: campaign.name, status: "active" }] });
+    handlers[`GET /customer/campaigns/${CID}`] = () => ok({ campaign });
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Campaign Studio", exact: true }));
+    await screen.findByText("Server persisted review copy");
+    // Resolve the actual lazy component before asserting absence; no timer or sleep.
+    await act(async () => { await import("../premium/SendDraftToTikTok"); });
+    if (visible) expect(await screen.findByRole("group", { name: "Send to TikTok as a draft" })).toBeInTheDocument();
+    else expect(screen.queryByRole("group", { name: "Send to TikTok as a draft" })).toBeNull();
+    expect(calls.filter((c) => c.method !== "GET")).toEqual([]);
+    expect(calls.some((c) => /\/dispatches|\/checkout|\/confirm/.test(c.path) && c.method === "POST")).toBe(false);
+  });
+});
