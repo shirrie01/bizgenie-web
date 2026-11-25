@@ -61,7 +61,7 @@ export function normaliseConnection(c) {
   if (!c || !str(c.connection_id) || !PROVIDERS.includes(c.platform) || !str(c.account_id) || !Object.hasOwn(CONNECTION_STATUS, c.status) || !Number.isFinite(Date.parse(c.expires_at)) || !Number.isInteger(c.version)) return null;
   // display_name is verified connector output, shown as TEXT only (max 200, no control characters); otherwise the account id stands in.
   const display = typeof c.display_name === "string" && c.display_name.trim().length > 0 && c.display_name.length <= 200 && !/[\u0000-\u001f\u007f]/.test(c.display_name) ? c.display_name.trim() : "";
-  return { id: c.connection_id, provider: c.platform, accountId: c.account_id, displayName: display, name: display || c.account_id, status: CONNECTION_STATUS[c.status], expiresAt: c.expires_at, version: c.version, capabilities: normaliseCapabilities(c.capabilities) };
+  return { id: c.connection_id, provider: c.platform, accountId: c.account_id, displayName: display, name: display || c.account_id, status: CONNECTION_STATUS[c.status], expiresAt: c.expires_at, version: c.version, refreshable: c.refreshable === true, capabilities: normaliseCapabilities(c.capabilities) };
 }
 export function normaliseConnections(b) {
   if (!b || !Array.isArray(b.connections)) throw bad();
@@ -107,6 +107,7 @@ const CODES = {
   SOCIAL_NOT_CONFIGURED: ["unavailable", "Connecting social accounts is not switched on for this workspace yet. Nothing was changed."],
   OAUTH_CONFIGURATION_UNAVAILABLE: ["unavailable", "This platform connection is not set up yet. Nothing was changed."],
   OAUTH_PROVIDER_UNAVAILABLE: ["unconfirmed", "The platform did not give a clear answer, and this sign-in attempt is now finished. Check your connected accounts before starting again."],
+  REFRESH_NOT_AVAILABLE: ["conflict", "This connection cannot be renewed here. Reconnect the account to continue."],
   PUBLICATION_ALREADY_STARTED: ["conflict", "That post has already started publishing, so it cannot be cancelled."],
 };
 async function post(fetchImpl, url, token, payload, what) {
@@ -170,6 +171,12 @@ export async function completeConnect({ apiBaseUrl, accessToken, scope, pending,
 export async function disconnect({ apiBaseUrl, accessToken, scope, connectionId, fetchImpl = (...a) => fetch(...a) }) {
   const c = normaliseConnection(await post(fetchImpl, u(apiBaseUrl, `/connections/${encodeURIComponent(connectionId)}/disconnect`), accessToken, body(scope), "Disconnecting"));
   if (!c || c.status !== "revoked") throw new SocialError("The disconnection could not be confirmed. Check your connected accounts.", { kind: "unconfirmed" });
+  return { connectionId };
+}
+// Owner-only: ask the platform for a fresh permission without sending the owner back through sign-in. The server does the work; nothing secret reaches the browser.
+export async function refreshConnection({ apiBaseUrl, accessToken, scope, connectionId, fetchImpl = (...a) => fetch(...a) }) {
+  const r = await post(fetchImpl, u(apiBaseUrl, `/connections/${encodeURIComponent(connectionId)}/refresh`), accessToken, body(scope), "Renewing the connection");
+  if (!r || r.status !== "refreshed") throw new SocialError("The renewal could not be confirmed. Check your connected accounts.", { kind: "unconfirmed" });
   return { connectionId };
 }
 export async function enqueueDispatch({ apiBaseUrl, accessToken, scope, connectionId, campaignId, variantId, scheduleId, expectedCampaignVersion, fetchImpl = (...a) => fetch(...a) }) {

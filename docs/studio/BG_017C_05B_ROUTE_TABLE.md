@@ -4,10 +4,15 @@
 
 Launch classes: **A** mandatory first-paying-customer operation · **B** required, but through a separate first-party secure route with its own approved contract · **C** explicitly deferred or disabled, with truthful Studio wording · **E** extra, not needed for the first paying customer.
 
+## Release-04 candidate interpretation
+
+The extracted allowlist on this integration branch includes the existing copy-revision route. A `carried` cell describes source routing only: the new founder-only copy permission defaults OFF and needs a separately accepted release profile, verified serving revision and WEB capability evidence. It does not describe the deployed R1 bridge. Historical public-callback and commercial decisions below are not reopened; the release-04 OAuth path uses the WEB callback followed by authenticated completion, never an anonymous private-API relay.
+
 ## Result in one paragraph
 Of the 63 routes in 29 rows, **every mandatory (A) route is now carried by the bridge**, including `POST /billing/stripe/checkout` (added in API PR #229 at `86b39d70`; request `{tenant_id, plan_code, request_id}`, Supabase bearer only; plan→price, return URLs and owner membership decided server-side). Checkout is gated OFF twice: the bridge (`BG_BRIDGE_ALLOW_STRIPE_CHECKOUT`, default false → `403 STRIPE_CHECKOUT_DISABLED`) and the Studio (a bridge-marked build makes no checkout request). Both need a separate Stripe test-mode approval. Manual publication is class C pending a founder decision on whether it is part of the first paying customer's journey. Billing management/invoices, insights, uploads, social writes and the provider OAuth callback are deferred (C), with the callback needing a separate decision because it is an unauthenticated provider redirect that must reach the API host and not the bridge.
 
 <!-- ROUTE_TABLE_START -->
+
 | # | Method and route | Business purpose | Studio gate | In the bridge | Auth | Cost / write risk | Launch class (#128) | Owner / decision |
 |---|---|---|---|---|---|---|---|---|
 | 1 | `GET /customer/workspace` | Find the customer's workspace | always | carried | Supabase bearer, tenant-scoped | read | **A** | Codex route; Claude UI |
@@ -73,7 +78,9 @@ Of the 63 routes in 29 rows, **every mandatory (A) route is now carried by the b
 | 61 | `GET /customer/assets/:id/preview` | Customer media uploads | VITE_CUSTOMER_MEDIA_INTAKE_API (off); DELETE also VITE_CUSTOMER_MEDIA_DELETE_API | carried | Supabase bearer, tenant-scoped | write; no malware scanner exists | **C** | Codex route; Claude UI |
 | 62 | `DELETE /customer/assets/:id` | Customer media uploads | VITE_CUSTOMER_MEDIA_INTAKE_API (off); DELETE also VITE_CUSTOMER_MEDIA_DELETE_API | carried | Supabase bearer, tenant-scoped | write; no malware scanner exists | **C** | Codex route; Claude UI |
 | 63 | `POST /customer/campaigns/:id/variants/:id/generate` | Legacy generation route (answers 428 without a quote) | legacy | **NOT carried** | Supabase bearer, tenant-scoped | COST if ever enabled | **C** | Codex route; Claude UI |
-| 64 | `POST /customer/campaigns/:id/variants/:id/revisions` | Correct draft customer copy and CTA with immutable revision history | VITE_COPY_EDIT_API plus verified copyRevisions capability; OFF through bridge-v1 | **NOT carried** | Supabase bearer, tenant-scoped | write: new draft; revokes active approval and cancels planned publication; no generation | **B** | Codex API and Studio copy correction. Decision: Required journey remains blocked until dependent API source, secure route transport and hosted acceptance are approved; existing R1 bridge remains unchanged. |
+| 64 | `POST /customer/campaigns/:id/variants/:id/revisions` | Correct draft customer copy and CTA with immutable revision history | VITE_COPY_EDIT_API plus verified copyRevisions capability; OFF through bridge-v1 | carried | Supabase bearer, tenant-scoped | write: new draft; revokes active approval and cancels planned publication; no generation | **B** | Codex API and Studio copy correction. Decision: Required journey remains blocked until dependent API source, secure route transport and hosted acceptance are approved; existing R1 bridge remains unchanged. |
+| 65 | `GET /customer/campaigns/:id/content-plan` | Plan a seven-day launch week from the campaign and Brand Brain (read-only) | VITE_CONTENT_PLAN_API + verified contentPlan capability (OFF until the serving API revision is listed) | carried | Supabase bearer, tenant-scoped | read; no provider, credit or write path | **E** | Claude (API read route and Studio panel); Codex review |
+
 <!-- ROUTE_TABLE_END -->
 
 ## How the Studio behaves where the bridge does not carry a route

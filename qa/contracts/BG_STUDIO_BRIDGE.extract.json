@@ -93,7 +93,7 @@
     "GET",
     "HEAD"
    ],
-   "path": "/customer/campaigns/{U}/(?:calendar|measurements|publication-history)"
+   "path": "/customer/campaigns/{U}/(?:calendar|measurements|publication-history|content-plan)"
   },
   {
    "methods": [
@@ -113,7 +113,7 @@
    "methods": [
     "POST"
    ],
-   "path": "/customer/campaigns/{U}/variants/{U}/(?:review|preview-renders|preview-acknowledgements|approval|schedule|reschedule|unschedule|measurements)"
+   "path": "/customer/campaigns/{U}/variants/{U}/(?:review|preview-renders|preview-acknowledgements|approval|schedule|reschedule|unschedule|measurements|revisions)"
   },
   {
    "methods": [

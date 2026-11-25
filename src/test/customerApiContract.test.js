@@ -19,6 +19,7 @@ const matches = (path, tmpl) => { const a = segs(path), b = segs(tmpl); return a
 
 // Studio source paths. Anything outside the contract must be named here with its reason, so a new, undocumented call fails this test.
 const OUTSIDE_CONTRACT = {
+  "/customer/campaigns/:id/content-plan": "BG-FOUNDER-E2E-FINAL-01 read-only launch-week plan; additive route, gated OFF (VITE_CONTENT_PLAN_API + verified contentPlan capability)",
   "/customer/campaigns/:id/variants/:id/revisions": "Additive customer copy-revision contract in BG-LAUNCH-CRITICAL-FIXES-01; gated OFF until the dependent API source and route are hosted and verified.",
   // Used in the first-customer journey and implemented in API #226, but absent from the contract (for Codex to add):
   "/customer/workspace/bootstrap": "workspace creation (POST); implemented, tested in API #226",

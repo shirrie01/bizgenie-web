@@ -2,6 +2,7 @@
 // All network is mocked with the backend's real request/response shapes. These are NOT deployed or staging proof.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { FONZO_PLAN, planForCampaign } from "./fonzoPlanFixture";
 import App from "../App";
 
 const getCustomerSessionMock = vi.fn();
@@ -482,6 +483,38 @@ describe("recommendation, campaign and review safety inside the premium shell", 
     expect(recs[0].options.headers.authorization).toBe("Bearer token-a");
     expect(screen.getByText(/nothing has been created, scheduled or published/i)).toBeInTheDocument();
     expect(called("POST", "/campaigns")).toHaveLength(0);
+  });
+
+  it("launch-week plan (BG-FOUNDER-E2E-FINAL-01): hidden unless its flag is on; when on it adds drafts through the content-item route only", async () => {
+    await toStudioWithRecommendation();
+    fireEvent.click(button(/continue in campaign studio/i));
+    fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    await screen.findByText(/add an image or video to this campaign/i); // the neighbouring control has rendered, so absence here is real
+    expect(screen.queryByText(/plan a launch week for this campaign/i)).toBeNull();
+  });
+
+  it("launch-week plan: with the flag on, builds a plan, adds eight drafts with stable keys and never prices, generates, approves or schedules", async () => {
+    vi.stubEnv("VITE_CONTENT_PLAN_API", "true");
+    handlers["GET /customer/campaigns/*/content-plan"] = () => ok({ plan: planForCampaign(FONZO_PLAN, CID) });
+    await toStudioWithRecommendation();
+    fireEvent.click(button(/continue in campaign studio/i));
+    fireEvent.click(await screen.findByRole("button", { name: /^create campaign$/i }));
+    await screen.findByText(/saved to your workspace/i);
+    fireEvent.click(await screen.findByText(/plan a launch week for this campaign/i));
+    fireEvent.change(screen.getByLabelText("First day of the week"), { target: { value: "2026-12-07" } });
+    fireEvent.click(button("Build my plan"));
+    await screen.findByRole("table", { name: /seven-day plan/i });
+    expect(called("GET", "/content-plan")).toHaveLength(1);
+    expect(called("GET", "/content-plan")[0].url).toMatch(/start_date=2026-12-07/);
+    const before = called("POST", "/content-items").length; // the recommendation flow already added its own starter item
+    fireEvent.click(await screen.findByRole("button", { name: /add 8 items to this campaign as drafts/i }));
+    await screen.findByText(/8 items added as drafts/i);
+    const adds = called("POST", "/content-items").slice(before);
+    expect(adds).toHaveLength(8);
+    expect(adds.map((c) => JSON.parse(c.options.body).idempotency_key)).toEqual(FONZO_PLAN.items.map((i) => `plan:launch-week-7d.v1:2026-12-07:${CID}:${i.plan_item}`));
+    expect(adds.every((c) => JSON.parse(c.options.body).initial_content.asset_refs.length === 0)).toBe(true);
+    for (const forbidden of ["/generation-quotes", "/confirm", "/schedule", "/approval", "/preview-acknowledgements", "/social"]) expect(calls.some((c) => c.method === "POST" && c.path.includes(forbidden))).toBe(false);
   });
 
   it("keeps preview, explicit acknowledgement and approval intact, and never implies publication", async () => {
@@ -2341,5 +2374,32 @@ describe("the read-only price preview before a text draft (BG-STUDIO-021-FE; MOC
     await toDraft();
     // the recommendation creates text items; media items appear only when added, and are covered in qa/integration
     expect(screen.queryByText(/Create the image for this post/)).toBeNull();
+  });
+});
+
+// W1: connection capability does not imply founder-bridge dispatch permission.
+describe("founder release04 TikTok dispatch compatibility", () => {
+  it.each([
+    ["bridge-founder-release04", false],
+    ["", true],
+    ["direct-api", true],
+  ])("scheduled TikTok draft action under profile %j has visibility %s", async (profile, visible) => {
+    vi.stubEnv("VITE_API_ROUTE_LIMITS", profile);
+    vi.stubEnv("VITE_SOCIAL_ACCOUNTS_API", "true");
+    handlers["GET /customer/workspace"] = () => ok({ status: "ready", workspace: { tenant_id: "tenant-a", project_id: "project-a", brand_id: "brand-a", membership_role: "owner" } });
+    const campaign = campaignDoc(7, 1, "scheduled");
+    Object.assign(campaign.items[0].variants[0], { platform: "tiktok", current_schedule: { schedule_id: "schedule-1", scheduled_for: "2099-01-15T10:00:00.000Z", timezone: "Europe/London" } });
+    handlers["GET /customer/campaigns"] = () => ok({ campaigns: [{ campaign_id: CID, name: campaign.name, status: "active" }] });
+    handlers[`GET /customer/campaigns/${CID}`] = () => ok({ campaign });
+    render(<App />);
+    await screen.findByRole("heading", { name: "Welcome back, Northgate Vehicle Leasing." });
+    fireEvent.click(within(screen.getByRole("navigation", { name: /workspace sections/i })).getByRole("button", { name: "Campaign Studio", exact: true }));
+    await screen.findByText("Server persisted review copy");
+    // Resolve the actual lazy component before asserting absence; no timer or sleep.
+    await act(async () => { await import("../premium/SendDraftToTikTok"); });
+    if (visible) expect(await screen.findByRole("group", { name: "Send to TikTok as a draft" })).toBeInTheDocument();
+    else expect(screen.queryByRole("group", { name: "Send to TikTok as a draft" })).toBeNull();
+    expect(calls.filter((c) => c.method !== "GET")).toEqual([]);
+    expect(calls.some((c) => /\/dispatches|\/checkout|\/confirm/.test(c.path) && c.method === "POST")).toBe(false);
   });
 });

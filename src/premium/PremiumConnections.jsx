@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { looksLikeOAuthReturn, readOAuthReturn, RETURN_MESSAGE } from "./oauthReturn";
-import { CAPABILITY_LABEL, PROVIDER_LABEL, connectableProviders, cancelDispatch as realCancel, completeConnect as realComplete, disconnect as realDisconnect, fetchConnections as realFetchConnections, fetchDispatches as realFetchDispatches, startConnect as realConnect } from "./socialClient";
+import { CAPABILITY_LABEL, PROVIDER_LABEL, connectableProviders, cancelDispatch as realCancel, completeConnect as realComplete, disconnect as realDisconnect, refreshConnection as realRefresh, fetchConnections as realFetchConnections, fetchDispatches as realFetchDispatches, startConnect as realConnect } from "./socialClient";
 
 // Connected social accounts and publishing status (BG-STUDIO-024-FE, real contract of bizgenie-api #218 /customer/social/*). With the build gate off this page
 // says exactly what BizGenie does today (publish by hand, then record it). With the gate on it shows only what the server reports; "Connected" and
@@ -64,6 +64,7 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, r
   const run = async (name, work) => { if (busy) return; setBusy(name); setMsg({ kind: "", text: "" }); try { await work(); } catch (e) { fail(e); if (live.current) setMsg({ kind: e.kind === "unconfirmed" ? "warn" : "error", text: e.message }); } finally { if (live.current) setBusy(""); } };
   const connect = (provider) => run(`c:${provider}`, async () => { const r = await (api.startConnect || realConnect)({ ...base, provider }); writePending({ ...r.pending, scope: { tenantId: scope.tenantId, projectId: scope.projectId, brandId: scope.brandId } }); setMsg({ kind: "ok", text: `Taking you to ${PROVIDER_LABEL[provider]} to give permission. The account shows as connected only after ${PROVIDER_LABEL[provider]} confirms it to BizGenie.` }); onRedirect(r.url); });
   const remove = (a) => run(`d:${a.id}`, async () => { await (api.disconnect || realDisconnect)({ ...base, connectionId: a.id }); setConfirming(""); setMsg({ kind: "ok", text: `${PROVIDER_LABEL[a.provider]} · ${a.name} was disconnected. Anything already published stays on the platform.` }); load(); });
+  const renew = (a) => run(`r:${a.id}`, async () => { await (api.refreshConnection || realRefresh)({ ...base, connectionId: a.id }); setMsg({ kind: "ok", text: `${PROVIDER_LABEL[a.provider]} · ${a.name} was renewed.` }); load(); });
   const cancel = (d) => run(`x:${d.id}`, async () => { await (api.cancelDispatch || realCancel)({ ...base, dispatchId: d.id }); setMsg({ kind: "ok", text: "That post was cancelled and will not be sent." }); load(); });
   const connectedProviders = new Set(conns.connections.filter((a) => a.status === "connected").map((a) => a.provider));
 
@@ -80,9 +81,10 @@ export default function PremiumConnections({ enabled, session, scope, isOwner, r
         <ul className="ps-conn-list" aria-label="Connected accounts">
           {conns.connections.map((a) => (
             <li key={a.id}>
-              <strong>{PROVIDER_LABEL[a.provider]}</strong> · {a.name} · <span>{STATUS_TEXT[a.status]}</span>
+              <strong>{PROVIDER_LABEL[a.provider]}</strong> · {a.name} · <span>{a.status === "needs_reauth" && a.refreshable ? "Needs renewing" : STATUS_TEXT[a.status]}</span>
               {a.status === "connected" && <small> · permission renews by {when(a.expiresAt)}</small>}
               {a.status === "needs_reauth" && <small> · permission ended {when(a.expiresAt)}</small>}
+              {a.status !== "revoked" && a.refreshable && isOwner && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => renew(a)} aria-label={`Renew ${a.name}`}>Renew</button>}
               {a.status === "needs_reauth" && isOwner && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => connect(a.provider)}>Reconnect</button>}
               {a.status === "connected" && a.capabilities && Object.entries(a.capabilities).some(([, v]) => !v.available) && (
                 <details className="ps-caps">

@@ -1,5 +1,6 @@
 import { createFounderCampaignRootClient } from "./premium/founderCampaignRootClient";
 import { featureEnabled as copyFeatureEnabled } from "./premium/featureGate";
+import { fetchContentPlan, addPlanItems } from "./premium/contentPlanClient";
 import BrandBrainProfile from "./BrandBrainProfile";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCustomerSession, refreshCustomerSession } from "./session";
@@ -35,6 +36,7 @@ import ApprovedCreative from "./ApprovedCreative";
 import { operationKey } from "./operationKey";
 function Lazy({ children }) { return <Suspense fallback={<span className="visually-hidden" role="status">Loading…</span>}>{children}</Suspense>; }
 const AddCreativeItem = lazy(() => import("./premium/AddCreativeItem"));
+const ContentPlanPanel = lazy(() => import("./premium/ContentPlanPanel"));
 const PremiumConnections = lazy(() => import("./premium/PremiumConnections"));
 const SendDraftToTikTok = lazy(() => import("./premium/SendDraftToTikTok"));
 const PremiumMedia = lazy(() => import("./premium/PremiumMedia"));
@@ -779,6 +781,31 @@ export default function App() {
       setAddItemState({ status: "error", error: error.message || "That could not be added yet. Nothing was changed.", notice: "" }); return { ok: false };
     }
   }
+  // Launch-week plan (BG-FOUNDER-E2E-FINAL-01): read-only plan, then add its items through the existing content-item route.
+  const [planState, setPlanState] = useState({ status: "idle", plan: null, error: "", progress: null, message: "", failed: false, existingNames: [] });
+  async function premiumLoadPlan(startDate) {
+    if (!campaignState.campaign) return; const scopeToken = scopeTokenRef.current;
+    setPlanState((cur) => ({ ...cur, status: "loading", error: "", message: "", failed: false }));
+    try {
+      const plan = await fetchContentPlan({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaignId: campaignState.campaign.campaign_id, startDate });
+      if (scopeToken !== scopeTokenRef.current) return;
+      setPlanState({ status: "ready", plan, error: "", progress: null, message: "", failed: false, existingNames: (campaignState.campaign.items || []).map((i) => i.name) });
+    } catch (error) {
+      if (scopeToken !== scopeTokenRef.current) return;
+      if (error.kind === "auth") setSessionEnded(true);
+      setPlanState((cur) => ({ ...cur, status: "error", error: error.message || "The launch-week plan could not be built yet. Nothing was changed." }));
+    }
+  }
+  async function premiumAddPlan(plan) {
+    if (!campaignState.campaign || planState.status === "adding") return; const scopeToken = scopeTokenRef.current;
+    setPlanState((cur) => ({ ...cur, status: "adding", error: "", progress: { done: 0, total: plan.items.length } }));
+    const result = await addPlanItems({ apiBaseUrl: API_BASE_URL, accessToken: session.accessToken, scope: adminScope(), campaign: campaignState.campaign, plan, onProgress: (p) => { if (scopeToken === scopeTokenRef.current) setPlanState((cur) => ({ ...cur, progress: p })); } });
+    if (scopeToken !== scopeTokenRef.current) return;
+    setCampaignState({ status: "ready", campaign: result.campaign, error: "" }); setCalendarState({ status: "idle", entries: [], error: "" }); setWorkspaceCalendarState(WS_CAL_IDLE);
+    const names = (result.campaign.items || []).map((i) => i.name);
+    if (result.failed) setPlanState((cur) => ({ ...cur, status: "ready", failed: true, existingNames: names, error: `${result.failed.message} ${result.added + result.skipped} of ${plan.items.length} items are in your campaign; nothing already added was lost.` }));
+    else setPlanState((cur) => ({ ...cur, status: "added", failed: false, existingNames: names, error: "", message: `${result.added} items added as drafts${result.skipped ? ` (${result.skipped} were already there)` : ""}. Nothing has been generated, priced, approved or scheduled yet.` }));
+  }
   async function premiumSaveCopy(variant, content, base) {
     const token=scopeTokenRef.current;if(!campaignState.campaign)return null;
     const updated=await saveCopyRevision({apiBaseUrl:API_BASE_URL,accessToken:session.accessToken,scope:adminScope(),campaign:{...campaignState.campaign,version:base.version},variant:{...variant,current_revision_id:base.revision},content});
@@ -1042,6 +1069,7 @@ export default function App() {
             <textarea id="execution-brief" maxLength={4000} value={executionBrief} onChange={(event) => setExecutionBrief(event.target.value)} placeholder="Temporary direction for this execution, e.g. focus on the founder story and keep the opening conversational." />
             <small>This brief applies only to this generation. It does not change your approved Brand Brain.</small>
           </div>
+          {premiumEnabled && !isReadOnlyRole(roleState.role) && copyFeatureEnabled("contentPlan") && <Lazy><ContentPlanPanel state={planState} busy={planState.status === "loading" || planState.status === "adding"} onLoad={premiumLoadPlan} onAdd={premiumAddPlan} /></Lazy>}
           {premiumEnabled && !isReadOnlyRole(roleState.role) && <Lazy><AddCreativeItem busy={addItemState.status === "working"} error={addItemState.error} notice={addItemState.notice} onAdd={premiumAddItem} loadConnections={loadSocialConnections} /></Lazy>}
           <div className="item-grid item-grid-fit">
             {campaignState.campaign.items.map((item) => (
@@ -1066,7 +1094,7 @@ export default function App() {
                       </button>
                     ))}
                     {variant.workflow === "approved" && <p><strong>Approved</strong></p>}
-                    {premiumEnabled && isSocialApiEnabled() && variant.platform === "tiktok" && variant.workflow === "scheduled" && <Lazy><SendDraftToTikTok campaign={campaignState.campaign} variant={variant} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} apiBaseUrl={API_BASE_URL} /></Lazy>}
+                    {premiumEnabled && import.meta.env.VITE_API_ROUTE_LIMITS !== "bridge-founder-release04" && isSocialApiEnabled() && variant.platform === "tiktok" && variant.workflow === "scheduled" && <Lazy><SendDraftToTikTok campaign={campaignState.campaign} variant={variant} session={session} scope={{ tenantId: session.tenantId, projectId: session.projectId, brandId: session.brandId }} isOwner={roleState.role === "owner"} apiBaseUrl={API_BASE_URL} /></Lazy>}
                     {premiumEnabled && ["approved", "scheduled"].includes(variant.workflow) && <Lazy><ScheduleControls campaign={campaignState.campaign} variant={variant} schedule={scheduleFor(variant)} canUnschedule={isUnscheduleApiEnabled()} state={scheduleState} onSchedule={runSchedule} /></Lazy>}
                     {premiumEnabled && ["approved", "scheduled", "published"].includes(variant.workflow) && (routeLimited("manualPublication") ? <p className="ps-hint" role="note">{limitedNotice("manualPublication")}</p> : <Lazy><ManualPublicationPanel campaign={campaignState.campaign} variant={variant} pendingAttemptId={pendingAttemptFor(variant)} state={manualState} contentText={creativeAsText(variant.current_content)} onStart={runManualStart} onRecord={premiumRecordPublication} /></Lazy>)}
                     {!premiumEnabled && variant.workflow === "approved" && <div>

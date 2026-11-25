@@ -109,6 +109,16 @@ describe("PremiumConnections", () => {
     const complete = vi.fn(); render(<PremiumConnections enabled session={session} scope={scope} isOwner={false} search={`?code=abc&state=${ST}`} api={{ fetchConnections: async () => conns([]), fetchDispatches: none, completeConnect: complete }} />);
     await screen.findByText("No accounts are connected yet."); expect(complete).not.toHaveBeenCalled();
   });
+  it("BG-SOCIAL-LAUNCH-CLOSURE-01: only the owner is offered Renew, only on a renewable connection, and a lapsed renewable access is 'Needs renewing' not a forced sign-in", async () => {
+    const ren = vi.fn(async () => ({ connectionId: "t1" }));
+    const list = [C({ connection_id: "t1", platform: "tiktok", account_id: "tt", status: "expired", refreshable: true }), C({ connection_id: "l1", platform: "linkedin", account_id: "li", refreshable: false })];
+    const { unmount } = render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns(list), fetchDispatches: none, refreshConnection: ren }} />);
+    expect(await screen.findByText("Needs renewing")).toBeInTheDocument(); expect(screen.getAllByRole("button", { name: /^Renew / })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Renew tt" })); expect(await screen.findByText(/was renewed/)).toBeInTheDocument();
+    expect(ren).toHaveBeenCalledTimes(1); expect(ren.mock.calls[0][0].connectionId).toBe("t1"); unmount();
+    render(<PremiumConnections enabled session={session} scope={scope} isOwner={false} search="" api={{ fetchConnections: async () => conns(list), fetchDispatches: none, refreshConnection: ren }} />);
+    await screen.findByText("Needs renewing"); expect(screen.queryByRole("button", { name: /^Renew / })).toBeNull();
+  });
   it("disconnect asks first and says published posts stay", async () => {
     const dis = vi.fn(async () => ({ connectionId: "c1" }));
     render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([C()]), fetchDispatches: none, disconnect: dis }} />);
@@ -239,5 +249,29 @@ describe("PremiumInsights (canonical performance-evidence models)", () => {
     expect(screen.getByText(/in your TikTok inbox as a draft/i)).toBeInTheDocument(); expect(screen.getByText(/BizGenie has not published it/i)).toBeInTheDocument();
     expect(screen.queryByText("Published")).toBeNull(); expect(screen.queryByText(/Confirmed by the platform/i)).toBeNull(); expect(screen.queryByRole("link")).toBeNull();
     expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull(); // an uploaded draft cannot be cancelled by BizGenie
+  });
+});
+
+describe("W1 founder bridge preserves connection lifecycle", () => {
+  it("keeps TikTok and LinkedIn connection controls and authorised TikTok renewal without dispatch", async () => {
+    vi.stubEnv("VITE_API_ROUTE_LIMITS", "bridge-founder-release04");
+    vi.stubEnv("VITE_SOCIAL_PROVIDERS", "tiktok,linkedin");
+    const renew = vi.fn(async () => ({ connectionId: "t1" }));
+    try {
+      const empty = render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([]), fetchDispatches: none }} />);
+      expect(await screen.findByRole("button", { name: "Connect TikTok" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Connect LinkedIn" })).toBeInTheDocument();
+      empty.unmount();
+      render(<PremiumConnections enabled session={session} scope={scope} isOwner search="" api={{ fetchConnections: async () => conns([
+        C({ connection_id: "t1", platform: "tiktok", account_id: "tt", status: "expired", refreshable: true }),
+        C({ connection_id: "l1", platform: "linkedin", account_id: "li", refreshable: false }),
+      ]), fetchDispatches: none, refreshConnection: renew }} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Renew tt" }));
+      expect(await screen.findByText(/was renewed/)).toBeInTheDocument();
+      expect(renew).toHaveBeenCalledTimes(1);
+      expect(renew.mock.calls[0][0].connectionId).toBe("t1");
+      expect(screen.queryByRole("button", { name: "Renew li" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /send as a draft|publish/i })).toBeNull();
+    } finally { vi.unstubAllEnvs(); }
   });
 });

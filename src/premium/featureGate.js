@@ -3,11 +3,12 @@
 // verified in the manifest for the capability. Missing, malformed or unlisted evidence means OFF.
 import { API_COMPATIBILITY } from "./apiCompatibility";
 
-export const CAPABILITIES = Object.freeze(["quotedGeneration", "workspaceCalendar", "mediaIntake", "social", "learning", "commercialCatalogue", "creditPreview", "billingManagement", "professionalSector", "copyRevisions", "founderCampaignRoot"]);
+export const CAPABILITIES = Object.freeze(["quotedGeneration", "workspaceCalendar", "mediaIntake", "social", "learning", "commercialCatalogue", "creditPreview", "billingManagement", "professionalSector", "copyRevisions", "founderCampaignRoot", "contentPlan"]);
 const PROVIDERS = ["instagram", "facebook", "linkedin", "tiktok", "youtube"];
 // Each customer-facing feature: its build flag and the backend capability it depends on.
 export const FEATURES = Object.freeze({
   founderCampaignRoot: { flag: "VITE_FOUNDER_CAMPAIGN_ROOT_API", capability: "founderCampaignRoot" },
+  contentPlan: { flag: "VITE_CONTENT_PLAN_API", capability: "contentPlan" },
   copyEditing: { flag: "VITE_COPY_EDIT_API", capability: "copyRevisions" },
   generationQuote: { flag: "VITE_GENERATION_QUOTE_API", capability: "quotedGeneration" },
   customerMedia: { flag: "VITE_CUSTOMER_MEDIA_API", capability: "quotedGeneration" },
@@ -26,6 +27,8 @@ export const FEATURES = Object.freeze({
 // Features the staging Studio bridge does not forward (API main src/studio-bridge/service.js allow-list: no /customer/insights*, no /customer/billing/management*, no /customer/billing/invoices).
 // Behind that bridge (VITE_API_ROUTE_LIMITS=bridge-v1) they cannot work whatever the API revision supports, so they stay off.
 export const BRIDGE_V1_NOT_CARRIED = Object.freeze(["analytics", "billingManagement", "copyEditing"]);
+// Separate candidate profile; still requires the existing feature flag AND verified serving manifest.
+export const BRIDGE_FOUNDER_RELEASE04_NOT_CARRIED = Object.freeze(["analytics", "billingManagement"]);
 const SHA = /^[0-9a-f]{40}$/;
 const truthy = (v) => typeof v === "string" && v.trim().toLowerCase() === "true";
 const https = (v) => { try { const u = new URL(v); return u.protocol === "https:" && !u.username && !u.password; } catch { return false; } };
@@ -66,6 +69,7 @@ export function featureAvailability(feature, env = import.meta.env, { manifest =
   if (mode === "test" && !(env && env.VITE_API_COMPAT_MODE === "enforce")) return { enabled: true, state: "not_applicable_test_mode" };
   if (env && isMockApiHost(env.VITE_BIZGENIE_API_URL)) return { enabled: true, state: "not_applicable_mock_api" };
   if (env && env.VITE_API_ROUTE_LIMITS === "bridge-v1" && BRIDGE_V1_NOT_CARRIED.includes(feature)) return { enabled: false, state: "not_carried_by_bridge" };
+  if (env && env.VITE_API_ROUTE_LIMITS === "bridge-founder-release04" && BRIDGE_FOUNDER_RELEASE04_NOT_CARRIED.includes(feature)) return { enabled: false, state: "not_carried_by_bridge" };
   const sha = env && typeof env.VITE_API_SOURCE_SHA === "string" ? env.VITE_API_SOURCE_SHA.trim().toLowerCase() : "";
   const rev = env && typeof env.VITE_API_SERVING_REVISION === "string" ? env.VITE_API_SERVING_REVISION.trim() : "";
   if (!sha && !rev) return { enabled: false, state: "api_revision_undeclared" };
