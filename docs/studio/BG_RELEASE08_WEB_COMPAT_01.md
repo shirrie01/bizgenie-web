@@ -31,3 +31,22 @@ No `socialProviders`, no `mediaIntake`. Then dispatch the workflow with `sha` = 
 
 ## Dependencies and boundaries
 Needs: the real tagged API revision (from `a0-deploy.sh api` / the founder's E1 run). Not in scope and not changed: UI design, new features, paid generation, publishing, Stripe, LinkedIn activation, token vault, Sprint10C. No merge or deployment before independent acceptance.
+
+## A0–A2 capability matrix (reconciled against the accepted Release 08 API contract)
+Verified by reading the source and the existing tests on this branch; local run: 1638 passed / 52 skipped / 0 failed; hosted run for head `0a270edc…`: test-build, Cloudflare Pages preview and the four browser viewports green. **No hosted verification against a real tagged API revision exists yet; the compatibility manifest is deliberately empty, so the profile build is refused.**
+
+| Area | Wiring | Offline evidence | Disabled / unavailable behaviour | Status |
+|---|---|---|---|---|
+| Founder sign-in and onboarding | `App.jsx` session + `PremiumOnboarding` (bootstrap only when no workspace exists; the bridge keeps generic bootstrap closed, smoke asserts 403) | `PremiumOnboarding.panels.test.jsx`, `App.premium.workspaces.test.jsx` | Bootstrap not offered when a workspace exists | OFFLINE TESTED |
+| Workspace creation | **Not a Studio action in A0**: the founder makes the single pinned `POST /customer/workspace/brands` request from the runbook (curl), as designed in Release 07 | API `founderRelease07` tests | No create-workspace button exists, so nothing can call a closed route | BY DESIGN |
+| Workspace selection | `workspaceClient.js` → `POST /customer/workspace/select` | `workspaceClient.test.js`, `App.premium.workspaces.test.jsx` | Single-workspace accounts see no switcher | OFFLINE TESTED |
+| Brand Brain | `PremiumBrandStrategy`, `PremiumBrandBrain` over `GET/PUT /customer/workspace/brand-brain` (bridge allows these) | `PremiumBrandStrategy.test.jsx` | Read-only role disables edits | OFFLINE TESTED |
+| Content-plan generation | `ContentPlanPanel`, gate `contentPlan` (`VITE_CONTENT_PLAN_API` + capability `contentPlan`) | `ContentPlanPanel.test.jsx`, `releaseProfile.test.js` | Panel not rendered unless flag and verified API pair | OFFLINE TESTED |
+| Copy editing and revisions | `CopyRevisionEditor`, gate `copyEditing` (capability `copyRevisions`); `bridge-v1` still blocks it, the founder profile allows it | `CopyRevisionEditor.test.jsx`, `releaseProfile.test.js`, `bridgeLimits.test.jsx` | Editor receives `enabled=false` and says so | OFFLINE TESTED |
+| Campaign-root capability | `App.jsx:626`, gate `founderCampaignRoot` | `founderCampaignRootClient.test.js`, `releaseProfile.test.js` | Root-only mode off without flag/pair | OFFLINE TESTED |
+| Calendar | `PremiumWorkspaceCalendar`, gate `workspaceCalendar` (and `unschedule`, same capability, route admitted by the bridge) | `PremiumWorkspaceCalendar.test.jsx`, `releaseProfile.test.js` | Calendar absent without flag/pair | OFFLINE TESTED |
+| API compatibility manifest | `apiCompatibility.js`, empty; profile gate script refuses unknown SHA/revision | `releaseProfile.test.js`, `stagingReleaseWorkflow.test.js` | Whole profile build refused; default build unchanged | OFFLINE TESTED; **binding awaits the real revision** |
+| Media intake, social, quotes, generation, billing, analytics | Flags unset in the profile; `routeLimited` states "not available in this test environment" for checkout and manual publication | `releaseProfile.test.js` (all OFF even if flags are set by mistake), `bridgeLimits.test.jsx` | Plain-language notice, nothing is called | OFFLINE TESTED |
+| Mobile and desktop rendering | Existing responsive layout; no layout change in this PR | Hosted browser job at 320, 390, 768 and 1440 wide: green | n/a | HOSTED CI VERIFIED (marketing/site harness); Studio screens against a live API are **not yet hosted-verified** |
+
+Next, once the founder's A0 run has produced the tagged API revision: add the single manifest entry (sourceSha `dfd49116…`, `servingRevision` read back, evidence = the founder's EV_TAG comment, capabilities exactly `contentPlan`, `copyRevisions`, `founderCampaignRoot`, `workspaceCalendar`), run `scripts/check-release-profile.mjs`, then dispatch with `route_profile=bridge-founder-release04` and `deploy=false` only.
