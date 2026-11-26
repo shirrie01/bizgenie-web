@@ -97,7 +97,10 @@ export async function submitLead({ url, payload, fetchImpl = globalThis.fetch, t
     const res = await fetchImpl(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), credentials: "omit", referrerPolicy: "no-referrer", signal: ctl.signal });
     let body = null;
     try { body = await res.json(); } catch { /* none */ }
-    if (res.status === 202 || res.status === 200 || res.status === 201) return { kind: "received", reference: body && typeof body.reference_id === "string" ? body.reference_id : null };
+    if (res.status === 202 && body?.status === "received" &&
+        typeof body.reference_id === "string" && /^[A-Za-z0-9_-]{6,}$/.test(body.reference_id)) {
+      return { kind: "received", reference: body.reference_id };
+    }
     if (res.status === 429) return { kind: "rate_limited", retryable: true, retryAfter: Number(res.headers && res.headers.get && res.headers.get("retry-after")) || null };
     if (res.status === 400 || res.status === 422) return { kind: "invalid", retryable: false, details: body && body.error && Array.isArray(body.error.details) ? body.error.details : [] };
     if (res.status === 409) return { kind: "conflict", retryable: false };

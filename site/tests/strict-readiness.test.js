@@ -3,6 +3,8 @@
 // Fixture values below are placeholders for the test only (example.test); they are never written to site/config.mjs.
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { company, unresolved } from "../config.mjs";
 import { deletionPage, privacyPage, supportPage, termsPage } from "../templates.mjs";
@@ -25,6 +27,37 @@ describe("what is missing", () => {
     complete(); expect(unresolved().filter((i) => !i.startsWith("SITE_API_URL"))).toEqual([]);
     for (const k of ["processors", "internationalTransfers", "governingLaw"]) { complete(); company[k] = null; expect(unresolved().join("|"), k).toContain(k); }
     complete(); company.processors = [{ name: "Only a name" }]; expect(unresolved().join("|")).toContain("processors");
+  });
+  it("builds strictly with approved-shaped fixture inputs and refuses invalid approval or endpoint values", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "bizgenie-publication-"));
+    const config = path.join(dir, "facts.json");
+    const out = path.join(dir, "site");
+    const build = (origin) => spawnSync("node", ["site/build.mjs", "--strict"], {
+      cwd: root, encoding: "utf8",
+      env: { ...process.env, SITE_PUBLICATION_CONFIG: config, SITE_API_URL: origin, SITE_OUT: out },
+    });
+    try {
+      complete();
+      const fields = ["companyNumber", "registeredOffice", "contactEmail", "privacyContactEmail",
+        "retentionDecision", "processors", "internationalTransfers", "governingLaw", "legalReviewed"];
+      const facts = Object.fromEntries(fields.map((key) => [key, company[key]]));
+      writeFileSync(config, JSON.stringify(facts));
+      const valid = build("https://leads.example.test");
+      expect(valid.status, valid.stderr).toBe(0);
+      expect(readFileSync(path.join(out, "robots.txt"), "utf8")).toContain("Allow: /");
+      expect(readFileSync(path.join(out, "privacy/index.html"), "utf8")).toContain("Fixture Host Ltd");
+      for (const origin of ["http://127.0.0.1:4301", "http://leads.example.test", "https://leads.example.test/path", "https://user@leads.example.test"]) {
+        const invalid = build(origin);
+        expect(invalid.status, invalid.stderr).toBe(2);
+        expect(invalid.stderr).toContain("SITE_API_URL");
+      }
+      writeFileSync(config, JSON.stringify({ ...facts, legalReviewed: "true", registeredOffice: " ", contactEmail: "bad" }));
+      const invalid = build("https://leads.example.test");
+      expect(invalid.status).toBe(2);
+      for (const key of ["legalReviewed", "registeredOffice", "contactEmail"]) expect(invalid.stderr).toContain(key);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
   it("`site:check` lists the outstanding items by owner, exits 2, and `--json` is machine-readable", () => {
     const r = spawnSync("node", ["site/check.mjs"], { cwd: root, encoding: "utf8" });
