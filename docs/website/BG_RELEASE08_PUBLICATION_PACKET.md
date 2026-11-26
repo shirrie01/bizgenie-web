@@ -41,3 +41,28 @@ WEB PR #90 head `b17e4b5b74e4e874e08518b523e8de77579a3a19` proposes reusing `/pu
 - **Paid commercial launch** — NO-GO under the current programme. Sprint10C HOLD; E3/D5 deferred. E1 and P2/P3 remain under the existing programme. E4 is still a prerequisite for customer file uploads.
 
 The public site currently uses labelled fixture screenshots. The available Studio preview client is for authenticated tenant campaigns and existing campaign revisions. No approved seven-slide template or public lead-to-preview binding was found in the reviewed heads. The questionnaire already captures industry, company information and optional notes. The next approved integration needs a defined preview template and a controlled lead-to-preview handoff. No provider generation or prospect messaging is needed to test such a handoff with fixtures.
+
+## Acquisition continuation
+
+The companion acquisition API is on `bg-release08-acquisition` against API `main`. The site implementation is on `bg-release08-acquisition-web` against WEB `main`, retaining safeguards commit `0985f8643c2a49b3ec27c18316d289bec6ce5607` from `bg-release08-website`. The ten original entries above remain the exact operator inputs and decisions.
+
+- **Source correction completed:** typed public facts and strict origin validation, durable early-access API source and migration, exact receipt validation, byte-equivalent replay of the browser payload, honeypot without a false confirmation, and a private fixture preview draft. Keep intake disabled by default. The site build does not include the draft.
+- **Production configuration required:** the final nine fact/approval keys in `SITE_PUBLICATION_CONFIG` and the approved `SITE_API_URL`. The API requires the separately documented feature flag, exact site origin, approved retention days and distinct runtime-managed HMAC secrets.
+- **Founder approval required:** company and contact facts, legal and privacy decisions, operator ownership and draft preview concept.
+- **External dependency:** approved intake origin and private database access, release/hosting approval, verified edge rate limits and monitoring, maintenance and deletion operations, and hosted acceptance. E4 remains a prerequisite for customer uploads.
+
+The production events endpoint is outside this delivery. Keep optional site measurement disabled until the aggregate events service is available. The local reference still runs the original measurement regression checks. Durable submissions store campaign and referrer attribution with the receipt.
+
+## Founder configuration questionnaire
+
+1. What are the verified company registration number and registered office?
+2. Which monitored addresses should be used for support and privacy requests, and who owns the response and deletion workflow?
+3. What retention period and deletion/backup handling should be implemented for leads, receipts and internal draft content?
+4. Which providers process registration data, for which purposes, and what international-transfer wording and safeguards has the adviser approved?
+5. What governing-law and courts wording should the terms use? Who approved the final version of the privacy notice, terms and both consent statements?
+6. Which HTTPS origin, intake operator and hosting owner are approved for the waiting list? Who owns production monitoring, abuse controls and maintenance?
+7. Is the attached seven-slide internal draft approved for further design review, and what must change before any prospect-facing use?
+
+## Synthetic demonstration
+
+The regular five-width browser matrix still covers the reference journeys. `site/browser/durable.browser.mjs` adds a loopback-only Playwright check. Start the static draft with `SITE_API_URL` pointing at the local PostgreSQL-backed API, then run `npx playwright test --config site/browser/playwright.durable.config.mjs` with `BG_DURABLE_SITE_ORIGIN` and `BG_DURABLE_LEAD_URL`. The test first injects an incomplete HTTP 202 response, verifies that the browser keeps the form open, retries the same complete payload, then verifies the real receipt. The internal repository prepares the fixture from the committed lead. `node site/dev/render-preview-draft.mjs draft.json output.html` renders it with the existing website layout outside the public build. No emails or provider calls are used.

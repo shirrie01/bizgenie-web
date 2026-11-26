@@ -80,13 +80,17 @@ if (form) {
     clearErrors(); status.textContent = "";
     const check = validate(collect());
     if (!check.ok) { showErrors(check.errors); return; }
-    // Honeypot: a person never sees this field. Pretend it worked, send nothing.
-    if (($("f-hp") || {}).value) { renderSuccess(check.values.intention, null); return; }
+    if (($("f-hp") || {}).value) { status.textContent = WORDS.invalid; return; }
     const fingerprint = JSON.stringify(check.values);
     if (!attempt || attempt.fingerprint !== fingerprint) attempt = { id: newSubmissionId(), fingerprint };
     button.disabled = true; status.textContent = "Sending…"; measure.attempt();
-    const payload = await buildPayload({ values: check.values, attribution, submissionId: attempt.id, elapsedMs: Math.max(0, performance.now() - shownAt), consentContactText: $("c-contact-label").textContent.trim(), consentMarketingText: $("c-marketing-label").textContent.trim() });
-    const result = await submitLead({ url: leadUrl, payload });
+    let result;
+    try {
+      attempt.payload ??= await buildPayload({ values: check.values, attribution, submissionId: attempt.id, elapsedMs: Math.max(0, performance.now() - shownAt), consentContactText: $("c-contact-label").textContent.trim(), consentMarketingText: $("c-marketing-label").textContent.trim() });
+      result = await submitLead({ url: leadUrl, payload: attempt.payload });
+    } catch {
+      result = { kind: "unavailable" };
+    }
     if (result.kind === "received") { measure.success(); attempt = null; renderSuccess(check.values.intention, result.reference); return; }
     measure.failure(result.kind);
     button.disabled = false; status.textContent = WORDS[result.kind] || WORDS.unavailable;
