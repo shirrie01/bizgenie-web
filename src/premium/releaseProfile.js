@@ -32,6 +32,8 @@ export function checkReleaseProfile({ sha, revision, manifest = API_COMPATIBILIT
   if (!entry) return { ok: false, problems: ["API_PAIR_NOT_IN_REVIEWED_MANIFEST"] };
   const listed = Object.keys(entry.capabilities).sort();
   if (listed.length !== RELEASE04_CAPABILITIES.length || listed.some((c, i) => c !== RELEASE04_CAPABILITIES[i])) problems.push("MANIFEST_CAPABILITIES_NOT_EXACTLY_THIS_STAGE");
+  const bridgeListed = entry.bridge ? Object.keys(entry.bridge.capabilities).sort() : [];
+  if (bridgeListed.length !== RELEASE04_CAPABILITIES.length || bridgeListed.some((c, i) => c !== RELEASE04_CAPABILITIES[i])) problems.push("BRIDGE_PERMISSIONS_NOT_EVIDENCED_FOR_THIS_STAGE");
   if (entry.socialProviders !== undefined && entry.socialProviders.length > 0) problems.push("MANIFEST_LISTS_SOCIAL_PROVIDERS");
   const env = { ...RELEASE04_FLAGS, VITE_BIZGENIE_API_URL: BRIDGE_ORIGIN, VITE_API_ROUTE_LIMITS: RELEASE04_PROFILE, VITE_API_SOURCE_SHA: sha, VITE_API_SERVING_REVISION: revision };
   for (const feature of Object.keys(FEATURES)) {

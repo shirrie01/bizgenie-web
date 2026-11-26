@@ -34,6 +34,10 @@ const truthy = (v) => typeof v === "string" && v.trim().toLowerCase() === "true"
 const https = (v) => { try { const u = new URL(v); return u.protocol === "https:" && !u.username && !u.password; } catch { return false; } };
 const text = (v, max = 200) => typeof v === "string" && v.trim().length > 0 && v.length <= max;
 
+// Hosted bridge permissions evidence (BG-RELEASE08): which capabilities the SERVING STUDIO BRIDGE's own permission flags admit, evidenced separately from the API revision.
+// Shape: { evidence: "https://…", capabilities: { founderCampaignRoot: true, … } }. An API revision proves nothing about what the bridge in front of it forwards.
+const validBridge = (b) => b && typeof b === "object" && typeof b.evidence === "string" && https(b.evidence) && b.capabilities && typeof b.capabilities === "object" && Object.keys(b.capabilities).length > 0
+  && Object.entries(b.capabilities).every(([k, v]) => CAPABILITIES.includes(k) && v === true);
 // A manifest entry that is not exactly well-formed is ignored (never partly trusted).
 export function validEntries(manifest = API_COMPATIBILITY) {
   const good = []; const problems = [];
@@ -44,6 +48,7 @@ export function validEntries(manifest = API_COMPATIBILITY) {
       && typeof e.evidence === "string" && https(e.evidence) && caps && typeof caps === "object" && Object.keys(caps).length > 0
       && Object.entries(caps).every(([k, v]) => CAPABILITIES.includes(k) && v === true)
       && (e.socialProviders === undefined || (Array.isArray(e.socialProviders) && e.socialProviders.every((p) => PROVIDERS.includes(p))))
+      && (e.bridge === undefined || validBridge(e.bridge))
       && (caps.social !== true || (Array.isArray(e.socialProviders) && e.socialProviders.length > 0)); // verified social must say which providers, otherwise none would ever be offered
     if (ok) good.push(e); else problems.push(`entry ${i}`);
   });
@@ -60,7 +65,7 @@ export function isMockApiHost(apiUrl) {
 // import.meta.env.VITEST exists only while vitest runs; it is not a VITE_-prefixed value, so a build can neither set nor expose it, and `vite build --mode test` is still a release build.
 const runtimeMode = () => (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITEST ? "test" : "production");
 
-// → { enabled, state }. state: flag_off | not_applicable_mock_api | not_applicable_test_mode | api_revision_undeclared | api_revision_malformed | revision_not_in_manifest | capability_not_verified | verified
+// → { enabled, state }. state: flag_off | not_applicable_mock_api | not_applicable_test_mode | api_revision_undeclared | api_revision_malformed | revision_not_in_manifest | capability_not_verified | bridge_permission_not_evidenced | verified
 export function featureAvailability(feature, env = import.meta.env, { manifest = API_COMPATIBILITY, mode = runtimeMode(), flagOverride } = {}) {
   const f = FEATURES[feature];
   if (!f) return { enabled: false, state: "unknown_feature" };
@@ -77,6 +82,8 @@ export function featureAvailability(feature, env = import.meta.env, { manifest =
   const entry = validEntries(manifest).good.find((e) => e.sourceSha === sha && e.servingRevision === rev);
   if (!entry) return { enabled: false, state: "revision_not_in_manifest" };
   if (entry.capabilities[f.capability] !== true) return { enabled: false, state: "capability_not_verified" };
+  // Behind the founder bridge an API identity alone never authorises a capability: the bridge's own permissions for it must be evidenced in the same reviewed entry.
+  if (env && env.VITE_API_ROUTE_LIMITS === "bridge-founder-release04" && !(entry.bridge && entry.bridge.capabilities && entry.bridge.capabilities[f.capability] === true)) return { enabled: false, state: "bridge_permission_not_evidenced" };
   return { enabled: true, state: "verified", entry };
 }
 export const featureEnabled = (feature, env, opts) => featureAvailability(feature, env, opts).enabled;

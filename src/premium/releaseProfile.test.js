@@ -6,7 +6,7 @@ import { API_COMPATIBILITY } from "./apiCompatibility";
 
 // Synthetic values only: the real serving API revision does not exist yet and must be bound by a reviewed change, never guessed.
 const SHA = "a".repeat(40), REV = "bizgenie-api-staging-00099-zzz", OTHER_REV = "bizgenie-api-staging-00098-yyy";
-const entry = (o = {}) => ({ sourceSha: SHA, servingRevision: REV, verifiedAt: "2026-11-26T00:00:00Z", evidence: "https://github.com/shirrie01/bizgenie-api/issues/191#issuecomment-1", capabilities: Object.fromEntries(RELEASE04_CAPABILITIES.map((c) => [c, true])), ...o });
+const entry = (o = {}) => ({ sourceSha: SHA, servingRevision: REV, verifiedAt: "2026-11-26T00:00:00Z", evidence: "https://github.com/shirrie01/bizgenie-api/issues/191#issuecomment-1", capabilities: Object.fromEntries(RELEASE04_CAPABILITIES.map((c) => [c, true])), bridge: { evidence: "https://github.com/shirrie01/bizgenie-api/issues/191#issuecomment-2", capabilities: Object.fromEntries(RELEASE04_CAPABILITIES.map((c) => [c, true])) }, ...o });
 const manifest = (...entries) => ({ schema: 1, revisions: entries });
 const env = (extra = {}) => ({ ...RELEASE04_FLAGS, VITE_BIZGENIE_API_URL: BRIDGE_ORIGIN, VITE_API_ROUTE_LIMITS: RELEASE04_PROFILE, VITE_API_SOURCE_SHA: SHA, VITE_API_SERVING_REVISION: REV, ...extra });
 const gate = (feature, e, m) => featureAvailability(feature, e, { manifest: m, mode: "production" });
@@ -33,6 +33,24 @@ describe("founder release profile (bridge-founder-release04)", () => {
     expect(gate("social", allOn, m).state).toBe("capability_not_verified");
     expect(gate("analytics", allOn, m).state).toBe("not_carried_by_bridge");
     expect(gate("billingManagement", allOn, m).state).toBe("not_carried_by_bridge");
+  });
+
+  it("API identity alone never authorises A1/A2 capabilities behind the founder bridge: the bridge's own permissions must be evidenced", () => {
+    const noBridge = (() => { const e = entry(); delete e.bridge; return e; })();
+    const m = manifest(noBridge);
+    expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: m }).problems).toContain("BRIDGE_PERMISSIONS_NOT_EVIDENCED_FOR_THIS_STAGE");
+    for (const f of RELEASE04_FEATURES) expect(gate(f, env(), m), f).toMatchObject({ enabled: false, state: "bridge_permission_not_evidenced" });
+    // partial evidence enables only what it evidences, and the profile build is still refused
+    const partial = manifest(entry({ bridge: { evidence: "https://github.com/shirrie01/bizgenie-api/issues/191#issuecomment-2", capabilities: { contentPlan: true } } }));
+    expect(gate("contentPlan", env(), partial).enabled).toBe(true);
+    for (const f of ["founderCampaignRoot", "copyEditing", "workspaceCalendar"]) expect(gate(f, env(), partial).state, f).toBe("bridge_permission_not_evidenced");
+    expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: partial }).problems).toContain("BRIDGE_PERMISSIONS_NOT_EVIDENCED_FOR_THIS_STAGE");
+    // malformed bridge evidence makes the whole entry untrusted
+    for (const bad of [{ evidence: "http://insecure", capabilities: { contentPlan: true } }, { evidence: "https://x.test/y", capabilities: { contentPlan: "yes" } }, { evidence: "https://x.test/y", capabilities: { unknownCap: true } }, { evidence: "https://x.test/y", capabilities: {} }, "yes"]) {
+      expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: manifest(entry({ bridge: bad })) }).problems).toEqual(["API_PAIR_NOT_IN_REVIEWED_MANIFEST"]);
+    }
+    // the evidence is only demanded behind the founder bridge: the default release's rules are unchanged
+    expect(gate("contentPlan", { ...env(), VITE_API_ROUTE_LIMITS: "" }, m)).toMatchObject({ enabled: true, state: "verified" });
   });
   it("fails closed for missing or malformed API identity (undefined, empty, whitespace, short, uppercase, non-string)", () => {
     const m = manifest(entry());
