@@ -35,3 +35,14 @@ describe("features the trusted staging bridge does not carry say so, and call no
     const app = readFileSync("src/App.jsx", "utf8"); expect(app).toMatch(/routeLimited\("manualPublication"\) \? <p className="ps-hint" role="note">\{limitedNotice\("manualPublication"\)\}<\/p> : <Lazy><ManualPublicationPanel/);
   });
 });
+
+// BG-RELEASE08-WEB-COMPAT-01: the founder release profile talks to the same bridge, so checkout and manual publication are limited there too; every other build is unchanged.
+import { routeLimited as limited } from "../bridgeLimits";
+describe("route limits across release profiles", () => {
+  it("limits checkout and manual publication under bridge-v1 and bridge-founder-release04 only", () => {
+    for (const profile of ["bridge-v1", "bridge-founder-release04"]) for (const f of ["checkout", "manualPublication"]) expect(limited(f, { VITE_API_ROUTE_LIMITS: profile }), `${profile}/${f}`).toBe(true);
+    for (const profile of ["", undefined, "bridge-v2", "bridge-founder-release05"]) expect(limited("checkout", { VITE_API_ROUTE_LIMITS: profile })).toBe(false);
+    expect(limited("anythingElse", { VITE_API_ROUTE_LIMITS: "bridge-founder-release04" })).toBe(false);
+    expect(limited("checkout", undefined)).toBe(false);
+  });
+});

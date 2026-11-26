@@ -7,5 +7,7 @@ export const NOT_CARRIED = Object.freeze({
   checkout: "Subscribing isn't available in this test environment yet, so nothing can be charged. You can still set up your workspace and campaign.",
   manualPublication: "Recording a post you published yourself isn't available in this test environment yet. Nothing was changed.",
 });
-export const routeLimited = (feature, env = import.meta.env) => Boolean(env) && env.VITE_API_ROUTE_LIMITS === "bridge-v1" && Object.hasOwn(NOT_CARRIED, feature);
+// The founder release profile talks to the same bridge and does not carry these routes either (checkout and manual publication writes stay denied there).
+const LIMITED_PROFILES = Object.freeze(["bridge-v1", "bridge-founder-release04"]);
+export const routeLimited = (feature, env = import.meta.env) => Boolean(env) && LIMITED_PROFILES.includes(env.VITE_API_ROUTE_LIMITS) && Object.hasOwn(NOT_CARRIED, feature);
 export const limitedNotice = (feature) => (Object.hasOwn(NOT_CARRIED, feature) ? NOT_CARRIED[feature] : "");
