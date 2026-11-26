@@ -109,10 +109,10 @@ test("keyboard only: the whole registration can be completed and submitted witho
 });
 
 test("failures keep the answers and are worded plainly: rate limit, outage, network loss; a retry reuses the SAME submission id", async ({ page }) => {
-  await page.goto("/#register"); await fill(page); const ids = []; let mode = "429";
+  await page.goto("/#register"); await fill(page); const attempts = []; let mode = "429";
   await page.route("**/public/early-access-interest", async (route) => {
     if (route.request().method() === "OPTIONS") return route.fallback();
-    ids.push(route.request().postDataJSON().submission_id);
+    attempts.push(route.request().postDataJSON());
     if (mode === "429") return route.fulfill({ status: 429, headers: { "access-control-allow-origin": "http://127.0.0.1:4300", "retry-after": "900", "content-type": "application/json" }, body: "{}" });
     if (mode === "503") return route.fulfill({ status: 503, headers: { "access-control-allow-origin": "http://127.0.0.1:4300", "content-type": "application/json" }, body: "{}" });
     if (mode === "abort") return route.abort("connectionreset");
@@ -123,7 +123,8 @@ test("failures keep the answers and are worded plainly: rate limit, outage, netw
   mode = "503"; await btn.click(); await expect(page.locator("#status")).toContainText("not available right now");
   mode = "abort"; await btn.click(); await expect(page.locator("#status")).toContainText("could not reach");
   mode = "ok"; await btn.click(); await expect(page.getByRole("heading", { name: /We have recorded your interest/ })).toBeVisible();
-  expect(ids).toHaveLength(4); expect(new Set(ids).size).toBe(1);
+  expect(attempts).toHaveLength(4);
+  expect(attempts.slice(1)).toEqual([attempts[0], attempts[0], attempts[0]]);
 });
 
 test("bots: a filled honeypot sends nothing; measurement respects Global Privacy Control", async ({ browser }) => {
@@ -131,7 +132,8 @@ test("bots: a filled honeypot sends nothing; measurement respects Global Privacy
   await page.addInitScript(() => { Object.defineProperty(navigator, "globalPrivacyControl", { value: true }); });
   const out = []; page.on("request", (r) => { if (r.method() === "POST") out.push(r.url()); });
   await page.goto("/#register"); await fill(page); await page.evaluate(() => { document.getElementById("f-hp").value = "http://spam.test"; });
-  await page.getByRole("button", { name: "Register my interest" }).click(); await expect(page.locator("#success")).toBeVisible();
+  await page.getByRole("button", { name: "Register my interest" }).click(); await expect(page.locator("#status")).toContainText("could not accept");
+  await expect(page.locator("#success")).toBeHidden();
   expect(out).toEqual([]); await ctx.close();
 });
 

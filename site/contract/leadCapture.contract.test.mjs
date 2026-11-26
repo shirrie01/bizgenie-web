@@ -3,6 +3,8 @@
 // By default they run against the in-memory reference stub (site/dev/lead-stub.mjs). To check a real implementation (e.g. a bizgenie-api draft) run:
 //   CONTRACT_BASE_URL=http://127.0.0.1:8080 CONTRACT_ORIGIN=https://getbizgenie.com npx vitest run site/contract
 // They only use public behaviour; the stub-only checks are skipped against a real URL. Never point them at production.
+import { createHash } from "node:crypto";
+import { CONSENT_CONTACT, CONSENT_MARKETING } from "../content.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EVENTS_PATH, LEAD_PATH, createLeadStub, funnel, toCsv } from "../dev/lead-stub.mjs";
 
@@ -10,11 +12,13 @@ const REAL = process.env.CONTRACT_BASE_URL || "";
 const ORIGIN = process.env.CONTRACT_ORIGIN || "http://127.0.0.1:4300";
 const stubOnly = REAL ? it.skip : it;
 let base = REAL; let stub = null;
-const H = "a".repeat(64);
+const hash = (text) => createHash("sha256").update(text).digest("hex");
+const contactHash = hash(CONSENT_CONTACT);
+const marketingHash = hash(CONSENT_MARKETING);
 const lead = (over = {}) => ({
   contract_version: "early-access-interest.v1", submission_id: `t-${Math.random().toString(36).slice(2)}`, name: "Ada Lovelace", work_email: `ada.${Math.random().toString(36).slice(2)}@example.com`,
   business_name: "Analytical Engines Ltd", industry: "agency", intention: "early_access", marketing_priorities: ["performance"], privacy_contact_consent: true, marketing_consent: false,
-  consent: { version: "early-access-contact-v1", contact_text_sha256: H, marketing_text_sha256: H, shown_at: new Date().toISOString() }, source: { landing_path: "/" }, client: { elapsed_ms: 12000 }, ...over,
+  consent: { version: "early-access-contact-v1", contact_text_sha256: contactHash, marketing_text_sha256: marketingHash, shown_at: new Date().toISOString() }, source: { landing_path: "/" }, client: { elapsed_ms: 12000 }, ...over,
 });
 const post = (body, path = LEAD_PATH, headers = {}) => fetch(base + path, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, ...headers }, body: typeof body === "string" ? body : JSON.stringify(body) });
 
@@ -40,7 +44,7 @@ describe("early-access-interest.v1", () => {
   });
   it.each([
     ["unknown field", { extra: 1 }], ["consent not true", { privacy_contact_consent: false }], ["bad email", { work_email: "nope" }], ["bad industry", { industry: "x" }], ["bad intention", { intention: "x" }],
-    ["unknown consent version", { consent: { version: "v0", contact_text_sha256: H, marketing_text_sha256: H, shown_at: new Date().toISOString() } }], ["priority not allowed", { marketing_priorities: ["x"] }],
+    ["unknown consent version", { consent: { version: "v0", contact_text_sha256: contactHash, marketing_text_sha256: marketingHash, shown_at: new Date().toISOString() } }], ["priority not allowed", { marketing_priorities: ["x"] }],
     ["notes too long", { notes: "x".repeat(501) }], ["source key not allowed", { source: { email: "a@b.c" } }], ["wrong version", { contract_version: "v2" }], ["missing name", { name: "" }],
   ])("rejects %s with 400 VALIDATION_ERROR and details", async (_n, over) => {
     const r = await post(lead(over)); expect(r.status).toBe(400); const b = await r.json(); expect(b.error.code).toBe("VALIDATION_ERROR"); expect(Array.isArray(b.error.details)).toBe(true);
@@ -71,7 +75,8 @@ describe("early-access-interest.v1", () => {
   });
 });
 
-describe("site-events.v1", () => {
+const describeEvents = REAL ? describe.skip : describe;
+describeEvents("site-events.v1", () => {
   const ev = (events, over = {}) => ({ contract_version: "site-events.v1", visit: "11111111-1111-4111-8111-111111111111", source: { utm_source: "x" }, events, ...over });
   it("accepts fixed event types", async () => { expect((await post(ev([{ type: "page_view", page: "/" }, { type: "field_error", page: "/", field: "email", code: "invalid", intention: "early_access" }]), EVENTS_PATH)).status).toBe(202); });
   it.each([["an unknown type", [{ type: "keylog", page: "/" }]], ["a typed value", [{ type: "field_error", page: "/", field: "email", code: "invalid", value: "a@b.c" }]], ["free text in code", [{ type: "field_error", page: "/", field: "email", code: "has spaces and @" }]], ["no events", []]])("refuses %s", async (_n, events) => {

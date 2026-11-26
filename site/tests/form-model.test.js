@@ -62,9 +62,18 @@ describe("submitLead", () => {
   const p = { a: 1 };
   it("is closed (no request) without a URL", async () => { const f = vi.fn(); expect(await submitLead({ url: "", payload: p, fetchImpl: f })).toEqual({ kind: "closed" }); expect(f).not.toHaveBeenCalled(); });
   it("sends JSON with no credentials and no referrer", async () => {
-    const f = vi.fn().mockResolvedValue(res(202, { reference_id: "ea_1" })); const r = await submitLead({ url: "https://api.test/x", payload: p, fetchImpl: f });
-    expect(r).toEqual({ kind: "received", reference: "ea_1" });
+    const f = vi.fn().mockResolvedValue(res(202, { status: "received", reference_id: "ea_123" })); const r = await submitLead({ url: "https://api.test/x", payload: p, fetchImpl: f });
+    expect(r).toEqual({ kind: "received", reference: "ea_123" });
     expect(f.mock.calls[0][1]).toMatchObject({ method: "POST", credentials: "omit", referrerPolicy: "no-referrer", headers: { "content-type": "application/json" } });
+  });
+  it.each([
+    [200, { status: "received", reference_id: "ea_123" }],
+    [202, { status: "received" }],
+    [202, { status: "queued", reference_id: "ea_123" }],
+    [202, { status: "received", reference_id: "<invalid>" }],
+  ])("keeps the form retryable when HTTP %i has no valid lead receipt", async (status, body) => {
+    expect(await submitLead({ url: "u", payload: p, fetchImpl: async () => res(status, body) }))
+      .toEqual({ kind: "unavailable", retryable: true });
   });
   it.each([[429, "rate_limited", true], [400, "invalid", false], [422, "invalid", false], [409, "conflict", false], [500, "unavailable", true], [503, "unavailable", true]])("maps %i to %s (retryable %s)", async (status, kind, retryable) => {
     const r = await submitLead({ url: "u", payload: p, fetchImpl: async () => res(status, { error: { details: [{ path: "x" }] } }, { "retry-after": "900" }) });
