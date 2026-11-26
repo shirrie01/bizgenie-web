@@ -3,7 +3,7 @@ import {featureAvailability,BRIDGE_V1_NOT_CARRIED} from './featureGate';
 import {API_COMPATIBILITY} from './apiCompatibility';
 const sha='a'.repeat(40),revision='synthetic-reviewed-revision';
 const base={VITE_COPY_EDIT_API:'true',VITE_API_SOURCE_SHA:sha,VITE_API_SERVING_REVISION:revision,VITE_API_ROUTE_LIMITS:'bridge-founder-release04'};
-const manifest={schema:1,revisions:[{sourceSha:sha,servingRevision:revision,verifiedAt:'2026-11-24T00:00:00Z',evidence:'https://github.com/shirrie01/bizgenie-api/issues/191#issuecomment-123',capabilities:{copyRevisions:true,billingManagement:true,learning:true}}]};
+const manifest={schema:1,revisions:[{sourceSha:sha,servingRevision:revision,verifiedAt:'2026-11-24T00:00:00Z',evidence:'https://github.com/shirrie01/bizgenie-api/issues/191#issuecomment-123',bridge:{evidence:'https://github.com/shirrie01/bizgenie-api/issues/191#issuecomment-124',capabilities:{copyRevisions:true}},capabilities:{copyRevisions:true,billingManagement:true,learning:true}}]};
 const options={manifest,mode:'production'};
 describe('separate founder release04 route profile',()=>{
  it('legacy bridge-v1 still blocks copy even if API capability exists',()=>{
@@ -12,6 +12,9 @@ describe('separate founder release04 route profile',()=>{
  });
  it('new profile needs explicit flag plus exact independently verified serving manifest',()=>{
   expect(featureAvailability('copyEditing',base,options)).toMatchObject({enabled:true,state:'verified'});
+  // superseded rule (BG-RELEASE08): API evidence alone is not enough behind the founder bridge; its own permission evidence is required too
+  const noBridge={schema:1,revisions:[{...manifest.revisions[0],bridge:undefined}]};
+  expect(featureAvailability('copyEditing',base,{...options,manifest:noBridge})).toMatchObject({enabled:false,state:'bridge_permission_not_evidenced'});
   expect(featureAvailability('copyEditing',{...base,VITE_COPY_EDIT_API:'false'},options).enabled).toBe(false);
   expect(featureAvailability('copyEditing',base,{...options,manifest:{schema:1,revisions:[]}}).enabled).toBe(false);
   expect(featureAvailability('copyEditing',{...base,VITE_API_SERVING_REVISION:'unverified'},options).enabled).toBe(false);
