@@ -12,5 +12,6 @@
 //   { sourceSha: "<40 hex>", servingRevision: "<Cloud Run revision name>", verifiedAt: "<ISO date>", evidence: "https://…",
 //     capabilities: { quotedGeneration: true, workspaceCalendar: true, mediaIntake: true, social: true, learning: true, commercialCatalogue: true, creditPreview: true, billingManagement: true, professionalSector: true },
 //     socialProviders: ["tiktok", "linkedin"] }   // required (non-empty) when capabilities.social is true; professionalSector additionally needs the DB CHECK migration applied
+//   bridge: { evidence: "https://…", capabilities: { … } }   // REQUIRED for the founder profile (bridge-founder-release04): the serving Studio bridge's own permissions for each capability, evidenced separately; an API identity alone never enables a control behind that bridge
 // Only capabilities that were actually verified are listed; an absent capability is unverified.
 export const API_COMPATIBILITY = Object.freeze({ schema: 1, revisions: Object.freeze([]) });
