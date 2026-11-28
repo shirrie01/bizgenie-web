@@ -97,10 +97,13 @@ describe("founder release profile (bridge-founder-release04)", () => {
       expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: m, stage: "a1" })).toEqual({ ok: true, problems: [] });
       for (const f of ["copyEditing", "workspaceCalendar"]) expect(gate(f, env(), m).enabled, f).toBe(false);
     });
+    it("the shipped manifest is empty, so every stage is refused until a real verified API pair is reviewed in", () => {
+      for (const stage of ["a1", "a2"]) expect(checkReleaseProfile({ sha: SHA, revision: REV, stage })).toEqual({ ok: false, problems: ["API_PAIR_NOT_IN_REVIEWED_MANIFEST"] });
+    });
     it("a stage never accepts the other stage's manifest, and unknown stages fail closed; the default stays a2", () => {
       expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: manifest(e1()) }).ok).toBe(false);
       expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: manifest(entry()), stage: "a1" }).ok).toBe(false);
-      for (const bad of ["a3", "A1", "", "__proto__", "constructor"]) expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: manifest(entry()), stage: bad })).toEqual({ ok: false, problems: ["RELEASE_STAGE_UNKNOWN"] });
+      for (const bad of ["a0", "a3", "A1", "", "__proto__", "constructor"]) expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: manifest(entry()), stage: bad })).toEqual({ ok: false, problems: ["RELEASE_STAGE_UNKNOWN"] });
     });
   });
 });
