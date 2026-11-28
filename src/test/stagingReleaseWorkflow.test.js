@@ -128,9 +128,9 @@ describe("founder release profile (route_profile) in the staging release workflo
   const defaultBuild = stepOf("Build for staging (fails closed"), profileBuild = stepOf("Build the founder release profile"), validate = stepOf("id: profile"), gateStep = stepOf("Check the route profile against the reviewed manifest");
   const bash = (script, env) => { const dir = mkdtempSync(join(tmpdir(), "wf-")), out = join(dir, "out"); writeFileSync(out, ""); try { execFileSync("bash", ["-c", script], { env: { PATH: process.env.PATH, BRIDGE_API_ORIGINS: "https://bridge.example.test", GITHUB_OUTPUT: out, GITHUB_STEP_SUMMARY: "/dev/null", ...env }, stdio: ["ignore", "pipe", "pipe"] }); return readFileSync(out, "utf8"); } catch (e) { return `exit${e.status}`; } finally { rmSync(dir, { recursive: true, force: true }); } };
 
-  it("adds exactly three optional inputs, all empty by default, and no other trigger", () => {
+  it("adds exactly four optional inputs (stage defaults to a2, the rest empty), and no other trigger", () => {
     for (const k of ["route_profile", "api_source_sha", "api_serving_revision"]) expect(wf).toMatch(new RegExp(`${k}:\\n\\s+description:[^\\n]*\\n\\s+required: false\\n\\s+default: ''`));
-    expect(wf.match(/^ {6}[a-z_]+:\n {8}description:/gm).map((x) => x.split(":")[0].trim())).toEqual(["sha", "deploy", "api_origin", "route_profile", "api_source_sha", "api_serving_revision", "smoke_url"]);
+    expect(wf.match(/^ {6}[a-z_]+:\n {8}description:/gm).map((x) => x.split(":")[0].trim())).toEqual(["sha", "deploy", "api_origin", "route_profile", "stage", "api_source_sha", "api_serving_revision", "smoke_url"]);
   });
   it("the default build step is unchanged (same settings, now only skipped when a profile is selected)", () => {
     expect(defaultBuild).toContain("if: ${{ steps.profile.outputs.profile == '' }}");
@@ -184,5 +184,10 @@ describe("founder release profile (route_profile) in the staging release workflo
     const deployJob = wf.slice(wf.indexOf("\n  deploy:\n"));
     expect(deployJob).not.toMatch(/route_profile|api_source_sha|api_serving_revision/);
     expect(wf).toContain("deploy=true refused");
+  });
+
+  it("the route-profile gate step receives the stage input (default a2) and the build flags are unchanged", () => {
+    expect(wf).toMatch(/\n      stage:\n[\s\S]*?default: 'a2'/);
+    expect(wf).toContain("RELEASE_STAGE: '${{ inputs.stage }}'");
   });
 });

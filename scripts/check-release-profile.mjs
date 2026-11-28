@@ -5,6 +5,6 @@ import { checkReleaseProfile, RELEASE04_PROFILE } from "../src/premium/releasePr
 
 const profile = process.env.RELEASE_PROFILE ?? "";
 if (profile !== RELEASE04_PROFILE) { console.error("RELEASE_PROFILE_UNKNOWN"); process.exit(2); }
-const r = checkReleaseProfile({ sha: process.env.API_SOURCE_SHA, revision: process.env.API_SERVING_REVISION });
+const r = checkReleaseProfile({ sha: process.env.API_SOURCE_SHA, revision: process.env.API_SERVING_REVISION, stage: process.env.RELEASE_STAGE || "a2" });
 if (!r.ok) { console.error("RELEASE_PROFILE_REFUSED: " + r.problems.join(",")); process.exit(1); }
 console.log("RELEASE_PROFILE_OK: reviewed manifest verifies the exact API source SHA and serving revision for this stage");

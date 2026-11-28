@@ -18,27 +18,34 @@ export const RELEASE04_FLAGS = Object.freeze({
 // Features this stage turns on (A0-A2 without artwork intake, social, generation or billing) and the manifest capabilities they need. A manifest entry for this profile lists EXACTLY these.
 export const RELEASE04_FEATURES = Object.freeze(["founderCampaignRoot", "contentPlan", "copyEditing", "workspaceCalendar"]);
 export const RELEASE04_CAPABILITIES = Object.freeze(["contentPlan", "copyRevisions", "founderCampaignRoot", "workspaceCalendar"]);
+// Stage-aware: a1 = founder onboarding, campaign root and content plan only; a2 = adds drafts, copy editing, review/approval and the calendar (the full set above). Social and media intake need a later a2b stage.
+export const RELEASE_STAGES = Object.freeze({
+  a1: Object.freeze({ features: Object.freeze(["founderCampaignRoot", "contentPlan"]), capabilities: Object.freeze(["contentPlan", "founderCampaignRoot"]) }),
+  a2: Object.freeze({ features: RELEASE04_FEATURES, capabilities: RELEASE04_CAPABILITIES }),
+});
 export const BRIDGE_ORIGIN = "https://bizgenie-studio-bridge-staging-303691956826.europe-west1.run.app";
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 export const REVISION_PATTERN = /^bizgenie-api-staging-[0-9]{5}-[a-z0-9]{3}$/;
 
 // → { ok, problems: string[] } (codes only; never a value). `manifest` defaults to the shipped manifest.
-export function checkReleaseProfile({ sha, revision, manifest = API_COMPATIBILITY } = {}) {
+export function checkReleaseProfile({ sha, revision, manifest = API_COMPATIBILITY, stage = "a2" } = {}) {
   const problems = [];
+  const st = Object.prototype.hasOwnProperty.call(RELEASE_STAGES, stage) ? RELEASE_STAGES[stage] : null;
+  if (!st) return { ok: false, problems: ["RELEASE_STAGE_UNKNOWN"] };
   if (typeof sha !== "string" || !SHA_PATTERN.test(sha)) problems.push("API_SOURCE_SHA_MALFORMED");
   if (typeof revision !== "string" || !REVISION_PATTERN.test(revision)) problems.push("API_SERVING_REVISION_MALFORMED");
   if (problems.length) return { ok: false, problems };
   const entry = validEntries(manifest).good.find((e) => e.sourceSha === sha && e.servingRevision === revision);
   if (!entry) return { ok: false, problems: ["API_PAIR_NOT_IN_REVIEWED_MANIFEST"] };
   const listed = Object.keys(entry.capabilities).sort();
-  if (listed.length !== RELEASE04_CAPABILITIES.length || listed.some((c, i) => c !== RELEASE04_CAPABILITIES[i])) problems.push("MANIFEST_CAPABILITIES_NOT_EXACTLY_THIS_STAGE");
+  if (listed.length !== st.capabilities.length || listed.some((c, i) => c !== st.capabilities[i])) problems.push("MANIFEST_CAPABILITIES_NOT_EXACTLY_THIS_STAGE");
   const bridgeListed = entry.bridge ? Object.keys(entry.bridge.capabilities).sort() : [];
-  if (bridgeListed.length !== RELEASE04_CAPABILITIES.length || bridgeListed.some((c, i) => c !== RELEASE04_CAPABILITIES[i])) problems.push("BRIDGE_PERMISSIONS_NOT_EVIDENCED_FOR_THIS_STAGE");
+  if (bridgeListed.length !== st.capabilities.length || bridgeListed.some((c, i) => c !== st.capabilities[i])) problems.push("BRIDGE_PERMISSIONS_NOT_EVIDENCED_FOR_THIS_STAGE");
   if (entry.socialProviders !== undefined && entry.socialProviders.length > 0) problems.push("MANIFEST_LISTS_SOCIAL_PROVIDERS");
   const env = { ...RELEASE04_FLAGS, VITE_BIZGENIE_API_URL: BRIDGE_ORIGIN, VITE_API_ROUTE_LIMITS: RELEASE04_PROFILE, VITE_API_SOURCE_SHA: sha, VITE_API_SERVING_REVISION: revision };
   for (const feature of Object.keys(FEATURES)) {
     const a = featureAvailability(feature, env, { manifest, mode: "production" });
-    if (RELEASE04_FEATURES.includes(feature)) { if (!(a.enabled === true && a.state === "verified")) problems.push(`FEATURE_NOT_VERIFIED:${feature}`); }
+    if (st.features.includes(feature)) { if (!(a.enabled === true && a.state === "verified")) problems.push(`FEATURE_NOT_VERIFIED:${feature}`); }
     else if (a.enabled) problems.push(`FEATURE_UNEXPECTEDLY_ON:${feature}`);
   }
   return { ok: problems.length === 0, problems };

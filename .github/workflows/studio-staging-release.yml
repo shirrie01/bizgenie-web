@@ -21,6 +21,10 @@ on:
         description: 'Optional route profile; empty (default) = the existing release, unchanged. bridge-founder-release04 = the founder release for the trusted bridge: needs api_origin = the listed bridge origin, api_source_sha, api_serving_revision, and a reviewed manifest entry for exactly that pair in the built commit (the build fails closed otherwise)'
         required: false
         default: ''
+      stage:
+        description: '(route_profile only) a1 = Fonzo onboarding, campaign and content plan; a2 (default) = adds drafts, copy editing, review, approval and calendar. Must match the bridge stage actually serving.'
+        required: false
+        default: 'a2'
       api_source_sha:
         description: '(route_profile only) 40-character source commit of the API the bridge forwards to'
         required: false
@@ -101,7 +105,7 @@ jobs:
       - run: npm test
       - name: Check the route profile against the reviewed manifest (fails closed; skipped for the default release)
         if: ${{ steps.profile.outputs.profile != '' }}
-        env: { RELEASE_PROFILE: '${{ steps.profile.outputs.profile }}', API_SOURCE_SHA: '${{ inputs.api_source_sha }}', API_SERVING_REVISION: '${{ inputs.api_serving_revision }}' }
+        env: { RELEASE_PROFILE: '${{ steps.profile.outputs.profile }}', API_SOURCE_SHA: '${{ inputs.api_source_sha }}', API_SERVING_REVISION: '${{ inputs.api_serving_revision }}', RELEASE_STAGE: '${{ inputs.stage }}' }
         run: npx vite-node scripts/check-release-profile.mjs
       - name: Build the founder release profile (fails closed on missing or mismatched settings)
         if: ${{ steps.profile.outputs.profile != '' }}

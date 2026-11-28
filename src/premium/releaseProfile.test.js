@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { checkReleaseProfile, RELEASE04_FLAGS, RELEASE04_CAPABILITIES, RELEASE04_FEATURES, RELEASE04_PROFILE, BRIDGE_ORIGIN } from "./releaseProfile";
+import { RELEASE_STAGES, checkReleaseProfile, RELEASE04_FLAGS, RELEASE04_CAPABILITIES, RELEASE04_FEATURES, RELEASE04_PROFILE, BRIDGE_ORIGIN } from "./releaseProfile";
 import { featureAvailability, FEATURES } from "./featureGate";
 import { API_COMPATIBILITY } from "./apiCompatibility";
 
@@ -88,5 +88,19 @@ describe("founder release profile (bridge-founder-release04)", () => {
     expect(gate("copyEditing", { ...plain, VITE_API_ROUTE_LIMITS: "bridge-v1" }, m)).toMatchObject({ enabled: false, state: "not_carried_by_bridge" });
     expect(gate("copyEditing", plain, manifest())).toMatchObject({ enabled: false, state: "revision_not_in_manifest" });
     expect(gate("copyEditing", { VITE_BIZGENIE_API_URL: BRIDGE_ORIGIN }, m)).toMatchObject({ enabled: false, state: "flag_off" });
+  });
+
+  describe("stage-aware gate (A1 vs A2)", () => {
+    const e1 = () => entry({ capabilities: Object.fromEntries(RELEASE_STAGES.a1.capabilities.map((c) => [c, true])), bridge: { evidence: "https://github.com/shirrie01/bizgenie-api/issues/191#issuecomment-2", capabilities: Object.fromEntries(RELEASE_STAGES.a1.capabilities.map((c) => [c, true])) } });
+    it("a1 accepts exactly campaign root + content plan and leaves drafts, copy editing and calendar off", () => {
+      const m = manifest(e1());
+      expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: m, stage: "a1" })).toEqual({ ok: true, problems: [] });
+      for (const f of ["copyEditing", "workspaceCalendar"]) expect(gate(f, env(), m).enabled, f).toBe(false);
+    });
+    it("a stage never accepts the other stage's manifest, and unknown stages fail closed; the default stays a2", () => {
+      expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: manifest(e1()) }).ok).toBe(false);
+      expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: manifest(entry()), stage: "a1" }).ok).toBe(false);
+      for (const bad of ["a3", "A1", "", "__proto__", "constructor"]) expect(checkReleaseProfile({ sha: SHA, revision: REV, manifest: manifest(entry()), stage: bad })).toEqual({ ok: false, problems: ["RELEASE_STAGE_UNKNOWN"] });
+    });
   });
 });
